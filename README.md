@@ -6,5 +6,6 @@
 
 - [Relaxin / iOS 26 真机落地方案](docs/relaxin-ios26-plan.md)
 - [当前实现与真机验收步骤](docs/build-and-test.md)
+- [重启后恢复与 USB 复测](docs/device-recovery.md)
 - [首批常见任务与验收标准](docs/common-cases.md)
 - [ios-mcp 上游源码快照与来源](vendor/UPSTREAM.md)
