@@ -5,6 +5,7 @@
 #import <sys/stat.h>
 #import <fcntl.h>
 #import <unistd.h>
+#import <objc/runtime.h>
 
 static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.enabled";
 
@@ -45,7 +46,8 @@ static void BBVolumeDownReleased(void) {
 %end
 
 %ctor {
-    %init;
+    Class actions = objc_getClass("SBVolumeHardwareButtonActions");
+    if (actions && class_getInstanceMethod(actions, @selector(volumeDecreasePressUp))) %init;
 }
 
 __attribute__((constructor)) static void BBStart(void) {
