@@ -1,0 +1,8 @@
+Package: dev.beanbao.bridge
+Name: BeanBao Bridge
+Version: 0.1.6
+Architecture: iphoneos-arm
+Depends: mobilesubstrate
+Description: Local-only restricted UI bridge for BeanBao.
+Maintainer: BeanBao contributors
+Section: Tweaks
