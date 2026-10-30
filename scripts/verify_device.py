@@ -10,10 +10,13 @@ def main() -> None:
     parser.add_argument("--host", required=True, help="paired device SSH host or USB-forwarded localhost")
     parser.add_argument("--port", type=int, default=22)
     parser.add_argument("--identity", required=True, help="private key path; never stored in this repo")
+    parser.add_argument("--known-hosts", help="paired device known_hosts file")
     args = parser.parse_args()
     ssh = ["ssh", "-i", args.identity, "-p", str(args.port), "-o", "IdentitiesOnly=yes",
            "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes",
            f"mobile@{args.host}"]
+    if args.known_hosts:
+        ssh[1:1] = ["-o", f"UserKnownHostsFile={args.known_hosts}"]
 
     def remote(command: str) -> str:
         return subprocess.check_output([*ssh, command], text=True, timeout=20)

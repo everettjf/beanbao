@@ -13,14 +13,19 @@ from pathlib import Path
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True)
+    parser.add_argument("--port", type=int, default=22)
     parser.add_argument("--identity", type=Path, required=True)
+    parser.add_argument("--known-hosts", type=Path)
     parser.add_argument("--minutes", type=int, default=60)
     parser.add_argument("--interval", type=int, default=15)
     args = parser.parse_args()
     if not 1 <= args.minutes <= 240 or not 5 <= args.interval <= 60:
         parser.error("minutes must be 1–240 and interval 5–60 seconds")
-    ssh = ["ssh", "-i", str(args.identity), "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+    ssh = ["ssh", "-i", str(args.identity), "-p", str(args.port),
+           "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
            "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", f"mobile@{args.host}"]
+    if args.known_hosts:
+        ssh[1:1] = ["-o", f"UserKnownHostsFile={args.known_hosts}"]
 
     def query() -> tuple[int, dict]:
         result = subprocess.run([*ssh, "launchctl print user/501/dev.beanbao.agent"],

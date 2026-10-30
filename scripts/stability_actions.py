@@ -23,14 +23,19 @@ def find_tap(observation: dict, text: str) -> dict[str, float]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True)
+    parser.add_argument("--port", type=int, default=22)
     parser.add_argument("--identity", type=Path, required=True)
+    parser.add_argument("--known-hosts", type=Path)
     parser.add_argument("--rounds", type=int, default=10)
     args = parser.parse_args()
     if not 1 <= args.rounds <= 100:
         parser.error("--rounds must be between 1 and 100")
-    ssh = ["ssh", "-i", str(args.identity), "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+    ssh = ["ssh", "-i", str(args.identity), "-p", str(args.port),
+           "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
            "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", f"mobile@{args.host}"]
-    bridge = SSHBridgeClient(args.host, args.identity)
+    if args.known_hosts:
+        ssh[1:1] = ["-o", f"UserKnownHostsFile={args.known_hosts}"]
+    bridge = SSHBridgeClient(args.host, args.identity, args.port, args.known_hosts)
     counts = {"tap": 0, "input_text": 0, "press_key": 0, "swipe": 0}
     failures: list[dict[str, str | int]] = []
     for number in range(1, args.rounds + 1):

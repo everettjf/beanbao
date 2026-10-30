@@ -104,11 +104,14 @@ class BridgeClient:
 class SSHBridgeClient(BridgeClient):
     """Call the device CLI as mobile; the bridge never accepts SSHD's root UID."""
 
-    def __init__(self, host: str, identity: Path, port: int = 22):
+    def __init__(self, host: str, identity: Path, port: int = 22,
+                 known_hosts: Path | None = None):
         self.command = ["ssh", "-i", str(identity), "-p", str(port),
                         "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
                         "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes",
                         f"mobile@{host}"]
+        if known_hosts is not None:
+            self.command[1:1] = ["-o", f"UserKnownHostsFile={known_hosts}"]
 
     def request(self, payload: dict[str, Any]) -> dict[str, Any]:
         command = "beanbaoctl " + shlex.quote(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
@@ -310,6 +313,7 @@ def main() -> int:
     parser.add_argument("--ssh-host", help="paired device address; uses mobile SSH and beanbaoctl")
     parser.add_argument("--ssh-identity", type=Path, help="paired device private key path")
     parser.add_argument("--ssh-port", type=int, default=22)
+    parser.add_argument("--ssh-known-hosts", type=Path, help="paired device known_hosts file")
     parser.add_argument("--model", choices=("mock", "openai", "claude"), default="mock")
     parser.add_argument("--allow-ui-actions", action="store_true", help="supervised UI testing only")
     args = parser.parse_args()
@@ -331,7 +335,8 @@ def main() -> int:
             print("待执行：" + json.dumps(action, ensure_ascii=False), file=sys.stderr)
             return input("输入 yes 执行这一步：").strip() == "yes"
 
-        bridge = (SSHBridgeClient(args.ssh_host, args.ssh_identity, args.ssh_port) if args.ssh_host else
+        bridge = (SSHBridgeClient(args.ssh_host, args.ssh_identity, args.ssh_port,
+                                  args.ssh_known_hosts) if args.ssh_host else
                   BridgeClient(args.socket, args.token_file.read_text().strip()))
         result = run(args.task, bridge, model,
                      allow_ui_actions=args.allow_ui_actions, approve=approve if args.allow_ui_actions else None)

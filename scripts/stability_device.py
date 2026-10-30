@@ -19,12 +19,14 @@ APPS = ("com.apple.Preferences", "com.apple.mobilenotes", "com.apple.Maps")
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True)
+    parser.add_argument("--port", type=int, default=22)
     parser.add_argument("--identity", type=Path, required=True)
+    parser.add_argument("--known-hosts", type=Path)
     parser.add_argument("--rounds", type=int, default=10)
     args = parser.parse_args()
     if not 1 <= args.rounds <= 100:
         parser.error("--rounds must be between 1 and 100")
-    bridge = SSHBridgeClient(args.host, args.identity)
+    bridge = SSHBridgeClient(args.host, args.identity, args.port, args.known_hosts)
     failures: list[dict[str, str | int]] = []
     timings: list[float] = []
     observations = 0

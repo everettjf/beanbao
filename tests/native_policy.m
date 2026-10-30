@@ -50,6 +50,12 @@ int main(void) {
             @{@"text": @"Search field"}, @{@"text": @"金门大桥, Search Nearby"},
             @{@"text": @"Directions"}]};
         NSDictionary *resultsMap = Observation(@"com.apple.Maps", NO, resultsUI, @{});
+        NSDictionary *placeCardUI = @{@"elements": @[
+            @{@"text": @"Golden Gate Bridge", @"visible_rect":
+              @{@"x": @215, @"y": @301, @"width": @30, @"height": @30}},
+            @{@"text": @"Golden Gate Bridge, Landmark", @"visible_rect":
+              @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}}]};
+        NSDictionary *placeCard = Observation(@"com.apple.Maps", NO, placeCardUI, @{});
         NSArray *mapDirectOne = @[inputPlace], *mapDirectTwo = @[inputPlace, enter];
         if (!Check(BBValidAction(tapSearch, map, mapTask, @[], YES, YES, NO), "map search tap allowed") ||
             !Check(!BBValidAction(tapOther, map, mapTask, @[], YES, YES, NO), "unrelated map tap blocked") ||
@@ -66,6 +72,11 @@ int main(void) {
                    "existing map query can be submitted") ||
             !Check(BBValidAction(@{@"action": @"done"}, resultsMap, mapTask, @[], YES, YES, NO),
                    "already visible map result accepted") ||
+            !Check(BBValidAction(@{@"action": @"done"}, placeCard, mapTask, @[], YES, YES, NO),
+                   "localized place card accepted") ||
+            !Check(!BBValidAction(@{@"action": @"done"}, placeCard,
+                                  @"在地图搜索其它地点", @[], YES, YES, NO),
+                   "different place card rejected") ||
             !Check(BBValidAction(inputPlace, focusedMap, mapTask, mapOne, YES, YES, NO), "exact map query allowed") ||
             !Check(!BBValidAction(@{@"action": @"input_text", @"text": @"别的地点"},
                                   focusedMap, mapTask, mapOne, YES, YES, NO), "different map query blocked") ||

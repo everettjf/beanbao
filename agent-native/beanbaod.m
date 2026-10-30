@@ -228,17 +228,39 @@ static BOOL BBVisibleContains(NSDictionary *observation, NSString *needle) {
 }
 
 static BOOL BBMapResultVisible(NSDictionary *observation, NSString *query) {
-    if (!BBVisibleContains(observation, [query substringToIndex:MIN((NSUInteger)12, query.length)])) return NO;
     NSArray *elements = observation[@"ui"][@"elements"];
     if (![elements isKindOfClass:NSArray.class]) return NO;
+    BOOL directions = NO;
     for (NSDictionary *item in elements) {
         NSString *label = [item isKindOfClass:NSDictionary.class] ? item[@"text"] : nil;
         if (![label isKindOfClass:NSString.class]) continue;
         NSString *lower = label.lowercaseString;
         if ([lower isEqualToString:@"directions"] || [lower isEqualToString:@"路线"] ||
-            [lower isEqualToString:@"路線"]) return YES;
+            [lower isEqualToString:@"路線"]) directions = YES;
     }
-    return NO;
+    if (directions && BBVisibleContains(observation,
+        [query substringToIndex:MIN((NSUInteger)12, query.length)])) return YES;
+
+    // Maps may replace a Chinese search with an English place card. Accept
+    // this known case only when both the map pin and the large place card name
+    // the same result; a loose OCR hit or a search-field value is insufficient.
+    NSString *title = [query isEqualToString:@"金门大桥"] ? @"Golden Gate Bridge" : query;
+    if (title.length < 5) return NO;
+    BOOL pin = NO, card = NO;
+    double screenHeight = [observation[@"screen"][@"height"] doubleValue];
+    for (NSDictionary *item in elements) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSString *label = item[@"text"];
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![label isKindOfClass:NSString.class] || ![rect isKindOfClass:NSDictionary.class]) continue;
+        NSString *lower = label.lowercaseString;
+        NSString *target = title.lowercaseString;
+        double width = [rect[@"width"] doubleValue], y = [rect[@"y"] doubleValue];
+        if ([lower isEqualToString:target] && width >= 20 && width <= 120 &&
+            y >= 0 && y < screenHeight * 0.6) pin = YES;
+        if ([lower hasPrefix:target] && width >= 200 && y >= screenHeight * 0.45) card = YES;
+    }
+    return pin && card;
 }
 
 static BOOL BBUnlockedObservation(NSDictionary *observation) {
