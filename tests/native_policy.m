@@ -48,7 +48,11 @@ int main(void) {
             !Check(BBValidAction(enter, map, mapTask, mapTwo, YES, YES, NO), "map search submit allowed") ||
             !Check(!BBValidAction(tapOther, map, mapTask, mapThree, YES, YES, NO), "navigation tap blocked") ||
             !Check(BBValidAction(@{@"action": @"done"}, map, mapTask, mapThree, YES, YES, NO),
-                   "map completion after submit allowed")) return 1;
+                   "map completion after submit allowed") ||
+            !Check(!BBValidAction(@{@"action": @"done"},
+                                  Observation(@"com.apple.Maps", NO, mapUI, @{}),
+                                  mapTask, mapThree, YES, YES, NO),
+                   "map completion without visible query blocked")) return 1;
 
         NSDictionary *noteUI = @{@"elements": @[
             @{@"text": @"新建备忘录", @"visible_rect": @{@"x": @300, @"y": @50, @"width": @60, @"height": @40}},

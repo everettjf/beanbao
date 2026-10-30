@@ -11,6 +11,6 @@
 <key>LSRequiresIPhoneOS</key><true/>
 <key>UIDeviceFamily</key><array><integer>1</integer></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
-<key>NSMicrophoneUsageDescription</key><string>BeanBao 在你点击语音按钮后使用麦克风，将指令转成可编辑的文字。</string>
-<key>NSSpeechRecognitionUsageDescription</key><string>BeanBao 在你点击语音按钮后识别中文指令；设备不支持离线识别时可能由 Apple 在线处理。</string>
+<key>NSMicrophoneUsageDescription</key><string>BeanBao 在你点击语音按钮或启用按键唤醒后使用麦克风，将指令转成可编辑的文字。</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>BeanBao 在你点击语音按钮或启用按键唤醒后识别中文指令；设备不支持离线识别时可能由 Apple 在线处理。</string>
 </dict></plist>

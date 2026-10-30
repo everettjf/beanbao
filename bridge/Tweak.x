@@ -8,6 +8,7 @@
 #import <objc/runtime.h>
 
 static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.enabled";
+static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotkey.voice";
 
 static BOOL BBHotkeyEnabled(void) {
     int fd = open(BBHotkeyFile, O_RDONLY | O_NOFOLLOW);
@@ -34,6 +35,19 @@ static void BBVolumeDownReleased(void) {
         if (![state[@"locked_known"] boolValue] || [state[@"locked"] boolValue] ||
             ![state[@"screen_on_known"] boolValue] || ![state[@"screen_on"] boolValue]) return;
         if ([BBFrontmostApp()[@"bundleId"] isEqualToString:@"dev.beanbao.app"]) return;
+        int fd = open(BBHotkeyVoiceFile, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+        if (fd >= 0) {
+            struct stat info = {0};
+            if (geteuid() == 0) fchown(fd, 501, 501);
+            if (!fstat(fd, &info) && S_ISREG(info.st_mode) && info.st_uid == 501 &&
+                !fchmod(fd, 0600) && write(fd, "1", 1) == 1) {
+                close(fd);
+                BBOpenBeanBaoApp();
+                return;
+            }
+            close(fd);
+            unlink(BBHotkeyVoiceFile);
+        }
         BBOpenBeanBaoApp();
     });
 }

@@ -3,10 +3,12 @@
 #import <AVFoundation/AVFoundation.h>
 #import <fcntl.h>
 #import <sys/stat.h>
+#import <time.h>
 #import <unistd.h>
 #import "AgentClient.h"
 
 static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.enabled";
+static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotkey.voice";
 static const char *BBKeyFile = "/var/mobile/Library/Application Support/BeanBao/claude.key";
 
 static BOOL BBSaveClaudeKey(NSString *key) {
@@ -43,6 +45,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 @property(nonatomic, strong) UISegmentedControl *modelControl;
 @property(nonatomic, strong) UILabel *stateLabel;
 @property(nonatomic, strong) UILabel *detailLabel;
+@property(nonatomic, strong) UILabel *feedbackLabel;
 @property(nonatomic, strong) UIButton *startButton;
 @property(nonatomic, strong) UIButton *stopButton;
 @property(nonatomic, strong) UIButton *voiceButton;
@@ -123,9 +126,11 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.stateLabel.font = [UIFont boldSystemFontOfSize:18];
     self.detailLabel = [self label:@"" size:15];
     self.detailLabel.textColor = UIColor.secondaryLabelColor;
+    self.feedbackLabel = [self label:@"" size:15];
+    self.feedbackLabel.textColor = UIColor.systemTealColor;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
         heading, hint, self.taskField, self.clearButton, self.voiceButton, self.modelControl, keyButton, self.startButton,
-        self.stopButton, hotkeyRow, self.stateLabel, self.detailLabel]];
+        self.stopButton, hotkeyRow, self.stateLabel, self.detailLabel, self.feedbackLabel]];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 16;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -144,6 +149,8 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     ]];
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.8 target:self selector:@selector(refreshStatus)
                                                userInfo:nil repeats:YES];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationBecameActive:)
+        name:UIApplicationDidBecomeActiveNotification object:nil];
     [self refreshStatus];
 }
 
@@ -152,7 +159,38 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     [self refreshStatus];
 }
 
-- (void)dealloc { [self.timer invalidate]; [self stopRecording]; }
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self checkHotkeyVoice];
+}
+
+- (void)applicationBecameActive:(NSNotification *)notification {
+    (void)notification;
+    [self checkHotkeyVoice];
+}
+
+- (void)checkHotkeyVoice {
+    int fd = open(BBHotkeyVoiceFile, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return;
+    struct stat info = {0};
+    char value = 0;
+    BOOL pending = !fstat(fd, &info) && S_ISREG(info.st_mode) && info.st_uid == getuid() &&
+        !(info.st_mode & 077) && info.st_size == 1 &&
+        time(NULL) >= info.st_mtime && time(NULL) - info.st_mtime <= 10 &&
+        read(fd, &value, 1) == 1 && value == '1';
+    close(fd);
+    unlink(BBHotkeyVoiceFile);
+    if (pending && !self.recording) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{ if (!self.recording) [self voiceTapped]; });
+    }
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [self.timer invalidate];
+    [self stopRecording];
+}
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
     [textField resignFirstResponder];
@@ -194,7 +232,8 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 - (void)startTapped {
     [self.taskField resignFirstResponder];
     NSString *task = [self.taskField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!task.length) { self.detailLabel.text = @"请输入文字指令"; return; }
+    if (!task.length) { self.feedbackLabel.text = @"请输入文字指令"; return; }
+    self.feedbackLabel.text = @"";
     self.startButton.enabled = NO;
     [self request:@{@"op": @"start", @"task": task,
                     @"model": self.modelControl.selectedSegmentIndex == 1 ? @"claude" : @"mock"}];
@@ -218,7 +257,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         NSString *key = [alert.textFields.firstObject.text
             stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        weakSelf.detailLabel.text = BBSaveClaudeKey(key) ? @"Claude Key 已保存在本机" : @"Key 格式或保存失败";
+        weakSelf.feedbackLabel.text = BBSaveClaudeKey(key) ? @"Claude Key 已保存在本机" : @"Key 格式或保存失败";
         alert.textFields.firstObject.text = @"";
     }]];
     [self presentViewController:alert animated:YES completion:nil];
@@ -229,11 +268,11 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     if (fd < 0 || fchmod(fd, 0600) || write(fd, self.hotkeySwitch.on ? "1" : "0", 1) != 1) {
         if (fd >= 0) close(fd);
         self.hotkeySwitch.on = !self.hotkeySwitch.on;
-        self.detailLabel.text = @"按键设置保存失败";
+        self.feedbackLabel.text = @"按键设置保存失败";
         return;
     }
     close(fd);
-    self.detailLabel.text = self.hotkeySwitch.on ? @"音量下键三连按已启用" : @"按键唤醒已关闭";
+    self.feedbackLabel.text = self.hotkeySwitch.on ? @"音量下键三连按已启用" : @"按键唤醒已关闭";
 }
 
 - (void)voiceTapped {
@@ -241,13 +280,13 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus status) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (status != SFSpeechRecognizerAuthorizationStatusAuthorized) {
-                self.detailLabel.text = @"语音识别未获授权，仍可输入文字";
+                self.feedbackLabel.text = @"语音识别未获授权，仍可输入文字";
                 return;
             }
             [[AVAudioSession sharedInstance] requestRecordPermission:^(BOOL granted) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (granted) [self startRecording];
-                    else self.detailLabel.text = @"麦克风未获授权，仍可输入文字";
+                    else self.feedbackLabel.text = @"麦克风未获授权，仍可输入文字";
                 });
             }];
         });
@@ -262,7 +301,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     NSUInteger generation = self.speechGeneration;
     self.speechRecognizer = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:@"zh-CN"]];
     if (!self.speechRecognizer || !self.speechRecognizer.isAvailable) {
-        self.detailLabel.text = @"当前中文语音识别不可用";
+        self.feedbackLabel.text = @"当前中文语音识别不可用";
         return;
     }
     self.speechRequest = [SFSpeechAudioBufferRecognitionRequest new];
@@ -273,7 +312,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     AVAudioSession *session = [AVAudioSession sharedInstance];
     [session setCategory:AVAudioSessionCategoryRecord mode:AVAudioSessionModeMeasurement options:0 error:&error];
     if (!error) [session setActive:YES error:&error];
-    if (error) { self.detailLabel.text = @"无法启动麦克风"; self.speechRequest = nil; return; }
+    if (error) { self.feedbackLabel.text = @"无法启动麦克风"; self.speechRequest = nil; return; }
     self.audioEngine = [AVAudioEngine new];
     AVAudioInputNode *input = self.audioEngine.inputNode;
     AVAudioFormat *format = [input outputFormatForBus:0];
@@ -287,12 +326,12 @@ static BOOL BBSaveClaudeKey(NSString *key) {
         [input removeTapOnBus:0];
         self.audioEngine = nil;
         self.speechRequest = nil;
-        self.detailLabel.text = @"录音启动失败";
+        self.feedbackLabel.text = @"录音启动失败";
         return;
     }
     self.recording = YES;
     [self.voiceButton setTitle:@"结束录音" forState:UIControlStateNormal];
-    self.detailLabel.text = onDevice ? @"正在本机识别，结束后可修改文字" : @"正在通过 Apple 语音服务识别，结束后可修改文字";
+    self.feedbackLabel.text = onDevice ? @"正在本机识别，结束后可修改文字" : @"正在通过 Apple 语音服务识别，结束后可修改文字";
     self.speechTask = [self.speechRecognizer recognitionTaskWithRequest:self.speechRequest resultHandler:^(SFSpeechRecognitionResult *result, NSError *failure) {
         dispatch_async(dispatch_get_main_queue(), ^{
             typeof(self) strongSelf = weakSelf;
@@ -303,7 +342,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
                 [strongSelf stopRecording];
                 strongSelf.speechTask = nil;
                 if (failure && !result.bestTranscription.formattedString.length)
-                    strongSelf.detailLabel.text = @"语音识别未完成，请改用文字输入";
+                    strongSelf.feedbackLabel.text = @"语音识别未完成，请改用文字输入";
             }
         });
     }];
@@ -318,7 +357,8 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.audioEngine = nil;
     self.speechRequest = nil;
     [self.voiceButton setTitle:@"🎙️ 语音输入" forState:UIControlStateNormal];
-    self.detailLabel.text = @"转写文字可修改，确认后点开始";
+    [[AVAudioSession sharedInstance] setActive:NO error:nil];
+    self.feedbackLabel.text = @"转写文字可修改，确认后点开始";
 }
 
 @end

@@ -244,8 +244,7 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
             if (![@"launch_app" isEqualToString:item[@"action"]]) uiSteps++;
         if ([name isEqualToString:@"done"])
             return [foreground isEqualToString:@"com.apple.Maps"] && uiSteps == 3 &&
-                ([observation[@"ui"] isKindOfClass:NSDictionary.class] ||
-                 [observation[@"ocr"] isKindOfClass:NSDictionary.class]);
+                BBVisibleContains(observation, [query substringToIndex:MIN((NSUInteger)12, query.length)]);
         if ([name isEqualToString:@"launch_app"])
             return history.count == 0 && [action[@"bundle_id"] isEqualToString:@"com.apple.Maps"];
         if (!allowUI || ![foreground isEqualToString:@"com.apple.Maps"]) return NO;
