@@ -7,7 +7,7 @@
 - `dev.beanbao.bridge` **0.1.6** 已安装并在 SpringBoard 中运行。仅编译复制的 ios-mcp 的 HID、Screen、AX、TextInput、Vision OCR 相关源码；上游 MCPServer、AppManager、安装器、shell、文件路由、Paddle/ONNX 均未编译。
 - SpringBoard 只监听宿主 `/var/mobile/Library/Caches/BeanBao/bridge.sock`。普通 RootHide SSH shell 通过 `/rootfs/private/var/mobile/Library/Caches/BeanBao` 查看。目录权限 700，socket 和随机 token 权限 600；仅接受 UID 501 的本地进程与正确 token。没有 TCP/HTTP 监听。
 - `observe` 支持锁屏/亮屏、前台 App、屏幕尺寸以及可选 AX、Vision OCR、截图。`act` 只支持白名单 App 启动、点击、滑动、输入文本和少数按键；一次观察仅授权一步，10 秒过期，锁屏拒绝动作。
-- `beanbaoctl` 是手机端受限客户端；Mac 上的 `agent/beanbao.py` 通过已认证的 mobile SSH 调用它。模拟模型只处理“打开设置/备忘录/地图”。外部模型适配骨架尚未接实际端点；发送模型前会检查 AX/OCR 中可见的常见密钥形态并停止该步。
+- `beanbaoctl` 是手机端受限客户端；Mac 上的 `agent/beanbao.py` 通过已认证的 mobile SSH 调用它。模拟模型只处理“打开设置/备忘录/地图”；现已接入 Claude 原生 Messages API，并用 Sonnet 5.5 做真机受监督测试。Claude 输出使用 JSON schema 约束，动作仍经过本地策略检查和逐步批准。发送模型前会检查 AX/OCR 中可见的常见密钥形态并停止该步。
 - 为配置 root 公钥认证，另安装 `dev.beanbao.device-key` **0.1.1**。它只将 copyapp 已有的专用公钥加入 `/var/root/.ssh/authorized_keys`；私钥留在 Mac。清除此包时只移除这条公钥。BeanBao 运行时协议没有 root、安装器或 shell 能力。
 
 ## 可复现命令
@@ -20,9 +20,10 @@ cd ..
 python3 -m unittest discover -s agent -p 'test_*.py' -v
 python3 scripts/verify_device.py --host '<已配对设备的 SSH 地址>' --identity '<copyapp 中该设备的专用私钥路径>'
 python3 agent/beanbao.py '打开备忘录' --ssh-host '<已配对设备的 SSH 地址>' --ssh-identity '<同一私钥路径>'
+python3 agent/beanbao.py '在地图搜索金门大桥，看到搜索结果后停止，不要启动导航' --model claude --allow-ui-actions --ssh-host '<已配对设备的 SSH 地址>' --ssh-identity '<同一私钥路径>'
 ```
 
-SSH 地址由 CoreDevice 隧道提供，可能变化。设备上的 `beanbaoctl run '打开设置'` 可独立验证无需 Mac 模型的文字启动。不要把 token、私钥、截图或个人备忘录提交到仓库。
+Claude 命令需要从安全的本地环境提供 `ANTHROPIC_API_KEY`，可用 `BEANBAO_CLAUDE_MODEL` 覆盖默认的 `claude-sonnet-5-5`。SSH 地址由 CoreDevice 隧道提供，可能变化。设备上的 `beanbaoctl run '打开设置'` 可独立验证无需 Mac 模型的文字启动。不要把 token、私钥、模型 Key、截图或个人备忘录提交到仓库。
 
 ## 2026-10-30 真机结果
 
@@ -35,13 +36,15 @@ SSH 地址由 CoreDevice 隧道提供，可能变化。设备上的 `beanbaoctl 
 | 文字指令 | 手机端“打开设置”成功；Mac 模拟代理“打开备忘录”和“打开地图”成功，并复核前台 Bundle ID。 |
 | UI 动作 | 在备忘录通过桥接点击“新建”、输入标记为 2026-10-30 的测试文字、点击完成；OCR 复核标题与正文可见。 |
 | 动作保护 | 同一观察 ID 的第二次动作被拒绝；root UID 直接连桥接被拒绝。 |
-| 地图 | 用户明确授权后，手动点“Accept & Continue”，位置选“Allow While Using App”，无线数据选“WLAN & Cellular”；通知选“Not Now”，通讯录选“Don’t Allow”。地图进入主界面并显示搜索框。返回主屏幕后，Mac 模拟代理执行“打开地图”成功；设备确认前台为 `com.apple.Maps`。地点搜索尚未验收。 |
+| 地图 | 用户明确授权后，手动点“Accept & Continue”，位置选“Allow While Using App”，无线数据选“WLAN & Cellular”；通知选“Not Now”，通讯录选“Don’t Allow”。地图进入主界面并显示搜索框。返回主屏幕后，Mac 模拟代理执行“打开地图”成功；设备确认前台为 `com.apple.Maps`。 |
+| Claude 模型试验 | 用户提供的临时 Key 在 Claude 官方 Models API 认证成功；Sonnet 5.5 看真实地图截图后建议点击搜索框。随后 Mac 代理用 Claude 原生 Messages API、JSON schema 和人工逐步批准完成“金门大桥”搜索；真机 AX/OCR 独立确认查询和 Golden Gate Bridge 结果可见，未启动导航。Key 没有写入仓库或设备。 |
+| 受监督动作时效 | 人工批准可能超过桥接观察令牌的 10 秒期限；代理现于批准后重新观察，对照前台、屏幕尺寸和 AX（AX 不可用时用 OCR 或截图），再使用新的观察 ID 执行。地图动态位置动画不会误触发 AX 一致性检查。 |
 
-尚未完成每种动作 10 次重复测试、拔线后手机端常驻 Agent、真实模型接入、重启后恢复测试。不能据此宣称 G1 全部通过或已具备无人值守能力。
+尚未完成每种动作 10 次重复测试、拔线后手机端常驻 Agent、重启后恢复测试。Claude 只在 Mac 代理上做过一次受监督搜索，不能据此宣称 G1 全部通过或已具备无人值守能力。
 
 ## 下一步验收
 
 1. 在当前设备上做 10 轮设置/备忘录的安全动作测试，记录耗时、AX 空结果、OCR 与截图失败、SpringBoard 异常；验证锁屏时动作被拒绝。
 2. 将当前 Mac 代理协议迁入 mobile 权限的 `beanbaod`，配 launchd、文字入口、停止按钮和去敏日志；拔掉 Mac 后完成同样任务。
-3. 接入用户提供的多模态 HTTPS 模型。模型建议仍须经过白名单、锁屏、新鲜度、坐标和危险动作策略。备忘录等可能显示凭据，OCR 密钥检查只是保护层，敏感界面应默认不外传。
+3. 将已测试的 Claude 模型适配器迁入手机端 Agent；模型建议仍须经过白名单、锁屏、新鲜度、坐标和危险动作策略。备忘录等可能显示凭据，OCR 密钥检查只是保护层，敏感界面应默认不外传。
 4. 文字入口稳定后再做语音和物理按键唤醒。

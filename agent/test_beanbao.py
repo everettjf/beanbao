@@ -1,7 +1,10 @@
+import io
+import json
 import time
 import unittest
+from unittest.mock import patch
 
-from beanbao import MockModel, Policy, contains_visible_secret, run
+from beanbao import AnthropicModel, MockModel, Policy, contains_visible_secret, run
 
 
 def observation(app="com.apple.springboard"):
@@ -84,6 +87,51 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue(contains_visible_secret({"text": "sk-" + "a" * 32}))
         with self.assertRaisesRegex(ValueError, "疑似密钥"):
             run("打开设置", SecretBridge(), Model())
+
+    def test_supervised_action_uses_fresh_observation_after_approval(self):
+        class SlowBridge:
+            reads = 0
+            acted_with = None
+
+            def observe(self, **_):
+                self.reads += 1
+                return {**observation("com.apple.Maps"), "observation_id": str(self.reads),
+                        "timestamp": time.time() - 20 if self.reads == 1 else time.time(),
+                        "ui": {"search_field": "Search for a place or address"},
+                        "ocr": {"texts": [{"text": "dynamic map label " + str(self.reads)}]},
+                        "screenshot": {"data": "first-frame" if self.reads == 1 else "changed-map-animation"}}
+
+            def act(self, observation_id, _):
+                self.acted_with = observation_id
+
+        class TapThenDone:
+            needs_image = True
+
+            def next_action(self, _task, _observation, history):
+                return {"action": "done"} if history else {"action": "tap", "x": 20, "y": 50}
+
+        bridge = SlowBridge()
+        run("打开地图", bridge, TapThenDone(), allow_ui_actions=True, approve=lambda _: True)
+        self.assertEqual(bridge.acted_with, "2")
+
+
+class AnthropicModelTests(unittest.TestCase):
+    def test_native_messages_payload_and_single_json_action(self):
+        observation_data = {**observation("com.apple.Maps"),
+                            "screenshot": {"data": "ZmFrZQ==", "mimeType": "image/jpeg"}}
+        reply = {"content": [{"type": "text", "text": '{"action":"tap","x":170,"y":535}'}]}
+        with patch("beanbao.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(reply).encode())) as send:
+            action = AnthropicModel("claude-sonnet-5-5", "test-key").next_action(
+                "在地图搜索地点", observation_data, [])
+        self.assertEqual(action, {"action": "tap", "x": 170, "y": 535})
+        request = send.call_args.args[0]
+        self.assertEqual(request.full_url, "https://api.anthropic.com/v1/messages")
+        body = json.loads(request.data)
+        self.assertEqual(body["model"], "claude-sonnet-5-5")
+        self.assertEqual(body["messages"][0]["content"][1]["source"]["data"], "ZmFrZQ==")
+        self.assertEqual(body["output_config"]["format"]["type"], "json_schema")
+        self.assertEqual(body["output_config"]["effort"], "low")
+        self.assertNotIn("temperature", body)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,27 @@ ALLOWED_APPS = {
     "com.apple.Maps": ("地图", "maps"),
 }
 ALLOWED_ACTIONS = {"launch_app", "tap", "swipe", "input_text", "press_key", "done"}
+ACTION_SYSTEM_PROMPT = (
+    "Return only one JSON object: {action: launch_app|tap|swipe|input_text|press_key|done, ...}. "
+    "Never propose installs, shell, files, purchases, messages, deletion, or lock-screen actions. "
+    "If uncertain, return done with summary explaining why."
+)
+CLAUDE_ACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": sorted(ALLOWED_ACTIONS)},
+        "bundle_id": {"type": "string", "description": "Bundle ID for launch_app"},
+        "x": {"type": "number", "description": "Tap x in screen points"},
+        "y": {"type": "number", "description": "Tap y in screen points"},
+        "x1": {"type": "number"}, "y1": {"type": "number"},
+        "x2": {"type": "number"}, "y2": {"type": "number"},
+        "text": {"type": "string", "description": "Text for input_text"},
+        "key": {"type": "string", "enum": ["enter", "delete", "backspace", "space"]},
+        "summary": {"type": "string", "description": "Reason when done"},
+    },
+    "required": ["action"],
+    "additionalProperties": False,
+}
 SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
@@ -144,7 +165,7 @@ class OpenAICompatibleModel:
         if screen.get("data"):
             content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + screen["data"]}})
         body = {"model": self.model, "temperature": 0, "messages": [
-            {"role": "system", "content": "Return only one JSON object: {action: launch_app|tap|swipe|input_text|press_key|done, ...}. Never propose installs, shell, files, purchases, messages, deletion, or lock-screen actions. If uncertain, return done with summary explaining why."},
+            {"role": "system", "content": ACTION_SYSTEM_PROMPT},
             {"role": "user", "content": content},
         ]}
         request = urllib.request.Request(self.url, data=json.dumps(body).encode(), headers={
@@ -160,19 +181,58 @@ class OpenAICompatibleModel:
         return parsed
 
 
+class AnthropicModel:
+    needs_image = True
+
+    def __init__(self, model: str, api_key: str):
+        if not model or not api_key:
+            raise ValueError("Claude model requires a name and API key")
+        self.model = model
+        self.api_key = api_key
+
+    def next_action(self, task: str, observation: dict[str, Any], history: list[dict[str, Any]]) -> dict[str, Any]:
+        screen = observation.get("screenshot") or {}
+        state = {key: value for key, value in observation.items() if key != "screenshot"}
+        prompt = {"task": task, "observation": state, "recent_actions": history[-4:]}
+        content: list[dict[str, Any]] = [{"type": "text", "text": json.dumps(prompt, ensure_ascii=False)}]
+        if screen.get("data"):
+            content.append({"type": "image", "source": {
+                "type": "base64", "media_type": "image/jpeg", "data": screen["data"]}})
+        body = {"model": self.model, "max_tokens": 4096, "system": ACTION_SYSTEM_PROMPT,
+                "output_config": {"effort": "low", "format": {
+                    "type": "json_schema", "schema": CLAUDE_ACTION_SCHEMA}},
+                "messages": [{"role": "user", "content": content}]}
+        request = urllib.request.Request("https://api.anthropic.com/v1/messages",
+                                         data=json.dumps(body).encode(), headers={
+                                             "Authorization": "Bearer " + self.api_key,
+                                             "anthropic-version": "2023-06-01",
+                                             "Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            result = json.load(response)
+        if result.get("stop_reason") in {"max_tokens", "refusal"}:
+            raise ValueError("Claude stopped before returning a valid action")
+        output = "".join(part.get("text", "") for part in result["content"] if part.get("type") == "text")
+        if not output:
+            raise ValueError("Claude returned no action text")
+        parsed = json.loads(output)
+        if not isinstance(parsed, dict):
+            raise ValueError("model returned a non-object")
+        return parsed
+
+
 @dataclass
 class Policy:
     task: str
     allow_ui_actions: bool = False
 
-    def check(self, action: dict[str, Any], observation: dict[str, Any]) -> None:
+    def check(self, action: dict[str, Any], observation: dict[str, Any], *, require_fresh: bool = True) -> None:
         name = action.get("action")
         if name not in ALLOWED_ACTIONS:
             raise ValueError(f"forbidden action: {name}")
         state = observation.get("device_state", {})
         if not state.get("locked_known") or state.get("locked") is not False or not state.get("screen_on_known") or state.get("screen_on") is not True:
             raise ValueError("device is locked, screen off, or lock state unknown")
-        if time.time() - float(observation.get("timestamp", 0)) > 8:
+        if require_fresh and time.time() - float(observation.get("timestamp", 0)) > 8:
             raise ValueError("observation expired")
         if name == "done":
             return
@@ -218,13 +278,26 @@ def run(task: str, bridge: BridgeClient, model: Model, *, allow_ui_actions: bool
         if model.needs_image and contains_visible_secret({"ui": observation.get("ui"), "ocr": observation.get("ocr")}):
             raise ValueError("界面包含疑似密钥，已停止向模型发送内容")
         action = model.next_action(task, observation, history)
-        policy.check(action, observation)
+        policy.check(action, observation, require_fresh=False)
         if action["action"] == "done":
             return str(action.get("summary", "完成"))
         if action["action"] in {"tap", "swipe", "input_text", "press_key"}:
             if approve is None or not approve(action):
                 raise ValueError("UI action was not approved")
-        bridge.act(observation["observation_id"], action)
+        has_ui = observation.get("ui") is not None
+        has_ocr = observation.get("ocr") is not None
+        fresh = bridge.observe(ui=has_ui, ocr=not has_ui and has_ocr, screenshot=not (has_ui or has_ocr) and
+                               bool((observation.get("screenshot") or {}).get("data")))
+        if (fresh.get("frontmost_app", {}).get("bundleId") != observation.get("frontmost_app", {}).get("bundleId") or
+                fresh.get("screen", {}).get("width") != observation.get("screen", {}).get("width") or
+                fresh.get("screen", {}).get("height") != observation.get("screen", {}).get("height") or
+                (has_ui and fresh.get("ui") != observation.get("ui")) or
+                (not has_ui and has_ocr and fresh.get("ocr") != observation.get("ocr")) or
+                (not (has_ui or has_ocr) and
+                 (observation.get("screenshot") or {}).get("data") != (fresh.get("screenshot") or {}).get("data"))):
+            raise ValueError("screen changed while reviewing action")
+        policy.check(action, fresh)
+        bridge.act(fresh["observation_id"], action)
         history.append(action)
     raise TimeoutError("task exceeded 20 actions")
 
@@ -237,15 +310,22 @@ def main() -> int:
     parser.add_argument("--ssh-host", help="paired device address; uses mobile SSH and beanbaoctl")
     parser.add_argument("--ssh-identity", type=Path, help="paired device private key path")
     parser.add_argument("--ssh-port", type=int, default=22)
-    parser.add_argument("--model", choices=("mock", "openai"), default="mock")
+    parser.add_argument("--model", choices=("mock", "openai", "claude"), default="mock")
     parser.add_argument("--allow-ui-actions", action="store_true", help="supervised UI testing only")
     args = parser.parse_args()
     if bool(args.ssh_host) != bool(args.ssh_identity):
         parser.error("--ssh-host and --ssh-identity must be supplied together")
     if not args.ssh_host and not args.token_file:
         parser.error("provide mobile SSH details or --token-file")
-    model: Model = MockModel() if args.model == "mock" else OpenAICompatibleModel(
-        os.environ.get("BEANBAO_BASE_URL", ""), os.environ.get("BEANBAO_MODEL", ""), os.environ.get("BEANBAO_API_KEY", ""))
+    if args.model == "mock":
+        model: Model = MockModel()
+    elif args.model == "claude":
+        model = AnthropicModel(os.environ.get("BEANBAO_CLAUDE_MODEL", "claude-sonnet-5-5"),
+                               os.environ.get("ANTHROPIC_API_KEY", ""))
+    else:
+        model = OpenAICompatibleModel(os.environ.get("BEANBAO_BASE_URL", ""),
+                                      os.environ.get("BEANBAO_MODEL", ""),
+                                      os.environ.get("BEANBAO_API_KEY", ""))
     try:
         def approve(action: dict[str, Any]) -> bool:
             print("待执行：" + json.dumps(action, ensure_ascii=False), file=sys.stderr)
