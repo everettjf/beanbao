@@ -86,7 +86,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.title = @"BeanBao";
     UILabel *heading = [self label:@"手机端文字指令" size:28];
     heading.font = [UIFont boldSystemFontOfSize:28];
-    UILabel *hint = [self label:@"可用：打开设置、备忘录或地图；Claude 模式还可输入“在地图搜索金门大桥”。操作前请解锁手机。" size:15];
+    UILabel *hint = [self label:@"可用：打开设置、备忘录或地图；Claude 模式还可搜索地图、输入“新建备忘录：测试内容”。操作前请解锁手机。" size:15];
     hint.textColor = UIColor.secondaryLabelColor;
     self.taskField = [UITextField new];
     self.taskField.borderStyle = UITextBorderStyleRoundedRect;

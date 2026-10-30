@@ -28,6 +28,21 @@ static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.s
 
 static BBServiceState *BBState;
 
+static BOOL BBIsNoteTask(NSString *task) {
+    return [task hasPrefix:@"新建备忘录："] && task.length >= 10 && task.length <= 166 &&
+        [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location == NSNotFound;
+}
+
+static NSString *BBNormalizeTask(NSString *task) {
+    task = [task stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSCharacterSet *speechPunctuation = [NSCharacterSet characterSetWithCharactersInString:@"。.!！？?，,"];
+    while (![task hasPrefix:@"新建备忘录："] && task.length &&
+           [speechPunctuation characterIsMember:[task characterAtIndex:task.length - 1]])
+        task = [[task substringToIndex:task.length - 1]
+            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    return task;
+}
+
 static NSString *BBAllowedTarget(NSString *task) {
     if ([task isEqualToString:@"打开设置"]) return @"设置";
     if ([task isEqualToString:@"打开备忘录"]) return @"备忘录";
@@ -35,6 +50,7 @@ static NSString *BBAllowedTarget(NSString *task) {
     if ([task hasPrefix:@"在地图搜索"] && task.length > 5 && task.length <= 55 &&
         [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location == NSNotFound)
         return @"地图";
+    if (BBIsNoteTask(task)) return @"备忘录";
     return nil;
 }
 
@@ -76,19 +92,16 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation) {
 static NSDictionary *BBStart(NSDictionary *request) {
     NSString *task = request[@"task"];
     NSString *model = request[@"model"] ?: @"mock";
-    if (![task isKindOfClass:NSString.class] || ![model isKindOfClass:NSString.class] || task.length > 80)
+    if (![task isKindOfClass:NSString.class] || ![model isKindOfClass:NSString.class] || task.length > 220)
         return @{@"ok": @NO, @"error": @"无效的文字任务"};
-    task = [task stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    NSCharacterSet *speechPunctuation = [NSCharacterSet characterSetWithCharactersInString:@"。.!！？?，,"];
-    while (task.length && [speechPunctuation characterIsMember:[task characterAtIndex:task.length - 1]])
-        task = [[task substringToIndex:task.length - 1]
-            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    task = BBNormalizeTask(task);
     NSString *app = BBAllowedTarget(task);
     if (!app || ![@[@"mock", @"claude"] containsObject:model])
-        return @{@"ok": @NO, @"error": @"首版只接受打开设置、备忘录、地图或在地图搜索地点"};
+        return @{@"ok": @NO, @"error": @"首版只接受打开指定 App、地图搜索或新建备忘录"};
     BOOL mapSearch = [task hasPrefix:@"在地图搜索"];
-    if (mapSearch && ![model isEqualToString:@"claude"])
-        return @{@"ok": @NO, @"error": @"地图搜索请使用 Claude 模型"};
+    BOOL noteTask = BBIsNoteTask(task);
+    if ((mapSearch || noteTask) && ![model isEqualToString:@"claude"])
+        return @{@"ok": @NO, @"error": @"多步任务请使用 Claude 模型"};
     @synchronized (BBState) {
         if (BBState.child > 0) return @{@"ok": @NO, @"error": @"已有任务正在执行"};
         int outputPipe[2];
@@ -106,14 +119,14 @@ static NSDictionary *BBStart(NSDictionary *request) {
             posix_spawn_file_actions_destroy(&actions); close(outputPipe[0]); close(outputPipe[1]);
             return @{@"ok": @NO, @"error": @"无法定位任务程序"};
         }
-        const char *argvClaude[] = {executable, "--claude", mapSearch ? "--auto-map" : NULL,
+        const char *argvClaude[] = {executable, "--claude", mapSearch ? "--auto-map" : "--auto-note",
                                     task.UTF8String, NULL};
         const char *argvClaudeOpen[] = {executable, "--claude", task.UTF8String, NULL};
         const char *argvMock[] = {executable, task.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
                                      (char *const *)([model isEqualToString:@"claude"] ?
-                                                     (mapSearch ? argvClaude : argvClaudeOpen) : argvMock), environ);
+                                                     (mapSearch || noteTask ? argvClaude : argvClaudeOpen) : argvMock), environ);
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,
