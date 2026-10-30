@@ -127,7 +127,7 @@ static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, N
         @"text": @{@"type": @"string"}, @"key": @{@"type": @"string"}, @"summary": @{@"type": @"string"}},
         @"required": @[@"action"], @"additionalProperties": @NO};
     NSDictionary *body = @{@"model": BBClaudeModel, @"max_tokens": @4096,
-        @"system": @"Return one JSON action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. For a Maps search, if the requested result is already visible return done. Otherwise open Maps, tap its search field if needed, input the exact requested place only when the field is empty, press enter if needed, then return done after results appear; never start navigation. For a new Note, open Notes, tap the new note button, input the exact requested content, tap Done, then return done only when the new content is visible. Never edit an existing note. Never install, run shell, read files, purchase, send messages, delete, or act on locked screen. If uncertain, return done with a short reason.",
+        @"system": @"Return one JSON action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. For a Maps search, if the requested result is already visible return done. Otherwise open Maps; if an old place card covers search, tap its Close button first. Then tap the search field if needed, input the exact requested place only when the field is empty, press enter if needed, and return done after results appear; never start navigation. For a new Note, open Notes, tap the new note button, input the exact requested content, tap Done, then return done only when the new content is visible. Never edit an existing note. Never install, run shell, read files, purchase, send messages, delete, or act on locked screen. If uncertain, return done with a short reason.",
         @"output_config": @{@"effort": @"low", @"format": @{@"type": @"json_schema", @"schema": schema}},
         @"messages": @[@{@"role": @"user", @"content": content}]};
     NSData *bodyData = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
@@ -230,21 +230,16 @@ static BOOL BBVisibleContains(NSDictionary *observation, NSString *needle) {
 static BOOL BBMapResultVisible(NSDictionary *observation, NSString *query) {
     NSArray *elements = observation[@"ui"][@"elements"];
     if (![elements isKindOfClass:NSArray.class]) return NO;
-    BOOL directions = NO;
-    for (NSDictionary *item in elements) {
-        NSString *label = [item isKindOfClass:NSDictionary.class] ? item[@"text"] : nil;
-        if (![label isKindOfClass:NSString.class]) continue;
-        NSString *lower = label.lowercaseString;
-        if ([lower isEqualToString:@"directions"] || [lower isEqualToString:@"路线"] ||
-            [lower isEqualToString:@"路線"]) directions = YES;
-    }
-    if (directions && BBVisibleContains(observation,
-        [query substringToIndex:MIN((NSUInteger)12, query.length)])) return YES;
-
     // Maps may replace a Chinese search with an English place card. Accept
-    // this known case only when both the map pin and the large place card name
-    // the same result; a loose OCR hit or a search-field value is insufficient.
-    NSString *title = [query isEqualToString:@"金门大桥"] ? @"Golden Gate Bridge" : query;
+    // a result only when both the map pin and the large place card name it;
+    // a search-field value, OCR hit, or stale Directions button is insufficient.
+    NSDictionary<NSString *, NSString *> *knownMapNames = @{
+        @"金门大桥": @"Golden Gate Bridge",
+        @"渔人码头": @"Fisherman's Wharf",
+        @"旧金山市政厅": @"San Francisco City Hall",
+        @"加州科学院": @"California Academy of Sciences",
+    };
+    NSString *title = knownMapNames[query] ?: query;
     if (title.length < 5) return NO;
     BOOL pin = NO, card = NO;
     double screenHeight = [observation[@"screen"][@"height"] doubleValue];
@@ -338,36 +333,40 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
         for (NSDictionary *item in history)
             if (![@"launch_app" isEqualToString:item[@"action"]]) [uiHistory addObject:item[@"action"] ?: @""];
         NSUInteger uiSteps = uiHistory.count;
-        BOOL submitted = (uiSteps == 1 && [uiHistory[0] isEqualToString:@"press_key"]) ||
-                         (uiSteps == 2 && [uiHistory[0] isEqualToString:@"input_text"] &&
-                          [uiHistory[1] isEqualToString:@"press_key"]) ||
-                         (uiSteps == 3 && [uiHistory[0] isEqualToString:@"tap"] &&
-                          [uiHistory[1] isEqualToString:@"input_text"] &&
-                          [uiHistory[2] isEqualToString:@"press_key"]);
         if ([name isEqualToString:@"done"])
             return [foreground isEqualToString:@"com.apple.Maps"] &&
-                (BBMapResultVisible(observation, query) ||
-                 (submitted && BBVisibleContains(observation,
-                    [query substringToIndex:MIN((NSUInteger)12, query.length)])));
+                BBMapResultVisible(observation, query);
         if ([name isEqualToString:@"launch_app"])
             return history.count == 0 && [action[@"bundle_id"] isEqualToString:@"com.apple.Maps"];
         if (!allowUI || ![foreground isEqualToString:@"com.apple.Maps"]) return NO;
-        if ([name isEqualToString:@"tap"] && uiSteps == 0) {
+        if ([name isEqualToString:@"tap"] &&
+            (uiSteps == 0 || (uiSteps == 1 && [uiHistory[0] isEqualToString:@"tap"]))) {
             id x = action[@"x"], y = action[@"y"];
-            return [x isKindOfClass:NSNumber.class] && [y isKindOfClass:NSNumber.class] &&
-                isfinite([x doubleValue]) && isfinite([y doubleValue]) &&
+            if (![x isKindOfClass:NSNumber.class] || ![y isKindOfClass:NSNumber.class] ||
+                !isfinite([x doubleValue]) || !isfinite([y doubleValue])) return NO;
+            BOOL search = BBElementContainsPoint(observation, [x doubleValue], [y doubleValue],
+                                                 @[@"搜索", @"search"], NO);
+            if (search) return YES;
+            double height = [observation[@"screen"][@"height"] doubleValue];
+            return uiSteps == 0 && [y doubleValue] > height * 0.4 &&
+                [y doubleValue] < height * 0.8 &&
                 BBElementContainsPoint(observation, [x doubleValue], [y doubleValue],
-                                       @[@"搜索", @"search"], NO);
+                                       @[@"close", @"关闭"], NO);
         }
         if ([name isEqualToString:@"input_text"] && BBMapSearchInputReady(observation) &&
             !BBVisibleContains(observation, query) &&
-            (uiSteps == 0 || (uiSteps == 1 && [uiHistory[0] isEqualToString:@"tap"])))
+            (uiSteps == 0 || (uiSteps == 1 && [uiHistory[0] isEqualToString:@"tap"]) ||
+             (uiSteps == 2 && [uiHistory[0] isEqualToString:@"tap"] &&
+              [uiHistory[1] isEqualToString:@"tap"])))
             return [action[@"text"] isKindOfClass:NSString.class] && [action[@"text"] isEqualToString:query];
         if ([name isEqualToString:@"press_key"] &&
             ((uiSteps == 0 && BBMapSearchInputReady(observation)) ||
              (uiSteps == 1 && [uiHistory[0] isEqualToString:@"input_text"]) ||
              (uiSteps == 2 && [uiHistory[0] isEqualToString:@"tap"] &&
-              [uiHistory[1] isEqualToString:@"input_text"])))
+              [uiHistory[1] isEqualToString:@"input_text"]) ||
+             (uiSteps == 3 && [uiHistory[0] isEqualToString:@"tap"] &&
+              [uiHistory[1] isEqualToString:@"tap"] &&
+              [uiHistory[2] isEqualToString:@"input_text"])))
             return [action[@"key"] isKindOfClass:NSString.class] && [action[@"key"] isEqualToString:@"enter"] &&
                 BBVisibleContains(observation, [query substringToIndex:MIN((NSUInteger)12, query.length)]);
         return NO;
@@ -444,6 +443,35 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         }
         NSDictionary *action = claude ? BBClaudeAction(task, observation, history, key) : BBMockAction(task, observation, history.count);
         if (action[@"error"]) { fprintf(stderr, "模型请求或输出失败：%s\n", [action[@"error"] UTF8String]); return 1; }
+        // Maps may finish expanding its search card after the model has seen
+        // it. Re-observe briefly before rejecting the exact requested input.
+        if (autoMap && [action[@"action"] isEqualToString:@"input_text"] &&
+            [action[@"text"] isEqualToString:BBMapQuery(task)] &&
+            !BBValidAction(action, observation, task, history, allowUI, autoMap, autoNote)) {
+            for (NSUInteger retry = 0; retry < 5; retry++) {
+                usleep(350000);
+                NSDictionary *settled = BBBridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+                if (![settled[@"ok"] boolValue] || BBHasSecret(settled[@"ui"]) ||
+                    BBHasSecret(settled[@"ocr"])) break;
+                if (BBValidAction(action, settled, task, history, allowUI, autoMap, autoNote)) {
+                    observation = settled;
+                    break;
+                }
+            }
+        }
+        if (autoMap && [action[@"action"] isEqualToString:@"done"] &&
+            !BBValidAction(action, observation, task, history, allowUI, autoMap, autoNote)) {
+            for (NSUInteger retry = 0; retry < 8; retry++) {
+                usleep(500000);
+                NSDictionary *settled = BBBridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+                if (![settled[@"ok"] boolValue] || BBHasSecret(settled[@"ui"]) ||
+                    BBHasSecret(settled[@"ocr"])) break;
+                if (BBValidAction(action, settled, task, history, allowUI, autoMap, autoNote)) {
+                    observation = settled;
+                    break;
+                }
+            }
+        }
         if (!BBValidAction(action, observation, task, history, allowUI, autoMap, autoNote)) {
             NSString *kind = action[@"action"];
             fprintf(stderr, "模型动作被策略拒绝：步骤 %d，类型 %s\n", step + 1,

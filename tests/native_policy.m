@@ -34,6 +34,7 @@ int main(void) {
         NSDictionary *map = Observation(@"com.apple.Maps", NO, mapUI, @{@"text": @"金门大桥"});
         NSString *mapTask = @"在地图搜索金门大桥";
         NSDictionary *tapSearch = @{@"action": @"tap", @"x": @100, @"y": @220};
+        NSDictionary *closeOldCard = @{@"action": @"tap", @"x": @370, @"y": @530};
         NSDictionary *tapOther = @{@"action": @"tap", @"x": @350, @"y": @500};
         NSDictionary *inputPlace = @{@"action": @"input_text", @"text": @"金门大桥"};
         NSDictionary *enter = @{@"action": @"press_key", @"key": @"enter"};
@@ -46,6 +47,11 @@ int main(void) {
               @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}}]};
         NSDictionary *focusedMap = Observation(@"com.apple.Maps", NO, focusedUI, @{});
         NSDictionary *searchedMap = Observation(@"com.apple.Maps", NO, focusedUI, @{@"text": @"金门大桥"});
+        NSDictionary *oldCard = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[@{@"text": @"Close", @"visible_rect":
+                @{@"x": @350, @"y": @513, @"width": @42, @"height": @42}},
+                @{@"text": @"Fisherman's Wharf", @"visible_rect":
+                @{@"x": @119, @"y": @531, @"width": @174, @"height": @23}}]}, @{});
         NSDictionary *resultsUI = @{@"elements": @[
             @{@"text": @"Search field"}, @{@"text": @"金门大桥, Search Nearby"},
             @{@"text": @"Directions"}]};
@@ -56,24 +62,63 @@ int main(void) {
             @{@"text": @"Golden Gate Bridge, Landmark", @"visible_rect":
               @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}}]};
         NSDictionary *placeCard = Observation(@"com.apple.Maps", NO, placeCardUI, @{});
+        NSDictionary *fishermanCard = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[
+                @{@"text": @"Fisherman's Wharf", @"visible_rect":
+                  @{@"x": @155, @"y": @298, @"width": @30, @"height": @30}},
+                @{@"text": @"Fisherman's Wharf, Attraction", @"visible_rect":
+                  @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}}]}, @{});
+        NSDictionary *staleCard = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[
+                @{@"text": @"CA-1 S", @"visible_rect":
+                  @{@"x": @223, @"y": @286, @"width": @30, @"height": @30}},
+                @{@"text": @"CA-1 S", @"visible_rect":
+                  @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}},
+                @{@"text": @"Directions"}, @{@"text": @"Searching…"}]},
+            @{@"text": @"加州科学院"});
         NSArray *mapDirectOne = @[inputPlace], *mapDirectTwo = @[inputPlace, enter];
+        NSArray *mapAfterClose = @[closeOldCard], *mapAfterTwoTaps = @[closeOldCard, tapSearch];
+        NSArray *mapAfterTwoTapsInput = @[closeOldCard, tapSearch, inputPlace];
+        NSArray *mapAfterTwoTapsSubmit = @[closeOldCard, tapSearch, inputPlace, enter];
         if (!Check(BBValidAction(tapSearch, map, mapTask, @[], YES, YES, NO), "map search tap allowed") ||
+            !Check(BBValidAction(closeOldCard, oldCard, mapTask, @[], YES, YES, NO),
+                   "old map card close allowed") ||
+            !Check(!BBValidAction(@{@"action": @"tap", @"x": @370, @"y": @80},
+                                  Observation(@"com.apple.Maps", NO,
+                                    @{@"elements": @[@{@"text": @"Close", @"visible_rect":
+                                      @{@"x": @350, @"y": @64, @"width": @42, @"height": @42}}]}, @{}),
+                                  mapTask, @[], YES, YES, NO), "top close blocked") ||
+            !Check(BBValidAction(tapSearch, map, mapTask, mapAfterClose, YES, YES, NO),
+                   "search tap after old card close allowed") ||
+            !Check(BBValidAction(inputPlace, focusedMap, mapTask, mapAfterTwoTaps, YES, YES, NO),
+                   "map query after card close and search tap allowed") ||
+            !Check(BBValidAction(enter, searchedMap, mapTask, mapAfterTwoTapsInput, YES, YES, NO),
+                   "map submit after card close allowed") ||
+            !Check(BBValidAction(@{@"action": @"done"}, placeCard, mapTask,
+                                 mapAfterTwoTapsSubmit, YES, YES, NO),
+                   "map completion after card close allowed") ||
             !Check(!BBValidAction(tapOther, map, mapTask, @[], YES, YES, NO), "unrelated map tap blocked") ||
             !Check(!BBValidAction(inputPlace, map, mapTask, @[], YES, YES, NO), "map input before focus blocked") ||
             !Check(BBValidAction(inputPlace, focusedMap, mapTask, @[], YES, YES, NO),
                    "map input with focused search allowed") ||
             !Check(BBValidAction(enter, searchedMap, mapTask, mapDirectOne, YES, YES, NO),
                    "map submit after focused input allowed") ||
-            !Check(BBValidAction(@{@"action": @"done"}, searchedMap, mapTask, mapDirectTwo, YES, YES, NO),
-                   "focused map completion allowed") ||
+            !Check(!BBValidAction(@{@"action": @"done"}, searchedMap, mapTask, mapDirectTwo, YES, YES, NO),
+                   "search field alone cannot complete map task") ||
             !Check(!BBValidAction(inputPlace, searchedMap, mapTask, @[], YES, YES, NO),
                    "duplicate map query blocked") ||
             !Check(BBValidAction(enter, searchedMap, mapTask, @[], YES, YES, NO),
                    "existing map query can be submitted") ||
-            !Check(BBValidAction(@{@"action": @"done"}, resultsMap, mapTask, @[], YES, YES, NO),
-                   "already visible map result accepted") ||
+            !Check(!BBValidAction(@{@"action": @"done"}, resultsMap, mapTask, @[], YES, YES, NO),
+                   "search suggestion and directions cannot complete map task") ||
             !Check(BBValidAction(@{@"action": @"done"}, placeCard, mapTask, @[], YES, YES, NO),
                    "localized place card accepted") ||
+            !Check(BBValidAction(@{@"action": @"done"}, fishermanCard,
+                                 @"在地图搜索渔人码头", @[], YES, YES, NO),
+                   "known English place card accepted") ||
+            !Check(!BBValidAction(@{@"action": @"done"}, staleCard,
+                                  @"在地图搜索加州科学院", @[inputPlace, enter], YES, YES, NO),
+                   "stale card with searching text rejected") ||
             !Check(!BBValidAction(@{@"action": @"done"}, placeCard,
                                   @"在地图搜索其它地点", @[], YES, YES, NO),
                    "different place card rejected") ||
@@ -84,8 +129,8 @@ int main(void) {
             !Check(!BBValidAction(enter, Observation(@"com.apple.Maps", NO, focusedUI, @{}),
                                   mapTask, mapTwo, YES, YES, NO), "submit without visible query blocked") ||
             !Check(!BBValidAction(tapOther, searchedMap, mapTask, mapThree, YES, YES, NO), "navigation tap blocked") ||
-            !Check(BBValidAction(@{@"action": @"done"}, searchedMap, mapTask, mapThree, YES, YES, NO),
-                   "map completion after submit allowed") ||
+            !Check(BBValidAction(@{@"action": @"done"}, placeCard, mapTask, mapThree, YES, YES, NO),
+                   "verified map card after submit allowed") ||
             !Check(!BBValidAction(@{@"action": @"done"},
                                   Observation(@"com.apple.Maps", NO, focusedUI, @{}),
                                   mapTask, mapThree, YES, YES, NO),
