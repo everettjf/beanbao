@@ -8,7 +8,8 @@
 
 static const char *BBSocket = "/var/mobile/Library/Caches/BeanBao/bridge.sock";
 static const char *BBToken = "/var/mobile/Library/Caches/BeanBao/bridge.token";
-static const char *BBClaudeKey = "/var/mobile/Library/Caches/BeanBao/claude.key";
+static const char *BBClaudeKey = "/var/mobile/Library/Application Support/BeanBao/claude.key";
+static const char *BBLegacyClaudeKey = "/var/mobile/Library/Caches/BeanBao/claude.key";
 static NSString *const BBClaudeModel = @"claude-sonnet-5-5";
 extern int BBServe(void);
 
@@ -269,7 +270,7 @@ static BOOL BBApprove(NSDictionary *action) {
 }
 
 static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap) {
-    NSString *key = claude ? BBReadSecret(BBClaudeKey, 0) : nil;
+    NSString *key = claude ? (BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0)) : nil;
     if (claude && (![key hasPrefix:@"sk-ant-"] || key.length < 24)) { fprintf(stderr, "Claude Key 未配置或权限不安全\n"); return 1; }
     NSMutableArray *history = [NSMutableArray array];
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:300];

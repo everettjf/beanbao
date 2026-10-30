@@ -10,7 +10,7 @@
 - `beanbaoctl` 是手机端受限客户端；Mac 上的 `agent/beanbao.py` 通过已认证的 mobile SSH 调用它。模拟模型只处理“打开设置/备忘录/地图”；现已接入 Claude 原生 Messages API，并用 Sonnet 5.5 做真机受监督测试。Claude 输出使用 JSON schema 约束，动作仍经过本地策略检查和逐步批准。发送模型前会检查 AX/OCR 中可见的常见密钥形态并停止该步。
 - `dev.beanbao.agent` **0.2.0** 已安装。手机端原生 `beanbaod` 包含模拟模型和 Claude Sonnet 5.5 适配器；launchd 以 mobile 身份守护 `--serve`，本地 0600 Unix socket 只接受 mobile UID。服务仅接收三条精确的“打开设置/备忘录/地图”任务，提供状态与停止；每项任务由独立子进程运行。模型 Key 以 mobile 所有、权限 600 的单独文件保存在设备上，不进入 deb 或仓库。RootHide SSH shell 中该文件位于 `/rootfs/private/var/mobile/Library/Caches/BeanBao/claude.key`，Agent 进程内使用 `/var/mobile/Library/Caches/BeanBao/claude.key`。
 - `dev.beanbao.app` **0.2.0** 已安装。UIKit 界面含文字输入、模型选择、开始/停止和任务状态；AX 已确认界面元素与服务状态可见。语音输入按钮已编译安装，优先使用本机中文识别，设备不支持时由 Apple Speech 在线识别；首次授权和实际转写尚待解锁后验收。界面点击“开始/停止”的端到端验收同样待解锁。
-- 仓库另已构建 **Bridge 0.2.0 / Agent 0.3.0 / App 0.3.0 候选包**，尚未装机。Bridge 增加默认关闭的音量下键三连按唤醒；App 增加开关与清空输入；Agent 增加受限的“在地图搜索地点”多步任务，仅允许搜索框、原样地点输入与提交搜索。按键钩子参考开源 [RemoteCompanion 的 `SBVolumeHardwareButtonActions` 实现](https://github.com/saihgupr/RemoteCompanion/blob/0e75074/Tweak/Tweak.x)，但该设备上的方法存在性、实际按键事件和地图搜索流程尚未验证。普通音量操作仍调用原系统实现；候选包不能视为 G2/G4 通过。
+- 仓库另已构建 **Bridge 0.2.0 / Agent 0.3.0 / App 0.3.0 候选包**，尚未装机。Bridge 增加默认关闭的音量下键三连按唤醒；App 增加开关、清空输入和本机更新 Claude Key 的界面，新 Key 存在不会被系统当缓存清理的 `Library/Application Support/BeanBao` 中，Agent 对现有缓存目录 Key 保持兼容。Agent 增加受限的“在地图搜索地点”多步任务，仅允许搜索框、原样地点输入与提交搜索。语音识别常见的句末标点会在任务白名单校验前去掉。按键钩子参考开源 [RemoteCompanion 的 `SBVolumeHardwareButtonActions` 实现](https://github.com/saihgupr/RemoteCompanion/blob/0e75074/Tweak/Tweak.x)，但该设备上的方法存在性、实际按键事件和地图搜索流程尚未验证。普通音量操作仍调用原系统实现；候选包不能视为 G2/G4 通过。
 - 为配置 root 公钥认证，另安装 `dev.beanbao.device-key` **0.1.1**。它只将 copyapp 已有的专用公钥加入 `/var/root/.ssh/authorized_keys`；私钥留在 Mac。清除此包时只移除这条公钥。BeanBao 运行时协议没有 root、安装器或 shell 能力。
 
 ## 可复现命令
@@ -53,7 +53,7 @@ Mac 端 Claude 命令需要从安全的本地环境提供 `ANTHROPIC_API_KEY`，
 | launchd 与任务服务 | `launchctl print user/501/dev.beanbao.agent` 显示 mobile 进程运行；`beanbaoagentctl` 可查询、提交和停止任务。模拟模型完成“打开设置”，Claude 完成“打开地图”。服务拒绝“删除备忘录”；30 个禁止任务提交全部由服务策略拒绝，未启动任务。实际运行中的任务被停止后状态变为 `stopped`。 |
 | 手机界面 | `uicache` 注册 `dev.beanbao.app`，启动后 AX 看见文字框、模型选择、开始/停止和“已完成”状态。SpringBoard 重载后设备自动锁屏，尚未进行界面按钮点击和语音授权实测。 |
 | 锁屏拒绝 | SpringBoard 重载后设备处于锁屏；服务接受“打开设置”并交给子进程后，桥接拒绝动作，服务状态变为 `error`，前台保持 SpringBoard。 |
-| 当前连接 | 约 14:28 后 USB/隧道曾中断并重新分配地址。CoreDevice 后续仍可见设备，但新隧道拒绝 SSH，进程列表只见 SpringBoard 与 Relaxin，未见 sshd/jailbreakd/hookd。需要重新确认 Relaxin 已启用，恢复 SSH 后才能安装上述候选包并继续真机验收。 |
+| 当前连接 | 约 14:28 后 USB/隧道曾中断并重新分配地址。CoreDevice 后续仍可见设备，但新隧道拒绝 SSH，进程列表只见 SpringBoard 与 Relaxin，未见 sshd/jailbreakd/hookd。Device Hub 明确提示这台 iOS 26.0.1 设备不能使用其要求 iOS 27 的屏幕共享；远程启动 Relaxin App 未恢复越狱进程。需在手机上重新启用 Relaxin，恢复 SSH 后才能安装上述候选包并继续真机验收。 |
 
 尚未完成点击、滑动、输入等每种动作的 10 次重复测试、拔线后的完整任务、重启和重新启用 Relaxin 后的恢复测试。文字界面与语音尚未在解锁状态完成点击验收；实体按键唤醒尚未实现。Claude 在手机服务中完成过一次打开地图，不能据此宣称 G1–G4 全部通过。
 

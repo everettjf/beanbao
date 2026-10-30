@@ -7,6 +7,36 @@
 #import "AgentClient.h"
 
 static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.enabled";
+static const char *BBKeyFile = "/var/mobile/Library/Application Support/BeanBao/claude.key";
+
+static BOOL BBSaveClaudeKey(NSString *key) {
+    if (![key hasPrefix:@"sk-ant-"] || key.length < 24 || key.length > 4000 ||
+        [key rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location != NSNotFound) return NO;
+    NSString *directory = @"/var/mobile/Library/Application Support/BeanBao";
+    if (![[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES
+                                                   attributes:@{NSFilePosixPermissions: @0700} error:nil]) return NO;
+    struct stat directoryInfo = {0};
+    if (lstat(directory.fileSystemRepresentation, &directoryInfo) || !S_ISDIR(directoryInfo.st_mode) ||
+        directoryInfo.st_uid != getuid() || chmod(directory.fileSystemRepresentation, 0700)) return NO;
+    NSData *bytes = [key dataUsingEncoding:NSUTF8StringEncoding];
+    if (!bytes || bytes.length > 4096) return NO;
+    NSString *temporary = [NSString stringWithFormat:@"%s.tmp.%@", BBKeyFile, NSUUID.UUID.UUIDString];
+    int fd = open(temporary.fileSystemRepresentation, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    if (fd < 0) return NO;
+    const uint8_t *cursor = bytes.bytes;
+    NSUInteger remaining = bytes.length;
+    while (remaining) {
+        ssize_t written = write(fd, cursor, remaining);
+        if (written <= 0) { close(fd); unlink(temporary.fileSystemRepresentation); return NO; }
+        cursor += written; remaining -= (NSUInteger)written;
+    }
+    BOOL saved = !fchmod(fd, 0600) && !fsync(fd);
+    close(fd);
+    if (!saved || rename(temporary.fileSystemRepresentation, BBKeyFile)) {
+        unlink(temporary.fileSystemRepresentation); return NO;
+    }
+    return YES;
+}
 
 @interface BBRootViewController : UIViewController <UITextFieldDelegate>
 @property(nonatomic, strong) UITextField *taskField;
@@ -68,6 +98,7 @@ static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.ena
     self.clearButton = [self button:@"清空输入" color:UIColor.systemGrayColor action:@selector(clearTapped)];
     self.modelControl = [[UISegmentedControl alloc] initWithItems:@[@"模拟模型", @"Claude"]];
     self.modelControl.selectedSegmentIndex = 0;
+    UIButton *keyButton = [self button:@"配置 Claude Key" color:UIColor.systemIndigoColor action:@selector(configureKeyTapped)];
     self.voiceButton = [self button:@"🎙️ 语音输入" color:UIColor.systemTealColor action:@selector(voiceTapped)];
     UILabel *hotkeyHint = [self label:@"三连按音量下键打开 BeanBao（音量仍照常变化）" size:14];
     hotkeyHint.textColor = UIColor.secondaryLabelColor;
@@ -93,7 +124,7 @@ static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.ena
     self.detailLabel = [self label:@"" size:15];
     self.detailLabel.textColor = UIColor.secondaryLabelColor;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
-        heading, hint, self.taskField, self.clearButton, self.voiceButton, self.modelControl, self.startButton,
+        heading, hint, self.taskField, self.clearButton, self.voiceButton, self.modelControl, keyButton, self.startButton,
         self.stopButton, hotkeyRow, self.stateLabel, self.detailLabel]];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 16;
@@ -107,6 +138,7 @@ static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.ena
         [self.taskField.heightAnchor constraintEqualToConstant:48],
         [self.clearButton.heightAnchor constraintEqualToConstant:42],
         [self.voiceButton.heightAnchor constraintEqualToConstant:48],
+        [keyButton.heightAnchor constraintEqualToConstant:42],
         [self.startButton.heightAnchor constraintEqualToConstant:48],
         [self.stopButton.heightAnchor constraintEqualToConstant:48],
     ]];
@@ -171,6 +203,26 @@ static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.ena
 - (void)stopTapped { [self request:@{@"op": @"stop"}]; }
 
 - (void)clearTapped { self.taskField.text = @""; [self.taskField resignFirstResponder]; }
+
+- (void)configureKeyTapped {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"配置 Claude Key"
+        message:@"Key 保存在本机，调用 Claude 时用于请求 Anthropic。请勿把 Key 写进任务文字。" preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder = @"sk-ant-…";
+        field.secureTextEntry = YES;
+        field.autocorrectionType = UITextAutocorrectionTypeNo;
+        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        NSString *key = [alert.textFields.firstObject.text
+            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        weakSelf.detailLabel.text = BBSaveClaudeKey(key) ? @"Claude Key 已保存在本机" : @"Key 格式或保存失败";
+        alert.textFields.firstObject.text = @"";
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
 
 - (void)hotkeyChanged {
     int fd = open(BBHotkeyFile, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);

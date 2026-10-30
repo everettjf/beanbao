@@ -79,6 +79,10 @@ static NSDictionary *BBStart(NSDictionary *request) {
     if (![task isKindOfClass:NSString.class] || ![model isKindOfClass:NSString.class] || task.length > 80)
         return @{@"ok": @NO, @"error": @"无效的文字任务"};
     task = [task stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSCharacterSet *speechPunctuation = [NSCharacterSet characterSetWithCharactersInString:@"。.!！？?，,"];
+    while (task.length && [speechPunctuation characterIsMember:[task characterAtIndex:task.length - 1]])
+        task = [[task substringToIndex:task.length - 1]
+            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     NSString *app = BBAllowedTarget(task);
     if (!app || ![@[@"mock", @"claude"] containsObject:model])
         return @{@"ok": @NO, @"error": @"首版只接受打开设置、备忘录、地图或在地图搜索地点"};
