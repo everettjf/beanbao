@@ -1,6 +1,6 @@
 # BeanBao：Relaxin / iOS 26 真机落地方案
 
-更新：2026-10-30。本方案以当前通过 USB 连接的 iPhone 为首发目标。最小 bridge 0.1.6 已安装、注入并完成首轮真机烟测；逐项证据与未完成关卡见 [build-and-test.md](build-and-test.md)。
+更新：2026-10-30。本方案以当前通过 USB 连接的 iPhone 为首发目标。最小 bridge 0.1.6 与原生 Agent 0.1.0 已安装；逐项证据与未完成关卡见 [build-and-test.md](build-and-test.md)。
 
 ## 1. 当前已确认的设备事实
 
@@ -58,7 +58,7 @@
 ## 4. 端侧系统设计
 
 - **Bridge（上游 ios-mcp 深改）**：注入 SpringBoard，负责观察与低级输入。它不接收自然语言、不持有模型 Key、不决定是否点击。
-- **beanbaod**：以 mobile 权限运行的本地进程；读取任务、调模型、解析严格动作 JSON、执行前校验、执行后观察、超时/取消/审计。由 Relaxin 的 launchd 环境管理，实际 service 布局在真机上验证。不要靠 SpringBoard 反复拉起。
+- **beanbaod**：目前已实现按需启动的 mobile 权限原生 CLI，能调用模拟模型或 Claude，并校验单步动作。下一阶段接入 launchd、任务队列、取消和审计；实际 service 布局在真机上验证。不要靠 SpringBoard 反复拉起。
 - **BeanBao App**：最初只做文字入口、当前任务状态和停止按钮；语音通过 Apple Speech 或单独 ASR 接入，在设备与中文语言组合上验证离线能力后决定。按键唤醒和悬浮窗最后做，避免抢先引入 iOS 26 私有 API 风险。
 - **模型适配器**：接口输入为任务、当前 App、精简 UI 树/OCR，必要时加一张截图；输出只能是单个受限动作。先支持一种 OpenAI 兼容的多模态服务。AutoGLM-Phone 是第一候选，UI-TARS 作为离线对照；官方 [AutoGLM iOS 配置](https://github.com/zai-org/Open-AutoGLM/blob/main/docs/ios_setup/ios_setup.md)基于 Mac + WebDriverAgent，其执行代码不能直接放上手机，需做自己的动作适配。
 
@@ -69,15 +69,15 @@
 | 关卡 | 交付物 | 通过条件 |
 | --- | --- | --- |
 | G0 环境核查，已完成 | 专用公钥认证、roothide 专用 Theos、arm64e 包构建与安装。官方[RootHide 开发文档](https://github.com/roothide/Developer)要求 roothide scheme。 | 本机已验证 dpkg 安装、SpringBoard 注入和 SSH 连接。 |
-| G1 最小 Bridge，首轮烟测已通过 | 从复制源码排除安装链及其他非必需能力；只绑定本地；设备上已安装可卸载的 0.1.6 包。 | 包内容无 AppSync、appinst、roothelper、ldid、Paddle/ONNX；AX、截图、Vision OCR、点击、输入、启动均有真机成功记录。仍需各项 10 次重复和异常记录。 |
-| G2 Agent 闭环，Mac 代理已通过一次 Claude 测试 | Mac 已用同一动作协议完成文字启动与备忘录多步任务；地图文字启动和 Claude Sonnet 5.5 受监督地点搜索也已真机通过。下一步将 beanbaod 放到手机。 | 拔掉 Mac 后，设置/备忘录固定任务各跑 10 次，完整任务成功率 ≥80%；地图搜索需重复验收。 |
+| G1 最小 Bridge，观察稳定性首轮通过 | 从复制源码排除安装链及其他非必需能力；只绑定本地；设备上已安装可卸载的 0.1.6 包。 | 包内容无 AppSync、appinst、roothelper、ldid、Paddle/ONNX；AX、截图、Vision OCR、点击、输入、启动均有真机成功记录。设置/备忘录/地图共 30 次启动和完整观察零失败；仍需各动作重复和锁屏/异常记录。 |
+| G2 Agent 闭环，手机端 CLI 已通过基础测试 | Mac 已完成文字启动、备忘录多步任务及 Claude 受监督地图搜索。手机端原生 Agent 已用模拟模型完成设置/地图启动，并直接调用 Claude 完成打开地图。下一步接 launchd 与手机文字入口。 | 拔掉 Mac 后，设置/备忘录固定任务各跑 10 次，完整任务成功率 ≥80%；地图搜索需重复验收。 |
 | G3 入口与稳定，约 4–7 天 | BeanBao App 文字入口、状态/停止、去敏日志、重启恢复。 | 30 个禁止操作用例 0 次被执行；连续 1 小时无失控循环；重启、重新启用 Relaxin 后可恢复。 |
 | G4 语音和快捷唤醒，另估 | 本地语音可用则接 Speech；否则用户选 ASR 服务。再评估按键 Tweak。 | 无电脑完成“唤醒/输入→执行→确认结果”；权限拒绝时文字入口仍可用。 |
 
-G1 的首轮功能烟测已经通过，稳定性数据还不足。若后续截图、AX 或 HID 连续不稳定，先修 bridge 或缩小支持范围，不把模型误点当成模型问题。端侧文字 MVP 的工期须由重复测试结果校准；语音/按键另计。
+G1 的首轮功能和观察稳定性测试已经通过，动作稳定性数据仍不足。若后续截图、AX 或 HID 连续不稳定，先修 bridge 或缩小支持范围，不把模型误点当成模型问题。端侧文字 MVP 的工期须由重复测试结果校准；语音/按键另计。
 
 ## 6. 模型要求与当前缺口
 
-Claude Sonnet 5.5 已通过 Mac 代理的真实地图截图与受监督地点搜索测试；BeanBao 的 Anthropic 适配器使用原生 Messages API、图片输入和 JSON schema。G2 仍需把适配器迁入手机端并重复验收。其他候选只需支持**图片 + 文字输入、返回文本**的 HTTPS 模型端点；若选择 AutoGLM，需按其动作语法编写解析器。Key 不写进仓库或日志，正式版本须在设备本地安全配置。已有的截图授权不代表所有画面适合外传；遇疑似凭据时暂停外部模型请求。
+Claude Sonnet 5.5 已通过 Mac 代理的真实地图截图与受监督地点搜索测试；手机端原生适配器也已直接调用成功一次。两端均使用原生 Messages API、图片输入和 JSON schema。G2 仍需手机端多步任务重复验收。其他候选只需支持**图片 + 文字输入、返回文本**的 HTTPS 模型端点；若选择 AutoGLM，需按其动作语法编写解析器。Key 不写进仓库或日志，当前在设备本地以 mobile 所有、600 权限的单独文件配置；正式版应提供安全配置界面。已有的截图授权不代表所有画面适合外传；遇疑似凭据时暂停外部模型请求。
 
-当前环境工作已完成：专用 SSH 公钥、roothide 专用 Theos、最小包构建/审计/安装和首轮真机烟测。下一工程任务是重复稳定性验收与手机端常驻 Agent/文字入口；语音和按键唤醒放在其后。
+当前环境工作已完成：专用 SSH 公钥、roothide 专用 Theos、最小包构建/审计/安装、30 次观察稳定性测试和手机端原生 CLI/Claude 基础测试。下一工程任务是动作重复验收与手机端常驻 Agent/文字入口；语音和按键唤醒放在其后。
