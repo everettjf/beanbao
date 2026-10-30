@@ -7,6 +7,10 @@
 #import <unistd.h>
 #import "AgentClient.h"
 
+@interface BBLocalDictation : NSObject
++ (void)transcribeFile:(NSString *)path completion:(void (^)(NSString *text, NSString *error))completion;
+@end
+
 static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.enabled";
 static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotkey.voice";
 static const char *BBKeyFile = "/var/mobile/Library/Application Support/BeanBao/claude.key";
@@ -59,6 +63,8 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 @property(nonatomic, strong) SFSpeechAudioBufferRecognitionRequest *speechRequest;
 @property(nonatomic, strong) SFSpeechRecognitionTask *speechTask;
 @property(nonatomic, strong) AVAudioEngine *audioEngine;
+@property(nonatomic, strong) AVAudioRecorder *localRecorder;
+@property(nonatomic, strong) NSURL *localRecordingURL;
 @end
 
 @implementation BBRootViewController
@@ -189,6 +195,11 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self.timer invalidate];
+    if (self.localRecorder) {
+        [self.localRecorder stop];
+        [[NSFileManager defaultManager] removeItemAtURL:self.localRecordingURL error:nil];
+        self.localRecorder = nil;
+    }
     [self stopRecording];
 }
 
@@ -295,6 +306,10 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 
 - (void)startRecording {
     if (self.recording) return;
+    if (@available(iOS 26.0, *)) {
+        [self startLocalRecording];
+        return;
+    }
     [self.speechTask cancel];
     self.speechTask = nil;
     self.speechGeneration++;
@@ -342,13 +357,73 @@ static BOOL BBSaveClaudeKey(NSString *key) {
                 [strongSelf stopRecording];
                 strongSelf.speechTask = nil;
                 if (failure && !result.bestTranscription.formattedString.length)
-                    strongSelf.feedbackLabel.text = @"语音识别未完成，请改用文字输入";
+                    strongSelf.feedbackLabel.text = [NSString stringWithFormat:
+                        @"语音识别未完成（%@:%ld），请改用文字输入",
+                        failure.domain ?: @"unknown", (long)failure.code];
             }
         });
     }];
 }
 
+- (void)startLocalRecording {
+    self.speechGeneration++;
+    NSError *error = nil;
+    AVAudioSession *session = [AVAudioSession sharedInstance];
+    [session setCategory:AVAudioSessionCategoryRecord mode:AVAudioSessionModeDefault options:0 error:&error];
+    if (!error) [session setActive:YES error:&error];
+    if (error) { self.feedbackLabel.text = @"无法启动麦克风"; return; }
+    self.localRecordingURL = [NSURL fileURLWithPath:
+        [NSTemporaryDirectory() stringByAppendingPathComponent:
+            [NSString stringWithFormat:@"beanbao-voice-%@.caf", NSUUID.UUID.UUIDString]]];
+    NSDictionary *settings = @{AVFormatIDKey: @(kAudioFormatLinearPCM),
+        AVSampleRateKey: @16000, AVNumberOfChannelsKey: @1,
+        AVLinearPCMBitDepthKey: @16, AVLinearPCMIsFloatKey: @NO};
+    self.localRecorder = [[AVAudioRecorder alloc] initWithURL:self.localRecordingURL
+                                                      settings:settings error:&error];
+    if (error || ![self.localRecorder record]) {
+        self.localRecorder = nil;
+        [[NSFileManager defaultManager] removeItemAtURL:self.localRecordingURL error:nil];
+        self.localRecordingURL = nil;
+        [session setActive:NO error:nil];
+        self.feedbackLabel.text = @"录音启动失败";
+        return;
+    }
+    self.recording = YES;
+    [self.voiceButton setTitle:@"结束录音" forState:UIControlStateNormal];
+    self.feedbackLabel.text = @"正在录音，结束后在本机转写";
+    NSUInteger generation = self.speechGeneration;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (self.recording && self.localRecorder && self.speechGeneration == generation)
+            [self stopRecording];
+    });
+}
+
 - (void)stopRecording {
+    if (self.localRecorder) {
+        [self.localRecorder stop];
+        self.localRecorder = nil;
+        self.recording = NO;
+        [self.voiceButton setTitle:@"🎙️ 语音输入" forState:UIControlStateNormal];
+        [[AVAudioSession sharedInstance] setActive:NO error:nil];
+        NSUInteger generation = self.speechGeneration;
+        NSString *path = self.localRecordingURL.path;
+        self.localRecordingURL = nil;
+        self.feedbackLabel.text = @"正在本机转写；首次使用可能下载中文资源";
+        __weak typeof(self) weakSelf = self;
+        [BBLocalDictation transcribeFile:path completion:^(NSString *text, NSString *failure) {
+            typeof(self) strongSelf = weakSelf;
+            if (!strongSelf || strongSelf.speechGeneration != generation) return;
+            if (text.length) {
+                strongSelf.taskField.text = text;
+                strongSelf.feedbackLabel.text = @"转写完成；可修改文字后点开始";
+            } else {
+                strongSelf.feedbackLabel.text = [NSString stringWithFormat:
+                    @"本机转写未完成（%@），请改用文字输入", failure ?: @"unknown"];
+            }
+        }];
+        return;
+    }
     if (!self.recording && !self.audioEngine) return;
     self.recording = NO;
     [self.audioEngine stop];

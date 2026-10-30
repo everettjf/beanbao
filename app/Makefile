@@ -6,7 +6,7 @@ ARCHS = arm64e
 include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = BeanBao
-BeanBao_FILES = main.m ../agent-native/AgentClient.m
+BeanBao_FILES = main.m ../agent-native/AgentClient.m LocalDictation.swift
 BeanBao_CFLAGS = -fobjc-arc -Wall -Wextra -I../agent-native
 BeanBao_FRAMEWORKS = UIKit Foundation Speech AVFoundation
 BeanBao_CODESIGN_FLAGS = -Sentitlements.plist
