@@ -10,6 +10,7 @@ static const char *BBSocket = "/var/mobile/Library/Caches/BeanBao/bridge.sock";
 static const char *BBToken = "/var/mobile/Library/Caches/BeanBao/bridge.token";
 static const char *BBClaudeKey = "/var/mobile/Library/Caches/BeanBao/claude.key";
 static NSString *const BBClaudeModel = @"claude-sonnet-5-5";
+extern int BBServe(void);
 
 static NSDictionary *BBError(NSString *message) { return @{@"ok": @NO, @"error": message ?: @"Unknown error"}; }
 static BOOL BBWriteAll(int fd, NSData *data) {
@@ -125,7 +126,7 @@ static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, N
         @"text": @{@"type": @"string"}, @"key": @{@"type": @"string"}, @"summary": @{@"type": @"string"}},
         @"required": @[@"action"], @"additionalProperties": @NO};
     NSDictionary *body = @{@"model": BBClaudeModel, @"max_tokens": @4096,
-        @"system": @"Return one JSON action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. Never install, run shell, read files, purchase, send messages, delete, or act on locked screen. If uncertain, return done with a short reason.",
+        @"system": @"Return one JSON action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. For a Maps search, open Maps, tap its search field, input the exact requested place, press enter, then return done after results appear; never start navigation. Never install, run shell, read files, purchase, send messages, delete, or act on locked screen. If uncertain, return done with a short reason.",
         @"output_config": @{@"effort": @"low", @"format": @{@"type": @"json_schema", @"schema": schema}},
         @"messages": @[@{@"role": @"user", @"content": content}]};
     NSData *bodyData = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
@@ -173,21 +174,72 @@ static NSDictionary *BBMockAction(NSString *task, NSDictionary *observation, NSU
 }
 
 static NSString *BBRequestedApp(NSString *task) {
+    if ([task hasPrefix:@"在地图搜索"]) return @"com.apple.Maps";
     NSDictionary *targets = @{@"设置": @"com.apple.Preferences", @"备忘录": @"com.apple.mobilenotes", @"地图": @"com.apple.Maps"};
     NSMutableArray *matches = [NSMutableArray array];
     for (NSString *name in targets) if ([task containsString:name]) [matches addObject:targets[name]];
     return matches.count == 1 ? matches[0] : nil;
 }
 
-static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSString *task, BOOL allowUI) {
+static NSString *BBMapQuery(NSString *task) {
+    if (![task hasPrefix:@"在地图搜索"] || task.length <= 5 || task.length > 55) return nil;
+    NSString *query = [task substringFromIndex:5];
+    return [query rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location == NSNotFound ? query : nil;
+}
+
+static BOOL BBSearchFieldContainsPoint(NSDictionary *observation, double x, double y) {
+    NSArray *elements = observation[@"ui"][@"elements"];
+    if (![elements isKindOfClass:NSArray.class]) return NO;
+    for (id item in elements) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSString *label = item[@"text"];
+        if (![label isKindOfClass:NSString.class] || label.length > 60 ||
+            !([label containsString:@"搜索"] || [[label lowercaseString] containsString:@"search"])) continue;
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double left = [rect[@"x"] doubleValue], top = [rect[@"y"] doubleValue];
+        double width = [rect[@"width"] doubleValue], height = [rect[@"height"] doubleValue];
+        if (width >= 20 && height >= 20 && x >= left && x < left + width &&
+            y >= top && y < top + height) return YES;
+    }
+    return NO;
+}
+
+static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSString *task,
+                          NSArray *history, BOOL allowUI, BOOL autoMap) {
     NSString *name = action[@"action"];
     if (![@[@"launch_app", @"tap", @"swipe", @"input_text", @"press_key", @"done"] containsObject:name]) return NO;
     NSDictionary *state = observation[@"device_state"];
     if (![state[@"locked_known"] boolValue] || [state[@"locked"] boolValue] ||
         ![state[@"screen_on_known"] boolValue] || ![state[@"screen_on"] boolValue]) return NO;
-    if ([name isEqualToString:@"done"]) return YES;
     NSString *requested = BBRequestedApp(task);
     NSString *foreground = observation[@"frontmost_app"][@"bundleId"];
+    if (autoMap) {
+        NSString *query = BBMapQuery(task);
+        if (!query) return NO;
+        NSUInteger uiSteps = 0;
+        for (NSDictionary *item in history)
+            if (![@"launch_app" isEqualToString:item[@"action"]]) uiSteps++;
+        if ([name isEqualToString:@"done"])
+            return [foreground isEqualToString:@"com.apple.Maps"] && uiSteps == 3 &&
+                ([observation[@"ui"] isKindOfClass:NSDictionary.class] ||
+                 [observation[@"ocr"] isKindOfClass:NSDictionary.class]);
+        if ([name isEqualToString:@"launch_app"])
+            return history.count == 0 && [action[@"bundle_id"] isEqualToString:@"com.apple.Maps"];
+        if (!allowUI || ![foreground isEqualToString:@"com.apple.Maps"]) return NO;
+        if ([name isEqualToString:@"tap"] && uiSteps == 0) {
+            id x = action[@"x"], y = action[@"y"];
+            return [x isKindOfClass:NSNumber.class] && [y isKindOfClass:NSNumber.class] &&
+                isfinite([x doubleValue]) && isfinite([y doubleValue]) &&
+                BBSearchFieldContainsPoint(observation, [x doubleValue], [y doubleValue]);
+        }
+        if ([name isEqualToString:@"input_text"] && uiSteps == 1)
+            return [action[@"text"] isKindOfClass:NSString.class] && [action[@"text"] isEqualToString:query];
+        if ([name isEqualToString:@"press_key"] && uiSteps == 2)
+            return [action[@"key"] isKindOfClass:NSString.class] && [action[@"key"] isEqualToString:@"enter"];
+        return NO;
+    }
+    if ([name isEqualToString:@"done"]) return requested && [foreground isEqualToString:requested];
     if ([name isEqualToString:@"launch_app"])
         return requested && [action[@"bundle_id"] isEqualToString:requested];
     if (!allowUI || !requested || ![foreground isEqualToString:requested]) return NO;
@@ -216,7 +268,7 @@ static BOOL BBApprove(NSDictionary *action) {
     return fgets(answer, sizeof(answer), stdin) && !strncmp(answer, "yes", 3);
 }
 
-static int BBRun(NSString *task, BOOL claude, BOOL allowUI) {
+static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap) {
     NSString *key = claude ? BBReadSecret(BBClaudeKey, 0) : nil;
     if (claude && (![key hasPrefix:@"sk-ant-"] || key.length < 24)) { fprintf(stderr, "Claude Key 未配置或权限不安全\n"); return 1; }
     NSMutableArray *history = [NSMutableArray array];
@@ -229,14 +281,14 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI) {
             fprintf(stderr, "界面包含疑似密钥，已停止模型请求\n"); return 1;
         }
         NSDictionary *action = claude ? BBClaudeAction(task, observation, history, key) : BBMockAction(task, observation, history.count);
-        if (action[@"error"] || !BBValidAction(action, observation, task, allowUI)) { fprintf(stderr, "模型动作被拒绝\n"); return 1; }
+        if (action[@"error"] || !BBValidAction(action, observation, task, history, allowUI, autoMap)) { fprintf(stderr, "模型动作被拒绝\n"); return 1; }
         NSString *name = action[@"action"];
         if ([name isEqualToString:@"done"]) { puts([action[@"summary"] isKindOfClass:NSString.class] ? [action[@"summary"] UTF8String] : "完成"); return 0; }
-        if (! [name isEqualToString:@"launch_app"] && !BBApprove(action)) { fprintf(stderr, "用户未批准动作\n"); return 1; }
+        if (![name isEqualToString:@"launch_app"] && !autoMap && !BBApprove(action)) { fprintf(stderr, "用户未批准动作\n"); return 1; }
         NSDictionary *fresh = BBBridge(@{@"op": @"observe", @"ui": @YES});
         if (![fresh[@"ok"] boolValue] || ![fresh[@"ui"] isEqual:observation[@"ui"]] ||
             ![fresh[@"frontmost_app"][@"bundleId"] isEqual:observation[@"frontmost_app"][@"bundleId"]] ||
-            !BBValidAction(action, fresh, task, allowUI) ||
+            !BBValidAction(action, fresh, task, history, allowUI, autoMap) ||
             [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] > 8) {
             fprintf(stderr, "界面已变化或观察失效，停止\n"); return 1;
         }
@@ -251,17 +303,20 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI) {
 
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
+        if (argc == 2 && !strcmp(argv[1], "--serve")) return BBServe();
         if (argc < 2) { fprintf(stderr, "用法：beanbaod [--claude] [--approve-ui] '任务文字'\n"); return 2; }
-        BOOL claude = NO, allowUI = NO;
+        BOOL claude = NO, allowUI = NO, autoMap = NO;
         NSString *task = nil;
         for (int i = 1; i < argc; i++) {
             NSString *arg = [NSString stringWithUTF8String:argv[i]];
             if ([arg isEqualToString:@"--claude"]) claude = YES;
             else if ([arg isEqualToString:@"--approve-ui"]) allowUI = YES;
+            else if ([arg isEqualToString:@"--auto-map"]) { autoMap = YES; allowUI = YES; }
             else if (!task) task = arg;
             else { fprintf(stderr, "参数过多\n"); return 2; }
         }
         if (!task.length) { fprintf(stderr, "缺少任务\n"); return 2; }
-        return BBRun(task, claude, allowUI);
+        if (autoMap && (!claude || !BBMapQuery(task))) return 2;
+        return BBRun(task, claude, allowUI, autoMap);
     }
 }
