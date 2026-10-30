@@ -1,8 +1,18 @@
 # BeanBao 真机实现与验收记录
 
-更新：2026-10-30。目标设备：iPhone 11、iOS 26.0.1、Relaxin 0.5.5 / RootHide。以下记录来自这台已连接的真机。
+更新：2026-10-30。目标设备：iPhone 11、iOS 26.0.1、Relaxin 0.5.5 / RootHide。以下记录来自这台已连接的真机。后半部分保留首次装机时的历史数据；当前状态以本节为准。
 
-## 已安装的实现
+## 最新状态（2026-10-30）
+
+真机当前安装 `dev.beanbao.bridge` **0.2.0**、`dev.beanbao.agent` **0.3.7** 和 `dev.beanbao.app` **0.3.1**。通过已配对的 USB iCTRL 通道重新触发 Relaxin Jailbreak，mobile/root SSH 恢复。一次设备重启后，已安装包保留，Agent 服务自动运行；RootHide 的 SSH shell 与 App/launchd 使用不同的 `/var/mobile` 视图，客户端已加入 socket 路径回退。
+
+真机 App 点击“开始”已用模拟模型完成“打开地图”，服务状态为 `done`，前台为 `com.apple.Maps`。手机端 Claude 服务完成一次“在地图搜索金门大桥”，结果显示 Golden Gate Bridge 且未启动导航；也完成一次“新建备忘录：BeanBao 测试 2026-10-30”，正文已显示且 Done 已点击。备忘录列表中有疑似密钥形态的旧内容时，Agent 在网络请求前停止；测试改从安全的测试笔记进入，没有记录旧笔记文字。30 条禁止任务在服务入口全部拒绝，重复运行结果一致。8 个 Python 单元测试与原生地图/备忘录策略测试通过。
+
+**未完成**：App 输入 Claude 多步任务的重复验收；拔线后设置/备忘录固定任务各 10 次与 ≥80% 完整成功率；点击/滑动/输入的重复稳定性；连续 1 小时运行及重启后完整任务复测；语音授权和中文转写；实体音量键三连按与普通音量行为。当前不能宣称 G1–G4 全部通过。一次 Frida 客户端连接报协议错误，随后设备重启，因果关系未确认；本轮后续不依赖 Frida。
+
+## 首次装机记录（历史快照）
+
+### 当时已安装的实现
 
 - `dev.beanbao.bridge` **0.1.7** 已安装并在 SpringBoard 中运行。仅编译复制的 ios-mcp 的 HID、Screen、AX、TextInput、Vision OCR 相关源码；上游 MCPServer、AppManager、安装器、shell、文件路由、Paddle/ONNX 均未编译。0.1.7 允许在 BeanBao 自身前台验证输入界面，但启动 App 的白名单仍只含设置、备忘录、地图。
 - SpringBoard 只监听宿主 `/var/mobile/Library/Caches/BeanBao/bridge.sock`。普通 RootHide SSH shell 通过 `/rootfs/private/var/mobile/Library/Caches/BeanBao` 查看。目录权限 700，socket 和随机 token 权限 600；仅接受 UID 501 的本地进程与正确 token。没有 TCP/HTTP 监听。
@@ -13,7 +23,7 @@
 - 仓库另已构建 **Bridge 0.2.0 / Agent 0.3.0 / App 0.3.0 候选包**，尚未装机。Bridge 增加默认关闭的音量下键三连按唤醒；唤醒请求会打开 App 并进入语音输入，普通音量操作仍调用系统实现。App 增加按键开关、清空输入和本机更新 Claude Key 的界面；识别、授权等提示与服务状态分开显示，避免状态轮询覆盖。新 Key 存在不会被系统当缓存清理的 `Library/Application Support/BeanBao` 中，Agent 对现有缓存目录 Key 保持兼容。Agent 增加受限的“在地图搜索地点”和“新建备忘录：指定内容”多步任务：前者只允许搜索框、原样地点输入与提交搜索；后者只允许新建按钮、原样内容输入与完成按钮。语音识别常见的句末标点会在普通任务白名单校验前去掉，备忘录正文保留原文。按键钩子参考开源 [RemoteCompanion 的 `SBVolumeHardwareButtonActions` 实现](https://github.com/saihgupr/RemoteCompanion/blob/0e75074/Tweak/Tweak.x)，但该设备上的方法存在性、实际按键事件和多步任务流程尚未验证；候选包不能视为 G2/G4 通过。
 - 为配置 root 公钥认证，另安装 `dev.beanbao.device-key` **0.1.1**。它只将 copyapp 已有的专用公钥加入 `/var/root/.ssh/authorized_keys`；私钥留在 Mac。清除此包时只移除这条公钥。BeanBao 运行时协议没有 root、安装器或 shell 能力。
 
-## 可复现命令
+### 当时的复现命令
 
 ```sh
 cd /Users/xnu/sec/beanbao/bridge
@@ -35,7 +45,7 @@ cd ../app && make package FINALPACKAGE=1
 
 Mac 端 Claude 命令需要从安全的本地环境提供 `ANTHROPIC_API_KEY`，可用 `BEANBAO_CLAUDE_MODEL` 覆盖默认的 `claude-sonnet-5-5`。SSH 地址由 CoreDevice 隧道提供，可能变化。设备上的 `beanbaod '打开设置'` 可独立验证原生模拟模型；`beanbaod --claude '打开地图'` 可验证手机直接调用模型。`beanbaoagentctl status`、`start '打开设置'`、`stop` 验证本地服务。不要把 token、私钥、模型 Key、截图或个人备忘录提交到仓库。
 
-## 2026-10-30 真机结果
+### 当时的真机结果
 
 | 项目 | 结果 |
 | --- | --- |
@@ -58,7 +68,7 @@ Mac 端 Claude 命令需要从安全的本地环境提供 `ANTHROPIC_API_KEY`，
 
 尚未完成点击、滑动、输入等每种动作的 10 次重复测试、拔线后的完整任务、重启和重新启用 Relaxin 后的恢复测试。文字界面与语音尚未在解锁状态完成点击验收；实体按键唤醒尚未实现。Claude 在手机服务中完成过一次打开地图，不能据此宣称 G1–G4 全部通过。
 
-## 下一步验收
+### 当时记录的下一步验收（已被文首最新状态更新）
 
 1. 补齐点击、滑动、输入与锁屏拒绝的重复测试，并复核异常恢复。
 2. 解锁后通过界面点击“开始/停止”验证文字闭环、语音权限和转写；拔掉 Mac 后完成固定任务验收。

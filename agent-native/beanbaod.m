@@ -127,7 +127,7 @@ static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, N
         @"text": @{@"type": @"string"}, @"key": @{@"type": @"string"}, @"summary": @{@"type": @"string"}},
         @"required": @[@"action"], @"additionalProperties": @NO};
     NSDictionary *body = @{@"model": BBClaudeModel, @"max_tokens": @4096,
-        @"system": @"Return one JSON action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. For a Maps search, open Maps, tap its search field, input the exact requested place, press enter, then return done after results appear; never start navigation. For a new Note, open Notes, tap the new note button, input the exact requested content, tap Done, then return done only when the new content is visible. Never edit an existing note. Never install, run shell, read files, purchase, send messages, delete, or act on locked screen. If uncertain, return done with a short reason.",
+        @"system": @"Return one JSON action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. For a Maps search, if the requested result is already visible return done. Otherwise open Maps, tap its search field if needed, input the exact requested place only when the field is empty, press enter if needed, then return done after results appear; never start navigation. For a new Note, open Notes, tap the new note button, input the exact requested content, tap Done, then return done only when the new content is visible. Never edit an existing note. Never install, run shell, read files, purchase, send messages, delete, or act on locked screen. If uncertain, return done with a short reason.",
         @"output_config": @{@"effort": @"low", @"format": @{@"type": @"json_schema", @"schema": schema}},
         @"messages": @[@{@"role": @"user", @"content": content}]};
     NSData *bodyData = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
@@ -227,24 +227,106 @@ static BOOL BBVisibleContains(NSDictionary *observation, NSString *needle) {
     return NO;
 }
 
+static BOOL BBMapResultVisible(NSDictionary *observation, NSString *query) {
+    if (!BBVisibleContains(observation, [query substringToIndex:MIN((NSUInteger)12, query.length)])) return NO;
+    NSArray *elements = observation[@"ui"][@"elements"];
+    if (![elements isKindOfClass:NSArray.class]) return NO;
+    for (NSDictionary *item in elements) {
+        NSString *label = [item isKindOfClass:NSDictionary.class] ? item[@"text"] : nil;
+        if (![label isKindOfClass:NSString.class]) continue;
+        NSString *lower = label.lowercaseString;
+        if ([lower isEqualToString:@"directions"] || [lower isEqualToString:@"路线"] ||
+            [lower isEqualToString:@"路線"]) return YES;
+    }
+    return NO;
+}
+
+static BOOL BBUnlockedObservation(NSDictionary *observation) {
+    NSDictionary *state = observation[@"device_state"];
+    return [state[@"locked_known"] boolValue] && ![state[@"locked"] boolValue] &&
+        [state[@"screen_on_known"] boolValue] && [state[@"screen_on"] boolValue];
+}
+
+static BOOL BBMapSearchInputReady(NSDictionary *observation) {
+    NSArray *elements = observation[@"ui"][@"elements"];
+    if (![elements isKindOfClass:NSArray.class]) return NO;
+    BOOL searchField = NO, keyboardSubmit = NO;
+    double height = [observation[@"screen"][@"height"] doubleValue];
+    for (NSDictionary *item in elements) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSString *label = item[@"text"];
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![label isKindOfClass:NSString.class] || ![rect isKindOfClass:NSDictionary.class]) continue;
+        NSString *lower = label.lowercaseString;
+        double y = [rect[@"y"] doubleValue];
+        if (([lower containsString:@"search field"] || [lower containsString:@"搜索"] ||
+             [lower containsString:@"搜尋"]) && y >= 0 && y < height / 3) searchField = YES;
+        if (([lower isEqualToString:@"search"] || [lower isEqualToString:@"搜索"] ||
+             [lower isEqualToString:@"搜尋"]) && y > height * 0.65) keyboardSubmit = YES;
+    }
+    return searchField && keyboardSubmit;
+}
+
+static NSString *BBNoteTimestamp(NSDictionary *observation) {
+    NSArray *elements = observation[@"ui"][@"elements"];
+    if (![elements isKindOfClass:NSArray.class]) return nil;
+    for (NSDictionary *item in elements) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSArray *aliases = item[@"aliases"];
+        NSString *label = item[@"text"];
+        if (![aliases isKindOfClass:NSArray.class] || ![label isKindOfClass:NSString.class] ||
+            label.length > 80) continue;
+        if ([aliases containsObject:@"Timestamp"] && [aliases containsObject:@"Created"])
+            return label;
+    }
+    return nil;
+}
+
+static BOOL BBNoteEditorReady(NSDictionary *observation) {
+    NSArray *elements = observation[@"ui"][@"elements"];
+    if (![elements isKindOfClass:NSArray.class] || !BBNoteTimestamp(observation)) return NO;
+    BOOL done = NO, blankEditor = NO, keyboard = NO;
+    double height = [observation[@"screen"][@"height"] doubleValue];
+    for (NSDictionary *item in elements) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSString *label = item[@"text"];
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![label isKindOfClass:NSString.class] || ![rect isKindOfClass:NSDictionary.class]) continue;
+        double y = [rect[@"y"] doubleValue];
+        if (([label isEqualToString:@"Done"] || [label isEqualToString:@"完成"]) && y < 120) done = YES;
+        if (([label isEqualToString:@"Note"] || [label isEqualToString:@"备忘录"]) &&
+            [rect[@"width"] doubleValue] > 200 && y < 200) blankEditor = YES;
+        if (([label isEqualToString:@"return"] || [label isEqualToString:@"换行"]) &&
+            y > height * 0.55) keyboard = YES;
+    }
+    return done && blankEditor && keyboard;
+}
+
 static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSString *task,
                           NSArray *history, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
     NSString *name = action[@"action"];
     if (![@[@"launch_app", @"tap", @"swipe", @"input_text", @"press_key", @"done"] containsObject:name]) return NO;
-    NSDictionary *state = observation[@"device_state"];
-    if (![state[@"locked_known"] boolValue] || [state[@"locked"] boolValue] ||
-        ![state[@"screen_on_known"] boolValue] || ![state[@"screen_on"] boolValue]) return NO;
+    if (!BBUnlockedObservation(observation)) return NO;
     NSString *requested = BBRequestedApp(task);
     NSString *foreground = observation[@"frontmost_app"][@"bundleId"];
     if (autoMap) {
         NSString *query = BBMapQuery(task);
         if (!query) return NO;
-        NSUInteger uiSteps = 0;
+        NSMutableArray *uiHistory = [NSMutableArray array];
         for (NSDictionary *item in history)
-            if (![@"launch_app" isEqualToString:item[@"action"]]) uiSteps++;
+            if (![@"launch_app" isEqualToString:item[@"action"]]) [uiHistory addObject:item[@"action"] ?: @""];
+        NSUInteger uiSteps = uiHistory.count;
+        BOOL submitted = (uiSteps == 1 && [uiHistory[0] isEqualToString:@"press_key"]) ||
+                         (uiSteps == 2 && [uiHistory[0] isEqualToString:@"input_text"] &&
+                          [uiHistory[1] isEqualToString:@"press_key"]) ||
+                         (uiSteps == 3 && [uiHistory[0] isEqualToString:@"tap"] &&
+                          [uiHistory[1] isEqualToString:@"input_text"] &&
+                          [uiHistory[2] isEqualToString:@"press_key"]);
         if ([name isEqualToString:@"done"])
-            return [foreground isEqualToString:@"com.apple.Maps"] && uiSteps == 3 &&
-                BBVisibleContains(observation, [query substringToIndex:MIN((NSUInteger)12, query.length)]);
+            return [foreground isEqualToString:@"com.apple.Maps"] &&
+                (BBMapResultVisible(observation, query) ||
+                 (submitted && BBVisibleContains(observation,
+                    [query substringToIndex:MIN((NSUInteger)12, query.length)])));
         if ([name isEqualToString:@"launch_app"])
             return history.count == 0 && [action[@"bundle_id"] isEqualToString:@"com.apple.Maps"];
         if (!allowUI || ![foreground isEqualToString:@"com.apple.Maps"]) return NO;
@@ -255,10 +337,17 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
                 BBElementContainsPoint(observation, [x doubleValue], [y doubleValue],
                                        @[@"搜索", @"search"], NO);
         }
-        if ([name isEqualToString:@"input_text"] && uiSteps == 1)
+        if ([name isEqualToString:@"input_text"] && BBMapSearchInputReady(observation) &&
+            !BBVisibleContains(observation, query) &&
+            (uiSteps == 0 || (uiSteps == 1 && [uiHistory[0] isEqualToString:@"tap"])))
             return [action[@"text"] isKindOfClass:NSString.class] && [action[@"text"] isEqualToString:query];
-        if ([name isEqualToString:@"press_key"] && uiSteps == 2)
-            return [action[@"key"] isKindOfClass:NSString.class] && [action[@"key"] isEqualToString:@"enter"];
+        if ([name isEqualToString:@"press_key"] &&
+            ((uiSteps == 0 && BBMapSearchInputReady(observation)) ||
+             (uiSteps == 1 && [uiHistory[0] isEqualToString:@"input_text"]) ||
+             (uiSteps == 2 && [uiHistory[0] isEqualToString:@"tap"] &&
+              [uiHistory[1] isEqualToString:@"input_text"])))
+            return [action[@"key"] isKindOfClass:NSString.class] && [action[@"key"] isEqualToString:@"enter"] &&
+                BBVisibleContains(observation, [query substringToIndex:MIN((NSUInteger)12, query.length)]);
         return NO;
     }
     if (autoNote) {
@@ -277,11 +366,15 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
             id x = action[@"x"], y = action[@"y"];
             if (![x isKindOfClass:NSNumber.class] || ![y isKindOfClass:NSNumber.class] ||
                 !isfinite([x doubleValue]) || !isfinite([y doubleValue])) return NO;
+            if (uiSteps == 2 && !BBVisibleContains(observation,
+                [content substringToIndex:MIN((NSUInteger)12, content.length)])) return NO;
             return BBElementContainsPoint(observation, [x doubleValue], [y doubleValue],
                 uiSteps == 0 ? @[@"新建", @"new note", @"compose"] : @[@"完成", @"done"], uiSteps == 0);
         }
         if ([name isEqualToString:@"input_text"] && uiSteps == 1)
-            return [action[@"text"] isKindOfClass:NSString.class] && [action[@"text"] isEqualToString:content];
+            return BBNoteEditorReady(observation) && !BBVisibleContains(observation, content) &&
+                [action[@"text"] isKindOfClass:NSString.class] &&
+                [action[@"text"] isEqualToString:content];
         return NO;
     }
     if ([name isEqualToString:@"done"]) return requested && [foreground isEqualToString:requested];
@@ -323,20 +416,35 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         NSDictionary *observation = BBBridge(@{@"op": @"observe", @"ui": @YES,
             @"ocr": @(claude), @"screenshot": @(claude)});
         if (![observation[@"ok"] boolValue]) { fprintf(stderr, "观察失败\n"); return 1; }
+        if (!BBUnlockedObservation(observation)) { fprintf(stderr, "设备已锁定或屏幕关闭，停止模型请求\n"); return 1; }
         if (claude && (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"]))) {
             fprintf(stderr, "界面包含疑似密钥，已停止模型请求\n"); return 1;
         }
         NSDictionary *action = claude ? BBClaudeAction(task, observation, history, key) : BBMockAction(task, observation, history.count);
-        if (action[@"error"] || !BBValidAction(action, observation, task, history, allowUI, autoMap, autoNote)) { fprintf(stderr, "模型动作被拒绝\n"); return 1; }
+        if (action[@"error"]) { fprintf(stderr, "模型请求或输出失败：%s\n", [action[@"error"] UTF8String]); return 1; }
+        if (!BBValidAction(action, observation, task, history, allowUI, autoMap, autoNote)) {
+            NSString *kind = action[@"action"];
+            fprintf(stderr, "模型动作被策略拒绝：步骤 %d，类型 %s\n", step + 1,
+                    [kind isKindOfClass:NSString.class] &&
+                    [@[@"launch_app", @"tap", @"swipe", @"input_text", @"press_key", @"done"] containsObject:kind]
+                        ? kind.UTF8String : "unknown");
+            return 1;
+        }
         NSString *name = action[@"action"];
         if ([name isEqualToString:@"done"]) { puts([action[@"summary"] isKindOfClass:NSString.class] ? [action[@"summary"] UTF8String] : "完成"); return 0; }
         if (![name isEqualToString:@"launch_app"] && !autoMap && !autoNote && !BBApprove(action)) { fprintf(stderr, "用户未批准动作\n"); return 1; }
         NSDictionary *fresh = BBBridge(@{@"op": @"observe", @"ui": @YES});
-        if (![fresh[@"ok"] boolValue] || ![fresh[@"ui"] isEqual:observation[@"ui"]] ||
-            ![fresh[@"frontmost_app"][@"bundleId"] isEqual:observation[@"frontmost_app"][@"bundleId"]] ||
-            !BBValidAction(action, fresh, task, history, allowUI, autoMap, autoNote) ||
-            [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] > 8) {
-            fprintf(stderr, "界面已变化或观察失效，停止\n"); return 1;
+        BOOL sameUI = [fresh[@"ui"] isEqual:observation[@"ui"]];
+        BOOL sameNoteEditor = autoNote && [name isEqualToString:@"input_text"] &&
+            BBNoteEditorReady(observation) && BBNoteEditorReady(fresh) &&
+            [BBNoteTimestamp(observation) isEqualToString:BBNoteTimestamp(fresh)];
+        BOOL sameApp = [fresh[@"frontmost_app"][@"bundleId"] isEqual:observation[@"frontmost_app"][@"bundleId"]];
+        BOOL allowed = BBValidAction(action, fresh, task, history, allowUI, autoMap, autoNote);
+        BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
+        if (![fresh[@"ok"] boolValue] || (!autoMap && !sameUI && !sameNoteEditor) || !sameApp || !allowed || !recent) {
+            fprintf(stderr, "界面复核未通过：步骤 %d，UI=%d，App=%d，策略=%d，时效=%d\n",
+                    step + 1, sameUI, sameApp, allowed, recent);
+            return 1;
         }
         NSMutableDictionary *request = [action mutableCopy];
         request[@"op"] = @"act"; request[@"observation_id"] = fresh[@"observation_id"];

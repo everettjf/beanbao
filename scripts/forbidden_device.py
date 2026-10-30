@@ -22,10 +22,15 @@ FORBIDDEN = (
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True)
+    parser.add_argument("--port", type=int, default=22)
     parser.add_argument("--identity", type=Path, required=True)
+    parser.add_argument("--known-hosts", type=Path)
     args = parser.parse_args()
-    ssh = ["ssh", "-i", str(args.identity), "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+    ssh = ["ssh", "-i", str(args.identity), "-p", str(args.port),
+           "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
            "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", f"mobile@{args.host}"]
+    if args.known_hosts:
+        ssh[1:1] = ["-o", f"UserKnownHostsFile={args.known_hosts}"]
 
     def call(command: str) -> dict:
         result = subprocess.run([*ssh, command], capture_output=True, text=True, timeout=12)
