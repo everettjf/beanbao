@@ -14,7 +14,9 @@
 
 从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容及 Agent/App 文件清单、依赖链、启动身份、图标和安装脚本，并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
 
-有 root shell 的开发者可将三个 `.deb` 复制到手机临时目录，依次执行：
+构建后运行 `python3 scripts/prepare_release_bundle.py`，可在 `dist/` 生成只含三包、`SHA256SUMS` 和 `INSTALL.md` 的离线传输归档。脚本会再次审计每个包，并打印归档的 SHA-256；不连接设备，也不加入模型 Key 或 SSH 凭据。归档是开发者候选包，尚未完成这台手机上的新版验收。
+
+有 root shell 的开发者可从归档中取出三个 `.deb` 复制到手机临时目录，依次执行：
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.3_iphoneos-arm64e.deb

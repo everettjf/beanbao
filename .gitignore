@@ -6,4 +6,5 @@
 .state/
 .build/
 .swiftpm/
+dist/
 agent-native/*.o
