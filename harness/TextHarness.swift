@@ -177,6 +177,7 @@ public enum BeanBaoTextHarness {
 #if os(iOS)
 @_silgen_name("BBBridgeRequestJSON") private func BBBridgeRequestJSON(_ request: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
 @_silgen_name("BBBridgeFreeJSON") private func BBBridgeFreeJSON(_ response: UnsafeMutablePointer<CChar>)
+@_silgen_name("BBReleaseWakeLease") private func BBReleaseWakeLeaseForText()
 
 private final class TextResultBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -205,9 +206,11 @@ public func BBRunHarnessMock(_ taskPointer: UnsafePointer<CChar>?) -> Int32 {
         semaphore.signal()
     }
     guard semaphore.wait(timeout: .now() + .seconds(45)) == .success else {
+        BBReleaseWakeLeaseForText()
         fputs("文字任务超时\n", stderr)
         return 1
     }
+    BBReleaseWakeLeaseForText()
     let result = box.get()
     let stream = result.succeeded ? stdout : stderr
     fputs(result.message + "\n", stream)
