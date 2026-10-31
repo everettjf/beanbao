@@ -23,8 +23,22 @@ int main(void) {
     @autoreleasepool {
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||
+            !Check(BBAuditRecord(@"task", @"地图", @"start", @"accepted").count == 5,
+                   "audit record contains only fixed fields") ||
+            !Check(BBAuditRecord(@"task", @"地图", @"tap 200,300", @"ok") == nil,
+                   "audit rejects coordinates or free text") ||
             !Check([BBNormalizeTask(@"新建备忘录：测试内容。") isEqualToString:@"新建备忘录：测试内容。"],
                    "note text preserved") ||
+            !Check([BBCompletionMessage(@"在地图搜索加州科学院") isEqualToString:@"地图搜索已完成"],
+                   "map completion summary is fixed") ||
+            !Check([BBCompletionMessage(@"新建备忘录：测试内容") isEqualToString:@"备忘录已创建"],
+                   "note completion summary is fixed") ||
+            !Check([BBFailureMessage(@"模型请求或输出失败：private model text")
+                    isEqualToString:@"模型请求或输出失败，请稍后重试"],
+                   "model error does not expose child output") ||
+            !Check([BBFailureMessage(@"unexpected private output")
+                    isEqualToString:@"任务未完成，请检查界面后重试"],
+                   "unknown error does not expose child output") ||
             !Check([BBAllowedTarget(@"新建备忘录：测试内容") isEqualToString:@"备忘录"],
                    "note task accepted") ||
             !Check(BBAllowedTarget(@"新建备忘录：短") == nil, "short note task refused") ||

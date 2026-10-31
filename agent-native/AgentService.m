@@ -10,6 +10,7 @@
 #import <errno.h>
 #import <limits.h>
 #import <mach-o/dyld.h>
+#import "BBAudit.h"
 
 extern char **environ;
 
@@ -31,6 +32,12 @@ static BBServiceState *BBState;
 static BOOL BBIsNoteTask(NSString *task) {
     return [task hasPrefix:@"新建备忘录："] && task.length >= 10 && task.length <= 166 &&
         [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location == NSNotFound;
+}
+
+static NSString *BBCompletionMessage(NSString *task) {
+    if ([task hasPrefix:@"在地图搜索"]) return @"地图搜索已完成";
+    if (BBIsNoteTask(task)) return @"备忘录已创建";
+    return @"目标 App 已在前台";
 }
 
 static NSString *BBNormalizeTask(NSString *task) {
@@ -62,7 +69,26 @@ static NSDictionary *BBStatus(void) {
     }
 }
 
-static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation) {
+static NSString *BBFailureMessage(NSString *output) {
+    if ([output containsString:@"设备已锁定或屏幕关闭"])
+        return @"设备已锁定或屏幕关闭，请解锁后重试";
+    if ([output containsString:@"Claude Key 未配置"])
+        return @"Claude Key 未配置或权限不安全";
+    if ([output containsString:@"疑似密钥"])
+        return @"界面或任务疑似包含敏感信息，已停止";
+    if ([output containsString:@"模型请求或输出失败"])
+        return @"模型请求或输出失败，请稍后重试";
+    if ([output containsString:@"模型动作被策略拒绝"])
+        return @"界面操作未通过安全校验，已停止";
+    if ([output containsString:@"界面复核未通过"])
+        return @"界面发生变化，已停止任务";
+    if ([output containsString:@"任务超过时间或步数上限"])
+        return @"任务超过时间或步数上限";
+    return @"任务未完成，请检查界面后重试";
+}
+
+static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
+                           NSString *completionMessage, NSString *app) {
     NSMutableData *output = [NSMutableData data];
     char buffer[512];
     for (;;) {
@@ -77,6 +103,7 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation) {
     do { waited = waitpid(child, &status, 0); } while (waited < 0 && errno == EINTR);
     NSString *summary = [[NSString alloc] initWithData:output encoding:NSUTF8StringEncoding];
     summary = [summary stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *auditAction = nil, *auditResult = nil;
     @synchronized (BBState) {
         if (BBState.generation != generation || BBState.child != child) return;
         BOOL stopped = BBState.stopping;
@@ -85,8 +112,11 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation) {
         BBState.phase = stopped ? @"stopped" :
             (waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? @"done" : @"error");
         BBState.message = stopped ? @"任务已停止" :
-            ([BBState.phase isEqualToString:@"done"] ? (summary.length ? summary : @"任务完成") : @"任务未完成，请在解锁后重试");
+            ([BBState.phase isEqualToString:@"done"] ? completionMessage : BBFailureMessage(summary));
+        auditAction = BBState.phase;
+        auditResult = [auditAction isEqualToString:@"done"] ? @"ok" : @"failed";
     }
+    BBAudit(@"task", app, auditAction, auditResult);
 }
 
 static NSDictionary *BBStart(NSDictionary *request) {
@@ -100,6 +130,7 @@ static NSDictionary *BBStart(NSDictionary *request) {
         return @{@"ok": @NO, @"error": @"首版只接受打开指定 App、地图搜索或新建备忘录"};
     BOOL mapSearch = [task hasPrefix:@"在地图搜索"];
     BOOL noteTask = BBIsNoteTask(task);
+    NSString *completionMessage = BBCompletionMessage(task);
     if ((mapSearch || noteTask) && ![model isEqualToString:@"claude"])
         return @{@"ok": @NO, @"error": @"多步任务请使用 Claude 模型"};
     @synchronized (BBState) {
@@ -139,8 +170,9 @@ static NSDictionary *BBStart(NSDictionary *request) {
         BBState.phase = @"running";
         BBState.message = @"正在执行";
         BBState.app = app;
+        BBAudit(@"task", app, @"start", @"accepted");
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-            BBWaitForChild(child, readFD, generation);
+            BBWaitForChild(child, readFD, generation, completionMessage, app);
         });
         return BBStatus();
     }

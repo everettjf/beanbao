@@ -7,7 +7,7 @@ include $(THEOS)/makefiles/common.mk
 
 TOOL_NAME = beanbaod
 TOOL_NAME += beanbaoagentctl
-beanbaod_FILES = beanbaod.m AgentService.m
+beanbaod_FILES = beanbaod.m AgentService.m BBAudit.m
 beanbaod_CFLAGS = -fobjc-arc -Wall -Wextra
 beanbaod_FRAMEWORKS = Foundation
 beanbaod_CODESIGN_FLAGS = -S../bridge/beanbaoctl_entitlements.plist

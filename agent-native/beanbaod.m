@@ -5,6 +5,7 @@
 #import <fcntl.h>
 #import <unistd.h>
 #import <errno.h>
+#import "BBAudit.h"
 
 static const char *BBSocket = "/var/mobile/Library/Caches/BeanBao/bridge.sock";
 static const char *BBToken = "/var/mobile/Library/Caches/BeanBao/bridge.token";
@@ -480,6 +481,7 @@ static BOOL BBApprove(NSDictionary *action) {
 }
 
 static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
+    NSString *auditApp = BBRequestedApp(task);
     NSString *key = claude ? (BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0)) : nil;
     if (claude && (![key hasPrefix:@"sk-ant-"] || key.length < 24)) { fprintf(stderr, "Claude Key 未配置或权限不安全\n"); return 1; }
     if (claude && BBHasSecret(task)) { fprintf(stderr, "任务文字包含疑似密钥，已停止模型请求\n"); return 1; }
@@ -525,6 +527,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             }
         }
         if (!BBValidAction(action, observation, task, history, allowUI, autoMap, autoNote)) {
+            BBAudit(@"step", auditApp, @"policy_block", @"blocked");
             NSString *kind = action[@"action"];
             fprintf(stderr, "模型动作被策略拒绝：步骤 %d，类型 %s\n", step + 1,
                     [kind isKindOfClass:NSString.class] &&
@@ -533,7 +536,11 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             return 1;
         }
         NSString *name = action[@"action"];
-        if ([name isEqualToString:@"done"]) { puts([action[@"summary"] isKindOfClass:NSString.class] ? [action[@"summary"] UTF8String] : "完成"); return 0; }
+        if ([name isEqualToString:@"done"]) {
+            BBAudit(@"step", auditApp, @"done", @"ok");
+            puts([action[@"summary"] isKindOfClass:NSString.class] ? [action[@"summary"] UTF8String] : "完成");
+            return 0;
+        }
         if (![name isEqualToString:@"launch_app"] && !autoMap && !autoNote && !BBApprove(action)) { fprintf(stderr, "用户未批准动作\n"); return 1; }
         BOOL suggestionTap = autoMap && [name isEqualToString:@"tap"] &&
             [history.lastObject[@"action"] isEqualToString:@"input_text"];
@@ -556,7 +563,11 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         NSMutableDictionary *request = [action mutableCopy];
         request[@"op"] = @"act"; request[@"observation_id"] = fresh[@"observation_id"];
         NSDictionary *result = BBBridge(request);
-        if (![result[@"ok"] boolValue]) { fprintf(stderr, "动作执行失败\n"); return 1; }
+        if (![result[@"ok"] boolValue]) {
+            BBAudit(@"step", auditApp, name, @"failed");
+            fprintf(stderr, "动作执行失败\n"); return 1;
+        }
+        BBAudit(@"step", auditApp, name, @"ok");
         [history addObject:action];
     }
     fprintf(stderr, "任务超过时间或步数上限\n"); return 1;
