@@ -37,6 +37,11 @@ int main(void) {
                    "stop refuses a different task identity") ||
             !Check(![BBStop(@{@"service_id": @"service-B"})[@"ok"] boolValue],
                    "stop refuses a different service identity")) return 1;
+        for (NSString *task in @[@"打开设置", @"打开备忘录", @"打开地图", @"打开通讯录"])
+            if (!Check(BBUsesTextHarness(task), "fixed text opens use Palmino harness")) return 1;
+        if (!Check(!BBUsesTextHarness(@"在地图搜索金门大桥") &&
+                   !BBUsesTextHarness(@"新建备忘录：测试内容"),
+                   "map search and note creation retain their bounded workflows")) return 1;
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||
             !Check(BBAuditRecord(@"task", @"地图", @"start", @"accepted").count == 5,

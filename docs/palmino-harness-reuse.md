@@ -26,7 +26,7 @@
 ## 本地实施进度
 
 - 已复制未修改的 `AgentRuntime` 六个源文件，保留 Apache 许可证、NOTICE 与来源 commit。BeanBao Agent 的 Theos 目标改为 iOS 17，`arm64e` 编译、链接、签名和 RootHide `.deb` 打包通过。
-- `harness/TextHarness.swift` 已用上游 `PHKAgentRuntime` 执行四个固定打开 App 文字指令。App 的“模拟模型”打开 App 请求现由服务转到这个入口；地图搜索和本地新建备忘录仍沿用原有受限流程。
+- `harness/TextHarness.swift` 已用上游 `PHKAgentRuntime` 执行四个固定打开 App 文字指令。Agent 0.3.37 让这四条指令在“模拟模型”和 Claude 模式下都进入本地 harness，不向模型发送截图，也不需要 Claude Key；地图搜索和本地新建备忘录仍沿用原有受限流程。
 - Mac 假 Bridge 测试 5 项通过：四个白名单指令完成、未知指令不动作、锁屏不动作、Bridge 拒绝不报成功、启动后未在前台不报成功。原生策略测试和 8 项 Python 测试通过。
 - Agent 0.3.36 / App 0.3.9 给每次任务和服务实例分配 ID；App 丢弃旧轮询回复，拒绝把其他任务的完成状态显示为当前任务成功，停止请求也带任务 ID。本地原生策略测试及三包构建通过。
 - **尚未装机或在真机验证新 harness 路径。** 图标和 harness 候选包仅在本机生成；用户休息期间不操作手机。

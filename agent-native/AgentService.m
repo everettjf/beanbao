@@ -70,6 +70,10 @@ static BOOL BBTaskModelAllowed(NSString *task, NSString *model) {
     return ![task hasPrefix:@"在地图搜索"] || [model isEqualToString:@"claude"];
 }
 
+static BOOL BBUsesTextHarness(NSString *task) {
+    return [@[@"打开设置", @"打开备忘录", @"打开地图", @"打开通讯录"] containsObject:task];
+}
+
 static NSDictionary *BBStatus(void) {
     @synchronized (BBState) {
         return @{@"ok": @YES, @"phase": BBState.phase ?: @"idle",
@@ -172,13 +176,11 @@ static NSDictionary *BBStart(NSDictionary *request) {
         const char *argvClaude[] = {executable, "--claude", mapSearch ? "--auto-map" : "--auto-note",
                                     task.UTF8String, NULL};
         const char *argvNote[] = {executable, "--auto-note", task.UTF8String, NULL};
-        const char *argvClaudeOpen[] = {executable, "--claude", task.UTF8String, NULL};
         const char *argvMock[] = {executable, "--harness-mock", task.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
                                      (char *const *)(noteTask ? argvNote :
-                                         ([model isEqualToString:@"claude"] ?
-                                          (mapSearch ? argvClaude : argvClaudeOpen) : argvMock)), environ);
+                                         (BBUsesTextHarness(task) ? argvMock : argvClaude)), environ);
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,
