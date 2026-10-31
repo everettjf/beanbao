@@ -169,10 +169,13 @@ int main(void) {
               @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}}]};
         NSDictionary *placeCard = Observation(@"com.apple.Maps", NO, placeCardUI, @{});
         __block NSUInteger mapLaunchModelCalls = 0, mapLaunchActs = 0;
+        __block BOOL mapLaunchScreenshotRequested = NO;
         BBNoteBridgeRequest mapLaunchBridge = ^NSDictionary *(NSDictionary *request) {
             if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
-            if ([request[@"op"] isEqualToString:@"observe"])
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                if ([request[@"screenshot"] boolValue]) mapLaunchScreenshotRequested = YES;
                 return StepObservation(sensitiveNotes, @"map-launch");
+            }
             if ([request[@"op"] isEqualToString:@"act"] &&
                 [request[@"action"] isEqualToString:@"launch_app"] &&
                 [request[@"bundle_id"] isEqualToString:@"com.apple.Maps"] &&
@@ -187,23 +190,64 @@ int main(void) {
             mapLaunchModelCalls++;
             return @{@"error": @"model must not see prior app"};
         };
-        NSDictionary *mapLaunchStep = BBMapStep(mapTask, @[], mapLaunchBridge, unusedMapModel);
+        NSDictionary *mapLaunchStep = BBMapStep(mapTask, @[], mapLaunchBridge, unusedMapModel, YES);
         if (!Check([mapLaunchStep[@"ok"] boolValue] &&
                    [mapLaunchStep[@"action"][@"action"] isEqualToString:@"launch_app"] &&
-                   mapLaunchActs == 1 && mapLaunchModelCalls == 0,
+                   mapLaunchActs == 1 && mapLaunchModelCalls == 0 &&
+                   !mapLaunchScreenshotRequested,
                    "map harness leaves a sensitive app with a fixed local launch")) return 1;
+        NSDictionary *switchedMapStep = BBMapStep(mapTask,
+            @[@{@"action": @"launch_app", @"bundle_id": @"com.apple.Maps"}],
+            mapLaunchBridge, unusedMapModel, YES);
+        if (!Check([switchedMapStep[@"error"] isEqualToString:@"fresh_state"] &&
+                   mapLaunchModelCalls == 0 && !mapLaunchScreenshotRequested,
+                   "map harness stops after leaving Maps without capturing another app")) return 1;
         NSDictionary *sensitiveMap = Observation(@"com.apple.Maps", NO,
             sensitiveNotes[@"ui"], @{});
+        __block BOOL sensitiveMapScreenshotRequested = NO;
         BBNoteBridgeRequest sensitiveMapBridge = ^NSDictionary *(NSDictionary *request) {
             if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
-            if ([request[@"op"] isEqualToString:@"observe"])
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                if ([request[@"screenshot"] boolValue]) sensitiveMapScreenshotRequested = YES;
                 return StepObservation(sensitiveMap, @"map-sensitive");
+            }
             return @{@"ok": @NO};
         };
-        NSDictionary *sensitiveMapStep = BBMapStep(mapTask, @[], sensitiveMapBridge, unusedMapModel);
+        NSDictionary *sensitiveMapStep = BBMapStep(mapTask, @[], sensitiveMapBridge, unusedMapModel, YES);
         if (!Check([sensitiveMapStep[@"error"] isEqualToString:@"sensitive"] &&
-                   mapLaunchModelCalls == 0,
+                   mapLaunchModelCalls == 0 && !sensitiveMapScreenshotRequested,
                    "map harness never sends a sensitive Maps screen to the model")) return 1;
+        __block NSUInteger visualReads = 0;
+        BBNoteBridgeRequest changingMapBridge = ^NSDictionary *(NSDictionary *request) {
+            if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                visualReads++;
+                return StepObservation(visualReads == 1 ? map : sensitiveMap,
+                    [NSString stringWithFormat:@"map-visual-%lu", (unsigned long)visualReads]);
+            }
+            return @{@"ok": @NO};
+        };
+        NSDictionary *changingMapStep = BBMapStep(mapTask, @[], changingMapBridge,
+            unusedMapModel, YES);
+        if (!Check([changingMapStep[@"error"] isEqualToString:@"sensitive"] &&
+                   visualReads == 2 && mapLaunchModelCalls == 0,
+                   "map harness rechecks the screenshot observation before a model call")) return 1;
+        __block NSUInteger completedVisualReads = 0;
+        BBNoteBridgeRequest completedVisualBridge = ^NSDictionary *(NSDictionary *request) {
+            if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                completedVisualReads++;
+                return StepObservation(completedVisualReads == 1 ? map : placeCard,
+                    [NSString stringWithFormat:@"map-completed-%lu", (unsigned long)completedVisualReads]);
+            }
+            return @{@"ok": @NO};
+        };
+        NSDictionary *completedVisualStep = BBMapStep(mapTask, @[], completedVisualBridge,
+            unusedMapModel, YES);
+        if (!Check([completedVisualStep[@"ok"] boolValue] &&
+                   [completedVisualStep[@"done"] boolValue] &&
+                   completedVisualReads == 2 && mapLaunchModelCalls == 0,
+                   "map harness finishes a result that appears before the model call")) return 1;
         __block NSUInteger rejectedMapActs = 0;
         BBNoteBridgeRequest mapBridge = ^NSDictionary *(NSDictionary *request) {
             if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
@@ -214,30 +258,35 @@ int main(void) {
         };
         NSDictionary *rejectedMapStep = BBMapStep(mapTask, @[], mapBridge,
             ^NSDictionary *(__unused NSString *command, __unused NSDictionary *observation,
-                             __unused NSArray *history) { return tapOther; });
+                             __unused NSArray *history) { return tapOther; }, YES);
         if (!Check([rejectedMapStep[@"error"] isEqualToString:@"policy"] &&
                    rejectedMapActs == 0,
                    "map harness blocks an unrelated model tap before Bridge action")) return 1;
+        __block BOOL resultScreenshotRequested = NO;
         BBNoteBridgeRequest resultBridge = ^NSDictionary *(NSDictionary *request) {
             if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
-            if ([request[@"op"] isEqualToString:@"observe"])
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                if ([request[@"screenshot"] boolValue]) resultScreenshotRequested = YES;
                 return StepObservation(placeCard, @"map-result");
+            }
             return @{@"ok": @NO};
         };
-        NSDictionary *verifiedMapStep = BBMapStep(mapTask, @[], resultBridge,
-            ^NSDictionary *(__unused NSString *command, __unused NSDictionary *observation,
-                             __unused NSArray *history) { return @{@"action": @"done"}; });
-        if (!Check([verifiedMapStep[@"ok"] boolValue] && [verifiedMapStep[@"done"] boolValue],
-                   "map harness completes only with verified map pin and place card")) return 1;
+        NSDictionary *verifiedMapStep = BBMapStep(mapTask, @[], resultBridge, unusedMapModel, YES);
+        if (!Check([verifiedMapStep[@"ok"] boolValue] && [verifiedMapStep[@"done"] boolValue] &&
+                   mapLaunchModelCalls == 0 && !resultScreenshotRequested,
+                   "verified map pin and place card complete without screenshot or model")) return 1;
         NSArray *mapJourneyStates = @[map, focusedMap, searchedMap, placeCard];
         NSArray *mapJourneyActions = @[tapSearch, inputPlace, enter];
         __block NSUInteger mapJourneyStage = 0, mapJourneyReads = 0, mapJourneyModelCalls = 0;
+        __block BOOL mapJourneyScreenshotRequested = NO;
         BBNoteBridgeRequest mapJourneyBridge = ^NSDictionary *(NSDictionary *request) {
             NSString *op = request[@"op"];
             if ([op isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
-            if ([op isEqualToString:@"observe"])
+            if ([op isEqualToString:@"observe"]) {
+                if ([request[@"screenshot"] boolValue]) mapJourneyScreenshotRequested = YES;
                 return StepObservation(mapJourneyStates[MIN(mapJourneyStage, 3)],
                     [NSString stringWithFormat:@"map-journey-%lu", (unsigned long)++mapJourneyReads]);
+            }
             if ([op isEqualToString:@"act"] && mapJourneyStage < 3 &&
                 [request[@"action"] isEqualToString:mapJourneyActions[mapJourneyStage][@"action"]] &&
                 [request[@"observation_id"] isEqualToString:
@@ -255,12 +304,13 @@ int main(void) {
         NSMutableArray *mapJourneyHistory = [NSMutableArray array];
         NSDictionary *mapJourneyResult = nil;
         for (NSUInteger step = 0; step < 4; step++) {
-            mapJourneyResult = BBMapStep(mapTask, mapJourneyHistory, mapJourneyBridge, mapJourneyModel);
+            mapJourneyResult = BBMapStep(mapTask, mapJourneyHistory, mapJourneyBridge, mapJourneyModel, YES);
             if (![mapJourneyResult[@"ok"] boolValue] || [mapJourneyResult[@"done"] boolValue]) break;
             [mapJourneyHistory addObject:mapJourneyResult[@"action"]];
         }
         if (!Check([mapJourneyResult[@"ok"] boolValue] && [mapJourneyResult[@"done"] boolValue] &&
-                   mapJourneyStage == 3 && mapJourneyHistory.count == 3 && mapJourneyModelCalls == 4,
+                   mapJourneyStage == 3 && mapJourneyHistory.count == 3 &&
+                   mapJourneyModelCalls == 3 && mapJourneyScreenshotRequested,
                    "map harness completes a full bounded local search journey")) return 1;
         NSDictionary *localClose = BBFixedMapAction(mapTask, oldCard, @[]);
         if (!Check([localClose[@"action"] isEqualToString:@"tap"] &&
@@ -272,6 +322,7 @@ int main(void) {
                    "local planner stops when Maps controls are not recognized")) return 1;
         mapJourneyStage = 0;
         mapJourneyReads = 0;
+        mapJourneyScreenshotRequested = NO;
         NSMutableArray *localMapHistory = [NSMutableArray array];
         NSDictionary *localMapResult = nil;
         BBMapActionProvider localMapModel = ^NSDictionary *(NSString *command,
@@ -279,13 +330,14 @@ int main(void) {
             return BBFixedMapAction(command, observation, history);
         };
         for (NSUInteger step = 0; step < 4; step++) {
-            localMapResult = BBMapStep(mapTask, localMapHistory, mapJourneyBridge, localMapModel);
+            localMapResult = BBMapStep(mapTask, localMapHistory, mapJourneyBridge, localMapModel, NO);
             if (![localMapResult[@"ok"] boolValue] || [localMapResult[@"done"] boolValue]) break;
             [localMapHistory addObject:localMapResult[@"action"]];
         }
         if (!Check([localMapResult[@"ok"] boolValue] && [localMapResult[@"done"] boolValue] &&
-                   mapJourneyStage == 3 && localMapHistory.count == 3,
-                   "mock map planner completes the search without a remote model")) return 1;
+                   mapJourneyStage == 3 && localMapHistory.count == 3 &&
+                   !mapJourneyScreenshotRequested,
+                   "mock map planner completes the search without a screenshot or remote model")) return 1;
         NSDictionary *fishermanCard = Observation(@"com.apple.Maps", NO,
             @{@"elements": @[
                 @{@"text": @"Fisherman's Wharf", @"visible_rect":

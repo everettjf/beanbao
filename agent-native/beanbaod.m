@@ -931,20 +931,24 @@ static NSDictionary *BBFixedMapAction(NSString *task, NSDictionary *observation,
 }
 
 static NSDictionary *BBMapStep(NSString *task, NSArray *history,
-                                BBNoteBridgeRequest bridge, BBMapActionProvider model) {
+                                BBNoteBridgeRequest bridge, BBMapActionProvider model,
+                                BOOL captureScreenshotForModel) {
     NSString *query = BBMapQuery(task);
     if (!query || history.count >= 20) return @{@"ok": @NO, @"error": @"invalid_task"};
     if (BBHasSecret(task)) return @{@"ok": @NO, @"error": @"sensitive"};
     NSDictionary *lease = bridge(@{@"op": @"wake_lease", @"mode": @"renew"});
     if (![lease[@"ok"] boolValue]) return @{@"ok": @NO, @"error": @"wake_lease"};
-    NSDictionary *observation = bridge(@{@"op": @"observe", @"ui": @YES,
-                                        @"ocr": @YES, @"screenshot": @YES});
+    NSDictionary *observation = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
     if (![observation[@"ok"] boolValue]) return @{@"ok": @NO, @"error": @"observe"};
     if (!BBUnlockedObservation(observation)) return @{@"ok": @NO, @"error": @"locked"};
     NSDictionary *fixedLaunch = BBMapInitialLaunch(observation, history);
+    if (!fixedLaunch &&
+        ![observation[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"])
+        return @{@"ok": @NO, @"error": @"fresh_state"};
     if (!fixedLaunch && (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"])))
         return @{@"ok": @NO, @"error": @"sensitive"};
-    NSDictionary *fixedAction = fixedLaunch ?: BBMapFixedSuggestionAction(observation, query);
+    NSDictionary *fixedAction = fixedLaunch ?: (BBMapResultVisible(observation, query) ?
+        @{@"action": @"done"} : BBMapFixedSuggestionAction(observation, query));
     if (!fixedAction && [history.lastObject[@"action"] isEqualToString:@"input_text"] &&
         [observation[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] &&
         BBVisibleContains(observation, query)) {
@@ -958,6 +962,18 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
             fixedAction = BBMapFixedSuggestionAction(observation, query);
             if (fixedAction) break;
         }
+    }
+    if (!fixedAction && captureScreenshotForModel) {
+        NSDictionary *visual = bridge(@{@"op": @"observe", @"ui": @YES,
+                                        @"ocr": @YES, @"screenshot": @YES});
+        if (![visual[@"ok"] boolValue] || !BBUnlockedObservation(visual) ||
+            ![visual[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"])
+            return @{@"ok": @NO, @"error": @"fresh_state"};
+        if (BBHasSecret(visual[@"ui"]) || BBHasSecret(visual[@"ocr"]))
+            return @{@"ok": @NO, @"error": @"sensitive"};
+        observation = visual;
+        fixedAction = BBMapResultVisible(observation, query) ?
+            @{@"action": @"done"} : BBMapFixedSuggestionAction(observation, query);
     }
     NSDictionary *action = fixedAction ?: model(task, observation, history);
     if (![action isKindOfClass:NSDictionary.class] || action[@"error"])
@@ -1042,7 +1058,7 @@ static char *BBMapStepEncoded(const char *taskText, const char *historyJSON, BOO
                 ^NSDictionary *(NSString *command, NSDictionary *observation, NSArray *prior) {
                     return useClaude ? BBClaudeAction(command, observation, prior, key) :
                         BBFixedMapAction(command, observation, prior);
-                });
+                }, useClaude);
         NSData *encoded = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
         if (!encoded || encoded.length > 8192) return NULL;
         char *copy = malloc(encoded.length + 1);

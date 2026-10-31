@@ -7,10 +7,10 @@
 三个 RootHide `iphoneos-arm64e` 包按顺序安装：
 
 1. `dev.beanbao.bridge` 0.2.2：SpringBoard 中的受限观察与点击/输入桥接；固定启动白名单包含通讯录。
-2. `dev.beanbao.agent` 0.3.41：手机端任务服务、本地地图规则和 Claude 适配器，依赖 Bridge 0.2.2 以上。
+2. `dev.beanbao.agent` 0.3.42：手机端任务服务、本地地图规则和 Claude 适配器，依赖 Bridge 0.2.2 以上。
 3. `dev.beanbao.app` 0.3.10：文字、语音、状态与配置界面，依赖 Agent 0.3.41 以上。
 
-本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备上已验收的仍是 Agent 0.3.34 / App 0.3.7；本机另有 Agent 0.3.41 / App 0.3.10 候选包，加入 Palmino harness 的固定打开 App、逐步新建备忘录和地图搜索路径、新图标及带身份校验的任务状态协议，尚未装机验收。模拟模式下打开指定 App、新建备忘录和受限地图搜索都无需模型 Key；地图搜索自身可能需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
+本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备上已验收的仍是 Agent 0.3.34 / App 0.3.7；本机另有 Agent 0.3.42 / App 0.3.10 候选包，加入 Palmino harness 的固定打开 App、逐步新建备忘录和地图搜索路径、新图标及带身份校验的任务状态协议，尚未装机验收。模拟模式下打开指定 App、新建备忘录和受限地图搜索都无需模型 Key，地图步骤不采集截图；地图搜索自身可能需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
 
 从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
 
@@ -18,7 +18,7 @@
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.2_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.41_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.42_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.10_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
