@@ -6,6 +6,9 @@
 #import <unistd.h>
 #import <errno.h>
 #import <float.h>
+#import <stdint.h>
+#import <stdlib.h>
+#import <string.h>
 #import "BBAudit.h"
 
 static const char *BBSocket = "/var/mobile/Library/Caches/BeanBao/bridge.sock";
@@ -82,6 +85,28 @@ static NSDictionary *BBBridge(NSDictionary *request) {
     NSDictionary *result = [NSJSONSerialization JSONObjectWithData:response options:0 error:nil];
     return [result isKindOfClass:NSDictionary.class] ? result : BBError(@"Invalid bridge response");
 }
+
+// C ABI for the Swift harness. The bridge token and socket path stay in this
+// process; the Swift runtime receives only the JSON result of each request.
+char *BBBridgeRequestJSON(const char *requestJSON) {
+    @autoreleasepool {
+        if (!requestJSON) return NULL;
+        NSData *input = [[NSString stringWithUTF8String:requestJSON] dataUsingEncoding:NSUTF8StringEncoding];
+        NSDictionary *request = [NSJSONSerialization JSONObjectWithData:input options:0 error:nil];
+        if (![request isKindOfClass:NSDictionary.class]) return NULL;
+        NSDictionary *reply = BBBridge(request);
+        NSData *output = [NSJSONSerialization dataWithJSONObject:reply options:0 error:nil];
+        if (!output || output.length > 8 * 1024 * 1024) return NULL;
+        char *copy = malloc(output.length + 1);
+        if (!copy) return NULL;
+        memcpy(copy, output.bytes, output.length);
+        copy[output.length] = '\0';
+        return copy;
+    }
+}
+
+void BBBridgeFreeJSON(char *response) { free(response); }
+extern int32_t BBRunHarnessMock(const char *task);
 
 void BBReleaseWakeLease(void) {
     BBBridge(@{@"op": @"wake_lease", @"mode": @"release"});
@@ -921,6 +946,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc == 2 && !strcmp(argv[1], "--serve")) return BBServe();
+        if (argc == 3 && !strcmp(argv[1], "--harness-mock")) return BBRunHarnessMock(argv[2]);
         if (argc < 2) { fprintf(stderr, "用法：beanbaod [--claude] [--approve-ui] '任务文字'\n"); return 2; }
         BOOL claude = NO, allowUI = NO, autoMap = NO, autoNote = NO;
         NSString *task = nil;

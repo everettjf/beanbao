@@ -6,6 +6,10 @@
 #undef main
 #include "../agent-native/AgentService.m"
 
+// The policy fixture includes the Objective-C entry point without linking the
+// Swift harness; harness behavior has its own Swift package tests.
+int32_t BBRunHarnessMock(const char *task) { (void)task; return 1; }
+
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
     return @{@"device_state": @{@"locked_known": @YES, @"locked": @(locked),
                                @"screen_on_known": @YES, @"screen_on": @YES},

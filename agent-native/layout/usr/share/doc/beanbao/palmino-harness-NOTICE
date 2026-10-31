@@ -1,0 +1,8 @@
+PalminoHarnessKit
+Copyright 2026 Feng Zhu
+
+This product includes software developed as part of PalminoHarnessKit.
+
+Third-party Swift Package dependencies retain their own licenses and notices.
+The iSH/iSH64 emulator and Alpine guest used by the Palmino reference application
+are not part of PalminoHarnessKit.

@@ -169,7 +169,7 @@ static NSDictionary *BBStart(NSDictionary *request) {
                                     task.UTF8String, NULL};
         const char *argvNote[] = {executable, "--auto-note", task.UTF8String, NULL};
         const char *argvClaudeOpen[] = {executable, "--claude", task.UTF8String, NULL};
-        const char *argvMock[] = {executable, task.UTF8String, NULL};
+        const char *argvMock[] = {executable, "--harness-mock", task.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
                                      (char *const *)(noteTask ? argvNote :

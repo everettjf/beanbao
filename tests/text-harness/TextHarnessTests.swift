@@ -1,0 +1,105 @@
+import Foundation
+import XCTest
+import AgentRuntime
+import BeanBaoTextHarness
+
+private final class FakeBridge: @unchecked Sendable {
+    private let lock = NSLock()
+    private var foreground = "com.apple.springboard"
+    private var observationID = 0
+    private var leaseActive = false
+    private var actionCount = 0
+    let locked: Bool
+    let rejectAction: Bool
+    let ignoreLaunch: Bool
+
+    init(locked: Bool = false, rejectAction: Bool = false, ignoreLaunch: Bool = false) {
+        self.locked = locked
+        self.rejectAction = rejectAction
+        self.ignoreLaunch = ignoreLaunch
+    }
+
+    var actions: Int { lock.lock(); defer { lock.unlock() }; return actionCount }
+    var leaseReleased: Bool { lock.lock(); defer { lock.unlock() }; return !leaseActive }
+
+    func request(_ value: PHKJSONValue) -> PHKJSONValue {
+        lock.lock()
+        defer { lock.unlock() }
+        guard case .object(let fields) = value,
+              case .string(let op)? = fields["op"] else { return .object(["ok": .bool(false)]) }
+        switch op {
+        case "wake_lease":
+            guard case .string(let mode)? = fields["mode"] else { return .object(["ok": .bool(false)]) }
+            if mode == "renew" {
+                if locked { return .object(["ok": .bool(false)]) }
+                leaseActive = true
+            } else { leaseActive = false }
+            return .object(["ok": .bool(true)])
+        case "observe":
+            observationID += 1
+            return .object([
+                "ok": .bool(true), "observation_id": .string(String(observationID)),
+                "timestamp": .number(Date().timeIntervalSince1970),
+                "device_state": .object([
+                    "locked_known": .bool(true), "locked": .bool(locked),
+                    "screen_on_known": .bool(true), "screen_on": .bool(!locked)
+                ]),
+                "frontmost_app": .object(["bundleId": .string(foreground)])
+            ])
+        case "act":
+            actionCount += 1
+            guard !locked, !rejectAction,
+                  case .string(let id)? = fields["observation_id"], id == String(observationID),
+                  case .string("launch_app")? = fields["action"],
+                  case .string(let bundle)? = fields["bundle_id"] else {
+                return .object(["ok": .bool(false)])
+            }
+            if !ignoreLaunch { foreground = bundle }
+            return .object(["ok": .bool(true)])
+        default:
+            return .object(["ok": .bool(false)])
+        }
+    }
+}
+
+final class TextHarnessTests: XCTestCase {
+    func testFourAllowlistedTextCommandsReachVerifiedForeground() async {
+        for task in BeanBaoTextHarness.targets.keys.sorted() {
+            let fake = FakeBridge()
+            let result = await BeanBaoTextHarness.run(task, bridge: fake.request)
+            XCTAssertTrue(result.succeeded, task)
+            XCTAssertEqual(fake.actions, 1, task)
+            XCTAssertTrue(fake.leaseReleased, task)
+        }
+    }
+
+    func testUnsupportedTaskDoesNotTouchBridge() async {
+        let fake = FakeBridge()
+        let result = await BeanBaoTextHarness.run("打开日历", bridge: fake.request)
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(fake.actions, 0)
+    }
+
+    func testLockedScreenDoesNotLaunchApp() async {
+        let fake = FakeBridge(locked: true)
+        let result = await BeanBaoTextHarness.run("打开地图", bridge: fake.request)
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(fake.actions, 0)
+    }
+
+    func testBridgeRejectionCannotBeReportedAsSuccess() async {
+        let fake = FakeBridge(rejectAction: true)
+        let result = await BeanBaoTextHarness.run("打开地图", bridge: fake.request)
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(fake.actions, 1)
+        XCTAssertTrue(fake.leaseReleased)
+    }
+
+    func testUnverifiedLaunchCannotBeReportedAsSuccess() async {
+        let fake = FakeBridge(ignoreLaunch: true)
+        let result = await BeanBaoTextHarness.run("打开地图", bridge: fake.request)
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(fake.actions, 1)
+        XCTAssertTrue(fake.leaseReleased)
+    }
+}

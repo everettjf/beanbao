@@ -1,13 +1,15 @@
 THEOS ?= /Users/xnu/sec/jailbreak/toolchains/theos-roothide
 THEOS_PACKAGE_SCHEME = roothide
-TARGET = iphone:clang:latest:15.0
+TARGET = iphone:clang:latest:17.0
 ARCHS = arm64e
 
 include $(THEOS)/makefiles/common.mk
 
 TOOL_NAME = beanbaod
 TOOL_NAME += beanbaoagentctl
-beanbaod_FILES = beanbaod.m AgentService.m BBAudit.m
+beanbaod_FILES = beanbaod.m AgentService.m BBAudit.m ../harness/TextHarness.swift \
+	$(wildcard ../vendor/palmino-harness-runtime/Sources/AgentRuntime/*.swift)
+beanbaod_SWIFT_VERSION = 6
 beanbaod_CFLAGS = -fobjc-arc -Wall -Wextra
 beanbaod_FRAMEWORKS = Foundation
 beanbaod_CODESIGN_FLAGS = -S../bridge/beanbaoctl_entitlements.plist
