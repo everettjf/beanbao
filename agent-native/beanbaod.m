@@ -108,6 +108,7 @@ char *BBBridgeRequestJSON(const char *requestJSON) {
 void BBBridgeFreeJSON(char *response) { free(response); }
 extern int32_t BBRunHarnessMock(const char *task);
 extern int32_t BBRunHarnessNote(const char *task);
+extern int32_t BBRunHarnessMap(const char *task);
 
 void BBReleaseWakeLease(void) {
     BBBridge(@{@"op": @"wake_lease", @"mode": @"release"});
@@ -876,6 +877,128 @@ char *BBNoteStepJSON(const char *taskText, const char *historyJSON) {
     }
 }
 
+typedef NSDictionary * (^BBMapActionProvider)(NSString *task, NSDictionary *observation, NSArray *history);
+
+static NSDictionary *BBMapStep(NSString *task, NSArray *history,
+                                BBNoteBridgeRequest bridge, BBMapActionProvider model) {
+    NSString *query = BBMapQuery(task);
+    if (!query || history.count >= 20) return @{@"ok": @NO, @"error": @"invalid_task"};
+    if (BBHasSecret(task)) return @{@"ok": @NO, @"error": @"sensitive"};
+    NSDictionary *lease = bridge(@{@"op": @"wake_lease", @"mode": @"renew"});
+    if (![lease[@"ok"] boolValue]) return @{@"ok": @NO, @"error": @"wake_lease"};
+    NSDictionary *observation = bridge(@{@"op": @"observe", @"ui": @YES,
+                                        @"ocr": @YES, @"screenshot": @YES});
+    if (![observation[@"ok"] boolValue]) return @{@"ok": @NO, @"error": @"observe"};
+    if (!BBUnlockedObservation(observation)) return @{@"ok": @NO, @"error": @"locked"};
+    NSDictionary *fixedLaunch = BBMapInitialLaunch(observation, history);
+    if (!fixedLaunch && (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"])))
+        return @{@"ok": @NO, @"error": @"sensitive"};
+    NSDictionary *fixedAction = fixedLaunch ?: BBMapFixedSuggestionAction(observation, query);
+    if (!fixedAction && [history.lastObject[@"action"] isEqualToString:@"input_text"] &&
+        [observation[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] &&
+        BBVisibleContains(observation, query)) {
+        for (NSUInteger retry = 0; retry < 8; retry++) {
+            usleep(500000);
+            NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+            if (![settled[@"ok"] boolValue] || !BBUnlockedObservation(settled) ||
+                ![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] ||
+                BBHasSecret(settled[@"ui"]) || BBHasSecret(settled[@"ocr"])) break;
+            observation = settled;
+            fixedAction = BBMapFixedSuggestionAction(observation, query);
+            if (fixedAction) break;
+        }
+    }
+    NSDictionary *action = fixedAction ?: model(task, observation, history);
+    if (![action isKindOfClass:NSDictionary.class] || action[@"error"])
+        return @{@"ok": @NO, @"error": @"model"};
+    if ([action[@"action"] isEqualToString:@"input_text"] &&
+        [action[@"text"] isEqualToString:query] &&
+        !BBValidAction(action, observation, task, history, YES, YES, NO)) {
+        for (NSUInteger retry = 0; retry < 5; retry++) {
+            usleep(350000);
+            NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+            if (![settled[@"ok"] boolValue] || BBHasSecret(settled[@"ui"]) ||
+                BBHasSecret(settled[@"ocr"])) break;
+            if (BBValidAction(action, settled, task, history, YES, YES, NO)) {
+                observation = settled;
+                break;
+            }
+        }
+    }
+    if ([action[@"action"] isEqualToString:@"done"] &&
+        !BBValidAction(action, observation, task, history, YES, YES, NO)) {
+        for (NSUInteger retry = 0; retry < 8; retry++) {
+            usleep(500000);
+            NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+            if (![settled[@"ok"] boolValue] || BBHasSecret(settled[@"ui"]) ||
+                BBHasSecret(settled[@"ocr"])) break;
+            if (BBValidAction(action, settled, task, history, YES, YES, NO)) {
+                observation = settled;
+                break;
+            }
+        }
+    }
+    if (!BBValidAction(action, observation, task, history, YES, YES, NO)) {
+        BBAudit(@"step", @"com.apple.Maps", @"policy_block", @"blocked");
+        return @{@"ok": @NO, @"error": @"policy"};
+    }
+    NSString *name = action[@"action"];
+    if ([name isEqualToString:@"done"]) {
+        BBAudit(@"step", @"com.apple.Maps", @"done", @"ok");
+        return @{@"ok": @YES, @"done": @YES};
+    }
+    BOOL suggestionTap = [name isEqualToString:@"tap"] &&
+        BBMapSuggestionTapAllowed(observation, query,
+                                  [action[@"x"] doubleValue], [action[@"y"] doubleValue]);
+    NSDictionary *fresh = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @(suggestionTap)});
+    BOOL sameApp = [fresh[@"frontmost_app"][@"bundleId"]
+        isEqual:observation[@"frontmost_app"][@"bundleId"]];
+    BOOL allowed = BBValidAction(action, fresh, task, history, YES, YES, NO);
+    BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
+    if (![fresh[@"ok"] boolValue] ||
+        (!fixedLaunch && (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
+        !sameApp || !allowed || !recent) {
+        BBAudit(@"step", @"com.apple.Maps", @"policy_block", @"blocked");
+        return @{@"ok": @NO, @"error": @"fresh_state"};
+    }
+    NSMutableDictionary *request = [action mutableCopy];
+    request[@"op"] = @"act";
+    request[@"observation_id"] = fresh[@"observation_id"];
+    if (![bridge(request)[@"ok"] boolValue]) {
+        BBAudit(@"step", @"com.apple.Maps", name, @"failed");
+        return @{@"ok": @NO, @"error": @"act"};
+    }
+    BBAudit(@"step", @"com.apple.Maps", name, @"ok");
+    return @{@"ok": @YES, @"done": @NO, @"action": action};
+}
+
+char *BBMapStepJSON(const char *taskText, const char *historyJSON) {
+    @autoreleasepool {
+        if (!taskText || !historyJSON) return NULL;
+        NSString *task = [NSString stringWithUTF8String:taskText];
+        NSData *historyData = [[NSString stringWithUTF8String:historyJSON] dataUsingEncoding:NSUTF8StringEncoding];
+        if (!task || !historyData) return NULL;
+        id history = [NSJSONSerialization JSONObjectWithData:historyData options:0 error:nil];
+        if (![history isKindOfClass:NSArray.class]) return NULL;
+        for (id item in history) if (![item isKindOfClass:NSDictionary.class]) return NULL;
+        NSString *key = BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0);
+        NSDictionary *result = (![key hasPrefix:@"sk-ant-"] || key.length < 24) ?
+            @{@"ok": @NO, @"error": @"key"} :
+            BBMapStep(task, history,
+                ^NSDictionary *(NSDictionary *request) { return BBBridge(request); },
+                ^NSDictionary *(NSString *command, NSDictionary *observation, NSArray *prior) {
+                    return BBClaudeAction(command, observation, prior, key);
+                });
+        NSData *encoded = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
+        if (!encoded || encoded.length > 8192) return NULL;
+        char *copy = malloc(encoded.length + 1);
+        if (!copy) return NULL;
+        memcpy(copy, encoded.bytes, encoded.length);
+        copy[encoded.length] = '\0';
+        return copy;
+    }
+}
+
 static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
     if (claude && [task isEqualToString:@"打开通讯录"]) {
         fprintf(stderr, "打开通讯录请使用模拟模型\n");
@@ -1057,6 +1180,7 @@ int main(int argc, const char *argv[]) {
         if (argc == 2 && !strcmp(argv[1], "--serve")) return BBServe();
         if (argc == 3 && !strcmp(argv[1], "--harness-mock")) return BBRunHarnessMock(argv[2]);
         if (argc == 3 && !strcmp(argv[1], "--harness-note")) return BBRunHarnessNote(argv[2]);
+        if (argc == 3 && !strcmp(argv[1], "--harness-map")) return BBRunHarnessMap(argv[2]);
         if (argc < 2) { fprintf(stderr, "用法：beanbaod [--claude] [--approve-ui] '任务文字'\n"); return 2; }
         BOOL claude = NO, allowUI = NO, autoMap = NO, autoNote = NO;
         NSString *task = nil;

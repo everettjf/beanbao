@@ -150,7 +150,6 @@ static NSDictionary *BBStart(NSDictionary *request) {
     NSString *app = BBAllowedTarget(task);
     if (!app || ![@[@"mock", @"claude"] containsObject:model])
         return @{@"ok": @NO, @"error": @"首版只接受打开指定 App、地图搜索或新建备忘录"};
-    BOOL mapSearch = [task hasPrefix:@"在地图搜索"];
     BOOL noteTask = BBIsNoteTask(task);
     NSString *completionMessage = BBCompletionMessage(task);
     if (!BBTaskModelAllowed(task, model))
@@ -173,14 +172,13 @@ static NSDictionary *BBStart(NSDictionary *request) {
             posix_spawn_file_actions_destroy(&actions); close(outputPipe[0]); close(outputPipe[1]);
             return @{@"ok": @NO, @"error": @"无法定位任务程序"};
         }
-        const char *argvClaude[] = {executable, "--claude", mapSearch ? "--auto-map" : "--auto-note",
-                                    task.UTF8String, NULL};
+        const char *argvMap[] = {executable, "--harness-map", task.UTF8String, NULL};
         const char *argvNote[] = {executable, "--harness-note", task.UTF8String, NULL};
         const char *argvMock[] = {executable, "--harness-mock", task.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
                                      (char *const *)(noteTask ? argvNote :
-                                         (BBUsesTextHarness(task) ? argvMock : argvClaude)), environ);
+                                         (BBUsesTextHarness(task) ? argvMock : argvMap)), environ);
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,
