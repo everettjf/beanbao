@@ -202,6 +202,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
             dispatch_get_main_queue(), ^{ [self checkHotkeyVoice]; });
         return;
     }
+    self.feedbackLabel.text = @"已收到按键唤醒，正在准备录音";
     unlink(BBHotkeyVoiceFile);
     [self voiceTapped];
 }
