@@ -82,6 +82,8 @@ static NSString *BBFailureMessage(NSString *output) {
         return @"界面操作未通过安全校验，已停止";
     if ([output containsString:@"界面复核未通过"])
         return @"界面发生变化，已停止任务";
+    if ([output containsString:@"备忘录界面状态不符合安全条件"])
+        return @"备忘录界面状态不符合安全条件，已停止";
     if ([output containsString:@"任务超过时间或步数上限"])
         return @"任务超过时间或步数上限";
     return @"任务未完成，请检查界面后重试";

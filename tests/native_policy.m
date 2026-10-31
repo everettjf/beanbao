@@ -39,6 +39,9 @@ int main(void) {
             !Check([BBFailureMessage(@"unexpected private output")
                     isEqualToString:@"任务未完成，请检查界面后重试"],
                    "unknown error does not expose child output") ||
+            !Check([BBFailureMessage(@"备忘录界面状态不符合安全条件")
+                    isEqualToString:@"备忘录界面状态不符合安全条件，已停止"],
+                   "note state error is specific and fixed") ||
             !Check([BBAllowedTarget(@"新建备忘录：测试内容") isEqualToString:@"备忘录"],
                    "note task accepted") ||
             !Check(BBAllowedTarget(@"新建备忘录：短") == nil, "short note task refused") ||
@@ -196,8 +199,17 @@ int main(void) {
               @"visible_rect": @{@"x": @0, @"y": @84, @"width": @414, @"height": @18}},
             @{@"text": @"Note", @"visible_rect": @{@"x": @0, @"y": @0, @"width": @414, @"height": @449}},
             @{@"text": @"return", @"visible_rect": @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}}]};
+        NSDictionary *unfocusedNoteUI = @{@"elements": @[
+            @{@"text": @"October 30, 2026 at 17:24", @"aliases": @[@"Timestamp", @"Created", @"Edited"],
+              @"visible_rect": @{@"x": @0, @"y": @84, @"width": @414, @"height": @18}},
+            @{@"text": @"Note", @"visible_rect": @{@"x": @0, @"y": @0, @"width": @414, @"height": @794}},
+            @{@"text": @"New note", @"visible_rect": @{@"x": @343, @"y": @825, @"width": @38, @"height": @38}}]};
         NSDictionary *noteList = Observation(@"com.apple.mobilenotes", NO, noteListUI, @{});
         NSDictionary *blankNote = Observation(@"com.apple.mobilenotes", NO, noteEditorUI, @{});
+        NSDictionary *unfocusedNote = Observation(@"com.apple.mobilenotes", NO, unfocusedNoteUI,
+                                                  @{@"texts": @[]});
+        NSDictionary *nonblankNote = Observation(@"com.apple.mobilenotes", NO, unfocusedNoteUI,
+            @{@"texts": @[@{@"text": @"Existing content", @"rect": @{@"y": @180}}]});
         NSDictionary *note = Observation(@"com.apple.mobilenotes", NO, noteEditorUI, @{@"text": @"测试内容"});
         NSString *noteTask = @"新建备忘录：测试内容";
         if (!Check(BBUnlockedObservation(note), "unlocked observation accepted") ||
@@ -205,14 +217,50 @@ int main(void) {
             !Check(!BBUnlockedObservation(Observation(@"com.apple.mobilenotes", YES, noteListUI, nil)),
                    "locked observation rejected before model")) return 1;
         NSDictionary *newNote = @{@"action": @"tap", @"x": @320, @"y": @70};
+        NSDictionary *focusNote = @{@"action": @"tap", @"x": @82.8, @"y": @179.2};
         NSDictionary *noteText = @{@"action": @"input_text", @"text": @"测试内容"};
         NSDictionary *doneTap = @{@"action": @"tap", @"x": @370, @"y": @70};
         NSArray *noteOne = @[newNote], *noteTwo = @[newNote, noteText];
         NSArray *noteThree = @[newNote, noteText, doneTap];
+        NSArray *noteFocused = @[newNote, focusNote];
+        NSArray *noteFocusedTyped = @[newNote, focusNote, noteText];
+        NSArray *noteFocusedDone = @[newNote, focusNote, noteText, doneTap];
+        NSDictionary *fixedNewNote = BBFixedNoteAction(noteTask, noteList, @[]);
+        if (!Check([fixedNewNote[@"action"] isEqualToString:@"tap"] &&
+                   [fixedNewNote[@"x"] doubleValue] == 330 && [fixedNewNote[@"y"] doubleValue] == 70,
+                   "fixed note planner taps exact new note control") ||
+            !Check([BBFixedNoteAction(noteTask, blankNote, noteOne)[@"action"] isEqualToString:@"input_text"],
+                   "fixed note planner enters exact content") ||
+            !Check([BBFixedNoteAction(noteTask, note, noteTwo)[@"action"] isEqualToString:@"tap"],
+                   "fixed note planner taps Done after content") ||
+            !Check([BBFixedNoteAction(noteTask, note, noteThree)[@"action"] isEqualToString:@"done"],
+                   "fixed note planner completes after verification") ||
+            !Check([BBFixedNoteAction(noteTask, unfocusedNote, noteOne)[@"action"] isEqualToString:@"tap"],
+                   "fixed note planner focuses a verified blank canvas") ||
+            !Check([BBFixedNoteAction(noteTask, blankNote, noteFocused)[@"action"] isEqualToString:@"input_text"],
+                   "fixed note planner types after focus") ||
+            !Check([BBFixedNoteAction(noteTask, note, noteFocusedTyped)[@"action"] isEqualToString:@"tap"],
+                   "fixed note planner taps Done after focused typing") ||
+            !Check([BBFixedNoteAction(noteTask, note, noteFocusedDone)[@"action"] isEqualToString:@"done"],
+                   "fixed note planner verifies focused sequence") ||
+            !Check(BBFixedNoteAction(noteTask, nonblankNote, noteOne)[@"error"] != nil,
+                   "fixed note planner refuses existing body text") ||
+            !Check(BBFixedNoteAction(noteTask, blankNote, @[])[@"error"] != nil,
+                   "fixed note planner refuses existing editor without new note action")) return 1;
         if (!Check(BBValidAction(newNote, noteList, noteTask, @[], YES, NO, YES), "new note tap allowed") ||
             !Check(!BBValidAction(@{@"action": @"tap", @"x": @280, @"y": @320},
                                   noteList, noteTask, @[], YES, NO, YES), "delete tap blocked") ||
             !Check(BBValidAction(noteText, blankNote, noteTask, noteOne, YES, NO, YES), "exact note text allowed") ||
+            !Check(BBValidAction(focusNote, unfocusedNote, noteTask, noteOne, YES, NO, YES),
+                   "blank new note focus allowed") ||
+            !Check(!BBValidAction(focusNote, nonblankNote, noteTask, noteOne, YES, NO, YES),
+                   "existing note body focus blocked") ||
+            !Check(BBValidAction(noteText, blankNote, noteTask, noteFocused, YES, NO, YES),
+                   "input after blank focus allowed") ||
+            !Check(BBValidAction(doneTap, note, noteTask, noteFocusedTyped, YES, NO, YES),
+                   "Done after focused input allowed") ||
+            !Check(BBValidAction(@{@"action": @"done"}, note, noteTask, noteFocusedDone, YES, NO, YES),
+                   "focused note completion allowed") ||
             !Check(!BBValidAction(@{@"action": @"input_text", @"text": @"别的内容"},
                                   blankNote, noteTask, noteOne, YES, NO, YES), "different note text blocked") ||
             !Check(!BBValidAction(noteText, note, noteTask, noteOne, YES, NO, YES),

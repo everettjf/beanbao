@@ -365,6 +365,112 @@ static BOOL BBNoteEditorReady(NSDictionary *observation) {
     return done && blankEditor && keyboard;
 }
 
+static BOOL BBNoteBlankUnfocused(NSDictionary *observation) {
+    if (!BBNoteTimestamp(observation)) return NO;
+    double height = [observation[@"screen"][@"height"] doubleValue];
+    BOOL blankCanvas = NO;
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSString *label = item[@"text"];
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![label isKindOfClass:NSString.class] || ![rect isKindOfClass:NSDictionary.class]) continue;
+        if ([@[@"Done", @"完成", @"return", @"换行"] containsObject:label]) return NO;
+        if ([@[@"Note", @"备忘录"] containsObject:label] &&
+            [rect[@"width"] doubleValue] > 200 && [rect[@"height"] doubleValue] > height * 0.55 &&
+            [rect[@"y"] doubleValue] < 100) blankCanvas = YES;
+    }
+    if (!blankCanvas || ![observation[@"ocr"][@"texts"] isKindOfClass:NSArray.class]) return NO;
+    for (NSDictionary *item in observation[@"ocr"][@"texts"]) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSString *text = item[@"text"];
+        double y = [item[@"rect"][@"y"] doubleValue];
+        if ([text isKindOfClass:NSString.class] &&
+            [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length &&
+            y >= 120 && y < height * 0.55) return NO;
+    }
+    return YES;
+}
+
+static BOOL BBNoteFocusPoint(NSDictionary *observation, double x, double y) {
+    double width = [observation[@"screen"][@"width"] doubleValue];
+    double height = [observation[@"screen"][@"height"] doubleValue];
+    if (!BBNoteBlankUnfocused(observation) || x < 40 || x > width - 40 ||
+        y < 120 || y > height * 0.5) return NO;
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![@[@"Note", @"备忘录"] containsObject:item[@"text"]]) continue;
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double left = [rect[@"x"] doubleValue], top = [rect[@"y"] doubleValue];
+        if (x >= left && x <= left + [rect[@"width"] doubleValue] &&
+            y >= top && y <= top + [rect[@"height"] doubleValue]) return YES;
+    }
+    return NO;
+}
+
+static NSDictionary *BBFixedNoteAction(NSString *task, NSDictionary *observation, NSArray *history) {
+    NSString *content = BBNoteText(task);
+    if (!content) return BBError(@"Invalid note task");
+    NSString *foreground = observation[@"frontmost_app"][@"bundleId"];
+    if (![foreground isEqualToString:@"com.apple.mobilenotes"])
+        return history.count == 0 ? @{@"action": @"launch_app", @"bundle_id": @"com.apple.mobilenotes"} :
+            BBError(@"Notes left the foreground");
+    NSMutableArray<NSString *> *uiActions = [NSMutableArray array];
+    for (NSDictionary *item in history)
+        if (![item[@"action"] isEqualToString:@"launch_app"]) [uiActions addObject:item[@"action"] ?: @""];
+    NSUInteger uiSteps = uiActions.count;
+    BOOL newOnly = uiSteps == 1 && [uiActions[0] isEqualToString:@"tap"];
+    BOOL focused = uiSteps == 2 &&
+        [uiActions[0] isEqualToString:@"tap"] && [uiActions[1] isEqualToString:@"tap"];
+    BOOL typedDirect = uiSteps == 2 && [uiActions[0] isEqualToString:@"tap"] &&
+        [uiActions[1] isEqualToString:@"input_text"];
+    BOOL typedFocused = uiSteps == 3 && [uiActions[0] isEqualToString:@"tap"] &&
+        [uiActions[1] isEqualToString:@"tap"] && [uiActions[2] isEqualToString:@"input_text"];
+    BOOL savedDirect = uiSteps == 3 && [uiActions[0] isEqualToString:@"tap"] &&
+        [uiActions[1] isEqualToString:@"input_text"] && [uiActions[2] isEqualToString:@"tap"];
+    BOOL savedFocused = uiSteps == 4 && [uiActions[0] isEqualToString:@"tap"] &&
+        [uiActions[1] isEqualToString:@"tap"] && [uiActions[2] isEqualToString:@"input_text"] &&
+        [uiActions[3] isEqualToString:@"tap"];
+    if ((newOnly || focused) &&
+        BBNoteEditorReady(observation) &&
+        !BBVisibleContains(observation, content))
+        return @{@"action": @"input_text", @"text": content};
+    if ((savedDirect || savedFocused) &&
+        BBVisibleContains(observation,
+        [content substringToIndex:MIN((NSUInteger)12, content.length)]))
+        return @{@"action": @"done"};
+    if (newOnly && BBNoteBlankUnfocused(observation)) {
+        double x = [observation[@"screen"][@"width"] doubleValue] * 0.2;
+        double y = [observation[@"screen"][@"height"] doubleValue] * 0.2;
+        if (BBNoteFocusPoint(observation, x, y))
+            return @{@"action": @"tap", @"x": @(x), @"y": @(y)};
+    }
+    BOOL doneStep = typedDirect || typedFocused;
+    if (uiSteps != 0 && !doneStep) return BBError(@"Notes editor not in expected state");
+    if (doneStep && !BBVisibleContains(observation,
+        [content substringToIndex:MIN((NSUInteger)12, content.length)]))
+        return BBError(@"Notes editor not in expected state");
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSString *label = item[@"text"];
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![label isKindOfClass:NSString.class] || ![rect isKindOfClass:NSDictionary.class]) continue;
+        BOOL match = uiSteps == 0 ?
+            ([@[@"New note", @"新建备忘录", @"Compose"] containsObject:label]) :
+            ([@[@"Done", @"完成"] containsObject:label]);
+        if (!match) continue;
+        double x = [rect[@"x"] doubleValue], y = [rect[@"y"] doubleValue];
+        double width = [rect[@"width"] doubleValue], height = [rect[@"height"] doubleValue];
+        double screenWidth = [observation[@"screen"][@"width"] doubleValue];
+        double screenHeight = [observation[@"screen"][@"height"] doubleValue];
+        if (width < 20 || height < 20 || x < 0 || y < 0 ||
+            x + width > screenWidth || y + height > screenHeight ||
+            (doneStep && y >= 120)) continue;
+        return @{@"action": @"tap", @"x": @(x + width / 2), @"y": @(y + height / 2)};
+    }
+    return BBError(@"Notes control unavailable");
+}
+
 static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSString *task,
                           NSArray *history, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
     NSString *name = action[@"action"];
@@ -427,25 +533,40 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
     if (autoNote) {
         NSString *content = BBNoteText(task);
         if (!content) return NO;
-        NSUInteger uiSteps = 0;
+        NSMutableArray<NSString *> *uiActions = [NSMutableArray array];
         for (NSDictionary *item in history)
-            if (![@"launch_app" isEqualToString:item[@"action"]]) uiSteps++;
+            if (![@"launch_app" isEqualToString:item[@"action"]]) [uiActions addObject:item[@"action"] ?: @""];
+        NSUInteger uiSteps = uiActions.count;
+        BOOL newOnly = uiSteps == 1 && [uiActions[0] isEqualToString:@"tap"];
+        BOOL focused = uiSteps == 2 && [uiActions[0] isEqualToString:@"tap"] &&
+            [uiActions[1] isEqualToString:@"tap"];
+        BOOL typedDirect = uiSteps == 2 && [uiActions[0] isEqualToString:@"tap"] &&
+            [uiActions[1] isEqualToString:@"input_text"];
+        BOOL typedFocused = uiSteps == 3 && [uiActions[0] isEqualToString:@"tap"] &&
+            [uiActions[1] isEqualToString:@"tap"] && [uiActions[2] isEqualToString:@"input_text"];
+        BOOL savedDirect = uiSteps == 3 && [uiActions[0] isEqualToString:@"tap"] &&
+            [uiActions[1] isEqualToString:@"input_text"] && [uiActions[2] isEqualToString:@"tap"];
+        BOOL savedFocused = uiSteps == 4 && [uiActions[0] isEqualToString:@"tap"] &&
+            [uiActions[1] isEqualToString:@"tap"] && [uiActions[2] isEqualToString:@"input_text"] &&
+            [uiActions[3] isEqualToString:@"tap"];
+        NSString *prefix = [content substringToIndex:MIN((NSUInteger)12, content.length)];
         if ([name isEqualToString:@"done"])
-            return [foreground isEqualToString:@"com.apple.mobilenotes"] && uiSteps == 3 &&
-                BBVisibleContains(observation, [content substringToIndex:MIN((NSUInteger)12, content.length)]);
+            return [foreground isEqualToString:@"com.apple.mobilenotes"] &&
+                (savedDirect || savedFocused) && BBVisibleContains(observation, prefix);
         if ([name isEqualToString:@"launch_app"])
             return history.count == 0 && [action[@"bundle_id"] isEqualToString:@"com.apple.mobilenotes"];
         if (!allowUI || ![foreground isEqualToString:@"com.apple.mobilenotes"]) return NO;
-        if ([name isEqualToString:@"tap"] && (uiSteps == 0 || uiSteps == 2)) {
+        if ([name isEqualToString:@"tap"] &&
+            (uiSteps == 0 || newOnly || typedDirect || typedFocused)) {
             id x = action[@"x"], y = action[@"y"];
             if (![x isKindOfClass:NSNumber.class] || ![y isKindOfClass:NSNumber.class] ||
                 !isfinite([x doubleValue]) || !isfinite([y doubleValue])) return NO;
-            if (uiSteps == 2 && !BBVisibleContains(observation,
-                [content substringToIndex:MIN((NSUInteger)12, content.length)])) return NO;
+            if (newOnly) return BBNoteFocusPoint(observation, [x doubleValue], [y doubleValue]);
+            if ((typedDirect || typedFocused) && !BBVisibleContains(observation, prefix)) return NO;
             return BBElementContainsPoint(observation, [x doubleValue], [y doubleValue],
                 uiSteps == 0 ? @[@"新建", @"new note", @"compose"] : @[@"完成", @"done"], uiSteps == 0);
         }
-        if ([name isEqualToString:@"input_text"] && uiSteps == 1)
+        if ([name isEqualToString:@"input_text"] && (newOnly || focused))
             return BBNoteEditorReady(observation) && !BBVisibleContains(observation, content) &&
                 [action[@"text"] isKindOfClass:NSString.class] &&
                 [action[@"text"] isEqualToString:content];
@@ -489,14 +610,52 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:300];
     for (int step = 0; step < 20 && [deadline timeIntervalSinceNow] > 0; step++) {
         NSDictionary *observation = BBBridge(@{@"op": @"observe", @"ui": @YES,
-            @"ocr": @(claude), @"screenshot": @(claude)});
+            @"ocr": @(claude), @"screenshot": @(claude && !autoNote)});
         if (![observation[@"ok"] boolValue]) { fprintf(stderr, "观察失败\n"); return 1; }
         if (!BBUnlockedObservation(observation)) { fprintf(stderr, "设备已锁定或屏幕关闭，停止模型请求\n"); return 1; }
-        if (claude && (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"]))) {
+        BOOL priorNoteUIAction = NO;
+        if (autoNote) for (NSDictionary *item in history)
+            if (![item[@"action"] isEqualToString:@"launch_app"]) priorNoteUIAction = YES;
+        if (autoNote && priorNoteUIAction &&
+            (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"]))) {
+            // Notes can briefly retain the old list behind a new blank editor.
+            // Wait for that transition locally; never send the old list to a model.
+            for (NSUInteger retry = 0; retry < 6; retry++) {
+                usleep(350000);
+                NSDictionary *settled = BBBridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+                if (![settled[@"ok"] boolValue] || !BBUnlockedObservation(settled) ||
+                    ![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.mobilenotes"])
+                    break;
+                observation = settled;
+                if (!BBHasSecret(observation[@"ui"]) && !BBHasSecret(observation[@"ocr"])) break;
+            }
+        }
+        NSDictionary *fixedNoteAction = autoNote ? BBFixedNoteAction(task, observation, history) : nil;
+        if (autoNote && priorNoteUIAction && fixedNoteAction[@"error"]) {
+            for (NSUInteger retry = 0; retry < 6; retry++) {
+                usleep(350000);
+                NSDictionary *settled = BBBridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+                if (![settled[@"ok"] boolValue] || !BBUnlockedObservation(settled) ||
+                    ![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.mobilenotes"])
+                    break;
+                observation = settled;
+                if (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"])) continue;
+                fixedNoteAction = BBFixedNoteAction(task, observation, history);
+                if (!fixedNoteAction[@"error"]) break;
+            }
+        }
+        BOOL safeNewNoteTap = autoNote && !priorNoteUIAction &&
+            [fixedNoteAction[@"action"] isEqualToString:@"tap"];
+        if (claude && !safeNewNoteTap &&
+            (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"]))) {
             fprintf(stderr, "界面包含疑似密钥，已停止模型请求\n"); return 1;
         }
-        NSDictionary *action = claude ? BBClaudeAction(task, observation, history, key) : BBMockAction(task, observation, history.count);
-        if (action[@"error"]) { fprintf(stderr, "模型请求或输出失败：%s\n", [action[@"error"] UTF8String]); return 1; }
+        NSDictionary *action = autoNote ? fixedNoteAction :
+            (claude ? BBClaudeAction(task, observation, history, key) : BBMockAction(task, observation, history.count));
+        if (action[@"error"]) {
+            fprintf(stderr, autoNote ? "备忘录界面状态不符合安全条件\n" : "模型请求或输出失败\n");
+            return 1;
+        }
         // Maps may finish expanding its search card after the model has seen
         // it. Re-observe briefly before rejecting the exact requested input.
         if (autoMap && [action[@"action"] isEqualToString:@"input_text"] &&
@@ -545,7 +704,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         BOOL suggestionTap = autoMap && [name isEqualToString:@"tap"] &&
             [history.lastObject[@"action"] isEqualToString:@"input_text"];
         NSDictionary *fresh = BBBridge(@{@"op": @"observe", @"ui": @YES,
-            @"ocr": @(suggestionTap)});
+            @"ocr": @(suggestionTap || autoNote)});
         BOOL sameUI = [fresh[@"ui"] isEqual:observation[@"ui"]];
         BOOL sameNoteEditor = autoNote && [name isEqualToString:@"input_text"] &&
             BBNoteEditorReady(observation) && BBNoteEditorReady(fresh) &&
@@ -554,7 +713,8 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         BOOL allowed = BBValidAction(action, fresh, task, history, allowUI, autoMap, autoNote);
         BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
         if (![fresh[@"ok"] boolValue] ||
-            (claude && (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
+            (claude && !safeNewNoteTap &&
+             (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
             (!autoMap && !sameUI && !sameNoteEditor) || !sameApp || !allowed || !recent) {
             fprintf(stderr, "界面复核未通过：步骤 %d，UI=%d，App=%d，策略=%d，时效=%d\n",
                     step + 1, sameUI, sameApp, allowed, recent);
