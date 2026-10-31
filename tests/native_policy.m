@@ -55,6 +55,17 @@ int main(void) {
                    "local note task accepts mock mode") ||
             !Check(BBTaskModelAllowed(@"新建备忘录：测试内容", @"claude"),
                    "local note task also accepts Claude selection") ||
+            !Check([BBAllowedTarget(@"打开通讯录") isEqualToString:@"通讯录"],
+                   "Contacts opens only through the exact task") ||
+            !Check([BBRequestedApp(@"打开通讯录") isEqualToString:@"com.apple.MobileAddressBook"],
+                   "Contacts targets the installed bundle") ||
+            !Check(BBTaskModelAllowed(@"打开通讯录", @"mock") &&
+                   !BBTaskModelAllowed(@"打开通讯录", @"claude"),
+                   "Contacts stays local and never sends its UI to Claude") ||
+            !Check([BBMockAction(@"打开通讯录",
+                    Observation(@"dev.beanbao.app", NO, @{}, @{}), 0)[@"bundle_id"]
+                    isEqualToString:@"com.apple.MobileAddressBook"],
+                   "mock action launches Contacts") ||
             !Check(!BBTaskModelAllowed(@"在地图搜索金门大桥", @"mock"),
                    "map search still requires Claude mode") ||
             !Check(BBAllowedTarget(@"新建备忘录：短") == nil, "short note task refused") ||

@@ -170,7 +170,8 @@ static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, N
 }
 
 static NSDictionary *BBMockAction(NSString *task, NSDictionary *observation, NSUInteger steps) {
-    NSDictionary *targets = @{@"设置": @"com.apple.Preferences", @"备忘录": @"com.apple.mobilenotes", @"地图": @"com.apple.Maps"};
+    NSDictionary *targets = @{@"设置": @"com.apple.Preferences", @"备忘录": @"com.apple.mobilenotes",
+                              @"地图": @"com.apple.Maps", @"通讯录": @"com.apple.MobileAddressBook"};
     NSMutableArray *matches = [NSMutableArray array];
     for (NSString *name in targets) if ([task containsString:name]) [matches addObject:targets[name]];
     if (matches.count != 1 || ![task hasPrefix:@"打开"]) return BBError(@"Mock model only supports explicit open-app tasks");
@@ -183,7 +184,8 @@ static NSDictionary *BBMockAction(NSString *task, NSDictionary *observation, NSU
 static NSString *BBRequestedApp(NSString *task) {
     if ([task hasPrefix:@"在地图搜索"]) return @"com.apple.Maps";
     if ([task hasPrefix:@"新建备忘录："]) return @"com.apple.mobilenotes";
-    NSDictionary *targets = @{@"设置": @"com.apple.Preferences", @"备忘录": @"com.apple.mobilenotes", @"地图": @"com.apple.Maps"};
+    NSDictionary *targets = @{@"设置": @"com.apple.Preferences", @"备忘录": @"com.apple.mobilenotes",
+                              @"地图": @"com.apple.Maps", @"通讯录": @"com.apple.MobileAddressBook"};
     NSMutableArray *matches = [NSMutableArray array];
     for (NSString *name in targets) if ([task containsString:name]) [matches addObject:targets[name]];
     return matches.count == 1 ? matches[0] : nil;
@@ -741,6 +743,10 @@ static BOOL BBFreshUICompatible(NSString *action, BOOL sameUI, BOOL sameNoteEdit
 }
 
 static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
+    if (claude && [task isEqualToString:@"打开通讯录"]) {
+        fprintf(stderr, "打开通讯录请使用模拟模型\n");
+        return 1;
+    }
     NSString *auditApp = BBRequestedApp(task);
     NSString *key = claude && !autoNote ? (BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0)) : nil;
     if (claude && !autoNote && (![key hasPrefix:@"sk-ant-"] || key.length < 24)) { fprintf(stderr, "Claude Key 未配置或权限不安全\n"); return 1; }

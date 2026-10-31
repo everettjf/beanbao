@@ -75,11 +75,12 @@ int main(int argc, const char *argv[]) {
             NSString *task = [NSString stringWithUTF8String:argv[2]];
             NSDictionary<NSString *, NSString *> *targets = @{@"设置": @"com.apple.Preferences",
                                                               @"备忘录": @"com.apple.mobilenotes",
-                                                              @"地图": @"com.apple.Maps"};
+                                                              @"地图": @"com.apple.Maps",
+                                                              @"通讯录": @"com.apple.MobileAddressBook"};
             NSMutableArray<NSString *> *matches = [NSMutableArray array];
             for (NSString *name in targets) if ([task containsString:name]) [matches addObject:targets[name]];
             if (matches.count != 1 || ![task hasPrefix:@"打开"]) {
-                fprintf(stderr, "模拟代理只支持明确的‘打开设置/备忘录/地图’任务\n"); return 2;
+                fprintf(stderr, "模拟代理只支持明确的‘打开设置/备忘录/地图/通讯录’任务\n"); return 2;
             }
             NSString *error = nil;
             NSDictionary *observation = Request(@{@"op": @"observe"}, &error);

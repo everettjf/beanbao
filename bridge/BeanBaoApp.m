@@ -6,7 +6,7 @@
 
 BOOL BBIsAllowedApp(NSString *bundleID) {
     return [@[@"com.apple.Preferences", @"com.apple.mobilenotes", @"com.apple.Maps",
-              @"dev.beanbao.app"] containsObject:bundleID ?: @""];
+              @"com.apple.MobileAddressBook", @"dev.beanbao.app"] containsObject:bundleID ?: @""];
 }
 
 NSDictionary *BBFrontmostApp(void) {
@@ -15,7 +15,8 @@ NSDictionary *BBFrontmostApp(void) {
 }
 
 BOOL BBLaunchAllowedApp(NSString *bundleID, NSString **error) {
-    if (![@[@"com.apple.Preferences", @"com.apple.mobilenotes", @"com.apple.Maps"] containsObject:bundleID ?: @""]) {
+    if (![@[@"com.apple.Preferences", @"com.apple.mobilenotes", @"com.apple.Maps",
+            @"com.apple.MobileAddressBook"] containsObject:bundleID ?: @""]) {
         if (error) *error = @"App is outside the BeanBao allowlist";
         return NO;
     }

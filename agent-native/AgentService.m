@@ -55,6 +55,7 @@ static NSString *BBAllowedTarget(NSString *task) {
     if ([task isEqualToString:@"打开设置"]) return @"设置";
     if ([task isEqualToString:@"打开备忘录"]) return @"备忘录";
     if ([task isEqualToString:@"打开地图"]) return @"地图";
+    if ([task isEqualToString:@"打开通讯录"]) return @"通讯录";
     if ([task hasPrefix:@"在地图搜索"] && task.length > 5 && task.length <= 55 &&
         [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location == NSNotFound)
         return @"地图";
@@ -63,6 +64,7 @@ static NSString *BBAllowedTarget(NSString *task) {
 }
 
 static BOOL BBTaskModelAllowed(NSString *task, NSString *model) {
+    if ([task isEqualToString:@"打开通讯录"]) return [model isEqualToString:@"mock"];
     return ![task hasPrefix:@"在地图搜索"] || [model isEqualToString:@"claude"];
 }
 
@@ -144,7 +146,8 @@ static NSDictionary *BBStart(NSDictionary *request) {
     BOOL noteTask = BBIsNoteTask(task);
     NSString *completionMessage = BBCompletionMessage(task);
     if (!BBTaskModelAllowed(task, model))
-        return @{@"ok": @NO, @"error": @"地图搜索请使用 Claude 模型"};
+        return @{@"ok": @NO, @"error": [task isEqualToString:@"打开通讯录"] ?
+            @"打开通讯录请使用模拟模型" : @"地图搜索请使用 Claude 模型"};
     @synchronized (BBState) {
         if (BBState.child > 0) return @{@"ok": @NO, @"error": @"已有任务正在执行"};
         int outputPipe[2];

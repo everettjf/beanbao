@@ -58,6 +58,8 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 @property(nonatomic, strong) NSTimer *timer;
 @property(nonatomic) BOOL polling;
 @property(nonatomic) BOOL recording;
+@property(nonatomic) BOOL startRequestPending;
+@property(nonatomic, copy) NSString *startRejection;
 @property(nonatomic) NSUInteger speechGeneration;
 @property(nonatomic, strong) SFSpeechRecognizer *speechRecognizer;
 @property(nonatomic, strong) SFSpeechAudioBufferRecognitionRequest *speechRequest;
@@ -95,7 +97,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.title = @"BeanBao";
     UILabel *heading = [self label:@"手机端文字指令" size:28];
     heading.font = [UIFont boldSystemFontOfSize:28];
-    UILabel *hint = [self label:@"可用：打开设置、备忘录或地图，以及“新建备忘录：测试内容”；Claude 模式还可搜索地图。操作前请解锁手机。" size:15];
+    UILabel *hint = [self label:@"可用：打开设置、备忘录、地图或通讯录，以及“新建备忘录：测试内容”；Claude 模式还可搜索地图。操作前请解锁手机。" size:15];
     hint.textColor = UIColor.secondaryLabelColor;
     self.taskField = [UITextField new];
     self.taskField.borderStyle = UITextBorderStyleRoundedRect;
@@ -109,7 +111,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.modelControl.selectedSegmentIndex = 0;
     UIButton *keyButton = [self button:@"配置 Claude Key" color:UIColor.systemIndigoColor action:@selector(configureKeyTapped)];
     self.voiceButton = [self button:@"🎙️ 语音输入" color:UIColor.systemTealColor action:@selector(voiceTapped)];
-    UILabel *hotkeyHint = [self label:@"三连按音量下键打开 BeanBao（音量仍照常变化）" size:14];
+    UILabel *hotkeyHint = [self label:@"在其他 App 三连按音量下键打开 BeanBao 并录音（音量仍照常变化）" size:14];
     hotkeyHint.textColor = UIColor.secondaryLabelColor;
     self.hotkeySwitch = [UISwitch new];
     int hotkeyFD = open(BBHotkeyFile, O_RDONLY | O_NOFOLLOW);
@@ -185,11 +187,20 @@ static BOOL BBSaveClaudeKey(NSString *key) {
         time(NULL) >= info.st_mtime && time(NULL) - info.st_mtime <= 10 &&
         read(fd, &value, 1) == 1 && value == '1';
     close(fd);
-    unlink(BBHotkeyVoiceFile);
-    if (pending && !self.recording) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
-            dispatch_get_main_queue(), ^{ if (!self.recording) [self voiceTapped]; });
+    if (!pending || self.recording) {
+        unlink(BBHotkeyVoiceFile);
+        return;
     }
+    // viewDidAppear can precede applicationDidBecomeActive. Keep the signal
+    // until UIKit reports an active, visible window, then request microphone
+    // access from that foreground state.
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive || !self.view.window) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{ [self checkHotkeyVoice]; });
+        return;
+    }
+    unlink(BBHotkeyVoiceFile);
+    [self voiceTapped];
 }
 
 - (void)dealloc {
@@ -222,19 +233,38 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 }
 
 - (void)request:(NSDictionary *)payload {
+    BOOL starting = [payload[@"op"] isEqualToString:@"start"];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         NSDictionary *reply = BBAgentRequest(payload);
-        dispatch_async(dispatch_get_main_queue(), ^{ [self showReply:reply]; });
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (starting) {
+                self.startRequestPending = NO;
+                if (![reply[@"ok"] boolValue]) {
+                    self.startRejection = [reply[@"error"] isKindOfClass:NSString.class] ? reply[@"error"] : @"任务未被接受";
+                    self.stateLabel.text = @"未开始";
+                    self.detailLabel.text = self.startRejection;
+                    self.startButton.enabled = YES;
+                    self.startButton.alpha = 1.0;
+                    self.stopButton.enabled = NO;
+                    self.stopButton.alpha = 0.5;
+                    return;
+                }
+            }
+            [self showReply:reply];
+        });
     });
 }
 
 - (void)refreshStatus {
-    if (self.polling) return;
+    if (self.polling || self.startRequestPending) return;
     self.polling = YES;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSDictionary *reply = BBAgentRequest(@{@"op": @"status"});
         dispatch_async(dispatch_get_main_queue(), ^{
             self.polling = NO;
+            if (self.startRequestPending) return;
+            if (self.startRejection.length && ![reply[@"running"] boolValue]) return;
+            if ([reply[@"running"] boolValue]) self.startRejection = nil;
             [self showReply:reply];
         });
     });
@@ -245,6 +275,10 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     NSString *task = [self.taskField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!task.length) { self.feedbackLabel.text = @"请输入文字指令"; return; }
     self.feedbackLabel.text = @"";
+    self.startRejection = nil;
+    self.startRequestPending = YES;
+    self.stateLabel.text = @"提交中";
+    self.detailLabel.text = @"";
     self.startButton.enabled = NO;
     [self request:@{@"op": @"start", @"task": task,
                     @"model": self.modelControl.selectedSegmentIndex == 1 ? @"claude" : @"mock"}];
