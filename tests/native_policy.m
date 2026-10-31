@@ -56,6 +56,22 @@ int main(void) {
             @{@"x": @20, @"y": @200, @"width": @300, @"height": @50}}]};
         NSDictionary *map = Observation(@"com.apple.Maps", NO, mapUI, @{@"text": @"金门大桥"});
         NSString *mapTask = @"在地图搜索金门大桥";
+        NSDictionary *sensitiveNotes = Observation(@"com.apple.mobilenotes", NO,
+            @{@"elements": @[@{@"text": @"bearer token:abcdefghijkl"}]}, @{});
+        NSDictionary *localMapLaunch = BBMapInitialLaunch(sensitiveNotes, @[]);
+        if (!Check(BBHasSecret(sensitiveNotes[@"ui"]), "fixture contains a secret shape") ||
+            !Check([localMapLaunch[@"action"] isEqualToString:@"launch_app"] &&
+                   [localMapLaunch[@"bundle_id"] isEqualToString:@"com.apple.Maps"],
+                   "map can leave a sensitive app with a fixed local launch") ||
+            !Check(BBValidAction(localMapLaunch, sensitiveNotes, mapTask, @[], YES, YES, NO),
+                   "fixed map launch remains within the map policy") ||
+            !Check(!BBValidAction(localMapLaunch,
+                Observation(@"com.apple.mobilenotes", YES, sensitiveNotes[@"ui"], @{}),
+                mapTask, @[], YES, YES, NO), "fixed map launch remains blocked when locked") ||
+            !Check(BBMapInitialLaunch(sensitiveNotes, @[@{@"action": @"launch_app"}]) == nil,
+                   "map launch never repeats after an earlier step") ||
+            !Check(BBMapInitialLaunch(map, @[]) == nil,
+                   "map launch is unnecessary in Maps")) return 1;
         NSDictionary *tapSearch = @{@"action": @"tap", @"x": @100, @"y": @220};
         NSDictionary *closeOldCard = @{@"action": @"tap", @"x": @370, @"y": @530};
         NSDictionary *tapOther = @{@"action": @"tap", @"x": @350, @"y": @500};

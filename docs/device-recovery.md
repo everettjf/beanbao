@@ -7,7 +7,7 @@
 1. 用 USB 连接并解锁手机，确认 Xcode CoreDevice 能看见设备。
 2. 通过 copyapp 的 USB iCTRL 通道打开 `com.aapl.relaxin.P6SS9DKN6Q`，观察 Relaxin 当前页面，点 Jailbreak，等候 `jailbreakd` 与 `hookd` 恢复。不要把旧截图坐标当作固定按钮位置。
 3. 用 copyapp 环境中的 `pymobiledevice3 usbmux forward <本机端口> 22 --serial <设备 UDID>` 建立 USB SSH 转发。沿用 copyapp 已配对的专用 SSH 私钥和固定 `known_hosts`，启用 `IdentitiesOnly` 与严格主机密钥检查。
-4. 以 mobile 查询 `beanbaoagentctl status`，以 root 查询 `dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app` 和 `launchctl print user/501/dev.beanbao.agent`。当前已验证版本为 Bridge 0.2.0、Agent 0.3.30、App 0.3.6。
+4. 以 mobile 查询 `beanbaoagentctl status`，以 root 查询 `dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app` 和 `launchctl print user/501/dev.beanbao.agent`。当前已验证版本为 Bridge 0.2.0、Agent 0.3.31、App 0.3.6。
 5. 确认手机已解锁、亮屏，然后从 BeanBao App 执行“打开设置”；复核服务状态为 `done`，前台为 `com.apple.Preferences`。Claude 地图任务应从没有疑似密钥内容的界面开始；备忘录新建任务可用模拟模式，无需 Key。
 
 RootHide 的 SSH shell 与 App/launchd 对 `/var/mobile` 的路径视图不同。`beanbaoagentctl` 已依次尝试两种 Agent socket 路径；不要因 SSH shell 中第一个路径不可见就重复安装包。若服务未运行，先查 `launchctl print user/501/dev.beanbao.agent`，再决定是否 `launchctl kickstart -k user/501/dev.beanbao.agent`。

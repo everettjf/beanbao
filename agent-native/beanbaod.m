@@ -501,6 +501,13 @@ static BOOL BBNoteInList(NSDictionary *observation, NSString *content) {
     return newButton && matchingRow;
 }
 
+static NSDictionary *BBMapInitialLaunch(NSDictionary *observation, NSArray *history) {
+    if (history.count ||
+        [observation[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"])
+        return nil;
+    return @{@"action": @"launch_app", @"bundle_id": @"com.apple.Maps"};
+}
+
 static NSDictionary *BBFixedNoteAction(NSString *task, NSDictionary *observation, NSArray *history) {
     NSString *content = BBNoteText(task);
     if (!content) return BBError(@"Invalid note task");
@@ -732,6 +739,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             @"ocr": @(claude || autoNote), @"screenshot": @(claude && !autoNote)});
         if (![observation[@"ok"] boolValue]) { fprintf(stderr, "观察失败\n"); return 1; }
         if (!BBUnlockedObservation(observation)) { fprintf(stderr, "设备已锁定或屏幕关闭，停止模型请求\n"); return 1; }
+        NSDictionary *fixedMapLaunch = autoMap ? BBMapInitialLaunch(observation, history) : nil;
         BOOL priorNoteUIAction = NO;
         if (autoNote) for (NSDictionary *item in history)
             if (![item[@"action"] isEqualToString:@"launch_app"]) priorNoteUIAction = YES;
@@ -768,11 +776,12 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         BOOL safeNewNoteTap = autoNote && !priorNoteUIAction &&
             [fixedNoteAction[@"action"] isEqualToString:@"tap"];
         BOOL safeNoteListDone = autoNote && [fixedNoteAction[@"action"] isEqualToString:@"done"];
-        if ((claude || autoNote) && !safeNewNoteTap && !safeNoteListDone &&
+        if ((claude || autoNote) && !safeNewNoteTap && !safeNoteListDone && !fixedMapLaunch &&
             (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"]))) {
             fprintf(stderr, "界面包含疑似密钥，已停止模型请求\n"); return 1;
         }
-        NSDictionary *fixedMapAction = autoMap ? BBMapFixedSuggestionAction(observation, BBMapQuery(task)) : nil;
+        NSDictionary *fixedMapAction = fixedMapLaunch ?: (autoMap ?
+            BBMapFixedSuggestionAction(observation, BBMapQuery(task)) : nil);
         if (autoMap && !fixedMapAction &&
             [history.lastObject[@"action"] isEqualToString:@"input_text"] &&
             [observation[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] &&
@@ -856,7 +865,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         BOOL allowed = BBValidAction(action, fresh, task, history, allowUI, autoMap, autoNote);
         BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
         if (![fresh[@"ok"] boolValue] ||
-            ((claude || autoNote) && !safeNewNoteTap &&
+            ((claude || autoNote) && !safeNewNoteTap && !fixedMapLaunch &&
              (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
             (!autoMap && !sameUI && !sameNoteEditor && !sameNoteControl &&
              !(autoNote && [name isEqualToString:@"launch_app"])) ||
