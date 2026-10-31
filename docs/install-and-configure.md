@@ -10,11 +10,11 @@
 2. `dev.beanbao.agent` 0.3.49：手机端任务服务、本地地图规则和 Claude 适配器，依赖 Bridge 0.2.4 以上。
 3. `dev.beanbao.app` 0.3.12：文字、语音、状态与配置界面，依赖 Agent 0.3.41 以上。
 
-本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备已安装 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12；这组版本加入 Palmino harness 的固定打开 App、逐步新建备忘录和地图搜索路径、新图标及带身份校验的任务状态协议，已通过安装、服务与 Bridge 基础检查，文字任务仍待解锁后真机验收。模拟模式下打开指定 App、新建备忘录和受限地图搜索都无需模型 Key，地图步骤不采集截图；地图搜索自身可能需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
+本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备已安装 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12；这组版本加入 Palmino harness 的固定打开 App、逐步新建备忘录和地图搜索路径、新图标及带身份校验的任务状态协议，已通过安装、服务、Bridge 检查和真机文字任务验收。模拟模式下打开指定 App、新建备忘录和受限地图搜索都无需模型 Key，地图步骤不采集截图；地图搜索自身可能需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
 
 从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容及 Agent/App 文件清单、依赖链、启动身份、图标、包内 arm64e Mach-O 架构和嵌入式签名结构、安装脚本，并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
 
-构建后运行 `python3 scripts/prepare_release_bundle.py`，可在 `dist/` 生成只含三包、`SHA256SUMS` 和 `INSTALL.md` 的离线传输归档。脚本会再次审计每个包，并打印归档的 SHA-256；不连接设备，也不加入模型 Key 或 SSH 凭据。归档是开发者候选包；这台手机已安装同版本，尚未完成新版文字任务验收。
+构建后运行 `python3 scripts/prepare_release_bundle.py`，可在 `dist/` 生成只含三包、`SHA256SUMS` 和 `INSTALL.md` 的离线传输归档。脚本会再次审计每个包，并打印归档的 SHA-256；不连接设备，也不加入模型 Key 或 SSH 凭据。归档是开发者候选包；这台手机已安装同版本并通过文字任务验收，其他设备仍需单独验证。
 
 有 root shell 的开发者可从归档中取出三个 `.deb` 复制到手机临时目录，依次执行：
 
@@ -41,7 +41,7 @@ Agent 的本地审计文件位于手机的 `/var/mobile/Library/Application Supp
 
 ## 当前能力边界
 
-- 已验证：文字打开设置、备忘录、地图；受限 Claude 地图搜索；多次通过模拟模式新建指定内容的测试备忘录（命令行与 App 按钮均完成列表复核）；电脑中文播报和持机者真人语音均经手机录音、转写、用户确认后执行“打开地图”。
+- 已验证：当前三包组合的文字打开设置、通讯录、备忘录、地图；App 键盘上方的“开始”按钮；App 文字入口新建指定内容测试备忘录和搜索金门大桥；受限 Claude 地图搜索在此前版本完成；电脑中文播报和持机者真人语音均经手机录音、转写、用户确认后执行“打开地图”。
 - 地图动态界面仍可能使任务安全停止。除金门大桥、渔人码头、旧金山市政厅和加州科学院外，新增 Alcatraz Island、Coit Tower、Ferry Building、Exploratorium、Palace of Fine Arts、Pier 39、Japanese Tea Garden 等真机样本；结果需由地图标记或 3D 地图标签与地点卡片共同核对，不能推断任意地点可靠。
 - 尚待验收：实体音量键三连按、拔掉 USB 后的独立任务、当前版本重启后完整任务恢复，以及其他设备兼容性。
 - 运行设计不依赖 Mac、iCTRL 或 Frida；Mac/iCTRL 目前只用于安装和测试。这台手机的无 USB 使用仍需实测。
