@@ -45,11 +45,30 @@ static NSString *BBCompletionMessage(NSString *task) {
 
 static NSString *BBNormalizeTask(NSString *task) {
     task = [task stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    for (NSString *prefix in @[@"请帮我", @"帮我", @"请"]) {
+        if ([task hasPrefix:prefix]) {
+            task = [[task substringFromIndex:prefix.length]
+                stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            break;
+        }
+    }
     NSCharacterSet *speechPunctuation = [NSCharacterSet characterSetWithCharactersInString:@"。.!！？?，,"];
     while (![task hasPrefix:@"新建备忘录："] && task.length &&
            [speechPunctuation characterIsMember:[task characterAtIndex:task.length - 1]])
         task = [[task substringToIndex:task.length - 1]
             stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if ([task hasPrefix:@"打开一下"]) {
+        NSString *name = [task substringFromIndex:@"打开一下".length];
+        if ([@[@"设置", @"备忘录", @"地图", @"通讯录"] containsObject:name])
+            task = [@"打开" stringByAppendingString:name];
+    }
+    for (NSString *prefix in @[@"在地图里搜索", @"在地图上搜索"]) {
+        if ([task hasPrefix:prefix]) {
+            task = [@"在地图搜索" stringByAppendingString:
+                [task substringFromIndex:prefix.length]];
+            break;
+        }
+    }
     return task;
 }
 

@@ -87,6 +87,18 @@ int main(void) {
                    "mock map C entry rejects an unsupported task before Bridge access")) return 1;
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||
+            !Check([BBNormalizeTask(@"请帮我打开一下地图。") isEqualToString:@"打开地图"],
+                   "polite fixed app open maps to the allowlist") ||
+            !Check([BBNormalizeTask(@"帮我在地图里搜索金门大桥。") isEqualToString:@"在地图搜索金门大桥"],
+                   "map search phrasing maps to the bounded task") ||
+            !Check([BBNormalizeTask(@"请在地图上搜索加州科学院") isEqualToString:@"在地图搜索加州科学院"],
+                   "second map search phrasing maps to the bounded task") ||
+            !Check([BBNormalizeTask(@"请帮我新建备忘录：测试内容。") isEqualToString:@"新建备忘录：测试内容。"],
+                   "polite note task preserves punctuation in content") ||
+            !Check(BBAllowedTarget(BBNormalizeTask(@"请不要打开地图")) == nil,
+                   "negated command is not converted to an open task") ||
+            !Check(BBAllowedTarget(BBNormalizeTask(@"请帮我打开地图并发消息")) == nil,
+                   "extra operation remains rejected after normalization") ||
             !Check(BBAuditRecord(@"task", @"地图", @"start", @"accepted").count == 5,
                    "audit record contains only fixed fields") ||
             !Check(BBAuditRecord(@"task", @"地图", @"tap 200,300", @"ok") == nil,
