@@ -49,13 +49,15 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
     names = [package.name for package in packages]
     return (f"# BeanBao RootHide 候选包\n\n"
             f"Bridge {versions[0]} / Agent {versions[1]} / App {versions[2]}。"
-            "此候选组合尚未在目标 iPhone 完成真机验收；仅适用于已具备兼容 Relaxin / RootHide 环境的设备。\n\n"
+            "包内容已通过构建审计；真机任务验收状态请按这组三包版本查阅仓库 "
+            "docs/build-and-test.md。其他设备需单独验证；仅适用于已具备兼容 Relaxin / RootHide 环境的设备。\n\n"
             "先在电脑上运行 `shasum -a 256 -c SHA256SUMS` 核对三个包。"
             "取得设备 root shell 后按顺序安装：\n\n"
             "```sh\n"
             + "\n".join(f"dpkg -i {name}" for name in names)
             + "\ndpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app\n```\n\n"
-            "首次安装或更新 Bridge 后，重新加载 SpringBoard 才能启用注入。"
+            "首次安装或更新 Bridge 后，重新加载 SpringBoard 才能启用注入；"
+            "重载可能使手机锁定，需自行解锁。只更新 Agent 或 App 时不需重载 SpringBoard。"
             "确认 Agent 已由 launchd 以 mobile 身份运行，再解锁打开 BeanBao，"
             "选择“模拟模型”测试“打开地图”。步骤和限制见仓库 docs/install-and-configure.md。"
             "此归档不含模型 Key、SSH 凭据或设备数据。\n").encode("utf-8")

@@ -10,7 +10,7 @@
 2. `dev.beanbao.agent` 0.3.49：手机端任务服务、本地地图规则和 Claude 适配器，依赖 Bridge 0.2.4 以上。
 3. `dev.beanbao.app` 0.3.12：文字、语音、状态与配置界面，依赖 Agent 0.3.41 以上。
 
-本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备已安装 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12；这组版本加入 Palmino harness 的固定打开 App、逐步新建备忘录和地图搜索路径、新图标及带身份校验的任务状态协议，已通过安装、服务、Bridge 检查和真机文字任务验收。模拟模式下打开指定 App、新建备忘录和受限地图搜索都无需模型 Key，地图步骤不采集截图；地图搜索自身可能需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
+本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备已安装 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12；这组版本加入 Palmino harness 的固定打开 App、逐步新建备忘录和地图搜索路径、新图标及带身份校验的任务状态协议，已通过安装、服务、Bridge 检查和真机文字任务验收。模拟模式下打开指定 App、新建备忘录和受限地图搜索都无需模型 Key，地图步骤不采集截图；地图搜索自身可能需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装或更新 Bridge 后需要让 SpringBoard 重新加载，才能启用新的注入；该操作可能让手机锁定，需自行解锁。只更新 Agent 或 App 不需重载 SpringBoard。
 
 从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容及 Agent/App 文件清单、依赖链、启动身份、图标、包内 arm64e Mach-O 架构和嵌入式签名结构、安装脚本，并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
 
