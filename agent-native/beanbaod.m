@@ -109,6 +109,7 @@ void BBBridgeFreeJSON(char *response) { free(response); }
 extern int32_t BBRunHarnessMock(const char *task);
 extern int32_t BBRunHarnessNote(const char *task);
 extern int32_t BBRunHarnessMap(const char *task);
+extern int32_t BBRunHarnessMapMock(const char *task);
 
 void BBReleaseWakeLease(void) {
     BBBridge(@{@"op": @"wake_lease", @"mode": @"release"});
@@ -879,6 +880,56 @@ char *BBNoteStepJSON(const char *taskText, const char *historyJSON) {
 
 typedef NSDictionary * (^BBMapActionProvider)(NSString *task, NSDictionary *observation, NSArray *history);
 
+static NSDictionary *BBFixedMapAction(NSString *task, NSDictionary *observation, NSArray *history) {
+    NSString *query = BBMapQuery(task);
+    if (!query) return BBError(@"local_state");
+    BOOL submittedSuggestion = [history.lastObject[@"action"] isEqualToString:@"tap"];
+    if (submittedSuggestion) {
+        submittedSuggestion = NO;
+        for (NSDictionary *item in history)
+            if ([item[@"action"] isEqualToString:@"input_text"]) {
+                submittedSuggestion = YES;
+                break;
+            }
+    }
+    if (BBMapResultVisible(observation, query) ||
+        [history.lastObject[@"action"] isEqualToString:@"press_key"] || submittedSuggestion)
+        return @{@"action": @"done"};
+    if (BBMapSearchInputReady(observation)) {
+        if (BBVisibleContains(observation, query))
+            return @{@"action": @"press_key", @"key": @"enter"};
+        if ([history.lastObject[@"action"] isEqualToString:@"input_text"])
+            return BBError(@"local_state");
+        return @{@"action": @"input_text", @"text": query};
+    }
+    double screenHeight = [observation[@"screen"][@"height"] doubleValue];
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isKindOfClass:NSString.class]) continue;
+        NSString *label = [item[@"text"] lowercaseString];
+        if (![@[@"close", @"关闭"] containsObject:label]) continue;
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double x = [rect[@"x"] doubleValue] + [rect[@"width"] doubleValue] / 2;
+        double y = [rect[@"y"] doubleValue] + [rect[@"height"] doubleValue] / 2;
+        NSDictionary *candidate = @{@"action": @"tap", @"x": @(x), @"y": @(y)};
+        if (y > screenHeight * 0.4 && y < screenHeight * 0.8 &&
+            BBValidAction(candidate, observation, task, history, YES, YES, NO)) return candidate;
+    }
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isKindOfClass:NSString.class]) continue;
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double x = [rect[@"x"] doubleValue] + [rect[@"width"] doubleValue] / 2;
+        double y = [rect[@"y"] doubleValue] + [rect[@"height"] doubleValue] / 2;
+        if (!BBMapSearchTapAllowed(observation, x, y)) continue;
+        NSDictionary *candidate = @{@"action": @"tap", @"x": @(x), @"y": @(y)};
+        if (BBValidAction(candidate, observation, task, history, YES, YES, NO)) return candidate;
+    }
+    return BBError(@"local_state");
+}
+
 static NSDictionary *BBMapStep(NSString *task, NSArray *history,
                                 BBNoteBridgeRequest bridge, BBMapActionProvider model) {
     NSString *query = BBMapQuery(task);
@@ -910,7 +961,8 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
     }
     NSDictionary *action = fixedAction ?: model(task, observation, history);
     if (![action isKindOfClass:NSDictionary.class] || action[@"error"])
-        return @{@"ok": @NO, @"error": @"model"};
+        return @{@"ok": @NO, @"error": [action[@"error"] isEqualToString:@"local_state"] ?
+            @"local_state" : @"model"};
     if ([action[@"action"] isEqualToString:@"input_text"] &&
         [action[@"text"] isEqualToString:query] &&
         !BBValidAction(action, observation, task, history, YES, YES, NO)) {
@@ -972,7 +1024,7 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
     return @{@"ok": @YES, @"done": @NO, @"action": action};
 }
 
-char *BBMapStepJSON(const char *taskText, const char *historyJSON) {
+static char *BBMapStepEncoded(const char *taskText, const char *historyJSON, BOOL useClaude) {
     @autoreleasepool {
         if (!taskText || !historyJSON) return NULL;
         NSString *task = [NSString stringWithUTF8String:taskText];
@@ -981,13 +1033,15 @@ char *BBMapStepJSON(const char *taskText, const char *historyJSON) {
         id history = [NSJSONSerialization JSONObjectWithData:historyData options:0 error:nil];
         if (![history isKindOfClass:NSArray.class]) return NULL;
         for (id item in history) if (![item isKindOfClass:NSDictionary.class]) return NULL;
-        NSString *key = BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0);
-        NSDictionary *result = (![key hasPrefix:@"sk-ant-"] || key.length < 24) ?
+        NSString *key = useClaude ? (BBReadSecret(BBClaudeKey, 0) ?:
+            BBReadSecret(BBLegacyClaudeKey, 0)) : nil;
+        NSDictionary *result = (useClaude && (![key hasPrefix:@"sk-ant-"] || key.length < 24)) ?
             @{@"ok": @NO, @"error": @"key"} :
             BBMapStep(task, history,
                 ^NSDictionary *(NSDictionary *request) { return BBBridge(request); },
                 ^NSDictionary *(NSString *command, NSDictionary *observation, NSArray *prior) {
-                    return BBClaudeAction(command, observation, prior, key);
+                    return useClaude ? BBClaudeAction(command, observation, prior, key) :
+                        BBFixedMapAction(command, observation, prior);
                 });
         NSData *encoded = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
         if (!encoded || encoded.length > 8192) return NULL;
@@ -997,6 +1051,14 @@ char *BBMapStepJSON(const char *taskText, const char *historyJSON) {
         copy[encoded.length] = '\0';
         return copy;
     }
+}
+
+char *BBMapStepJSON(const char *taskText, const char *historyJSON) {
+    return BBMapStepEncoded(taskText, historyJSON, YES);
+}
+
+char *BBMapMockStepJSON(const char *taskText, const char *historyJSON) {
+    return BBMapStepEncoded(taskText, historyJSON, NO);
 }
 
 static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
@@ -1181,6 +1243,7 @@ int main(int argc, const char *argv[]) {
         if (argc == 3 && !strcmp(argv[1], "--harness-mock")) return BBRunHarnessMock(argv[2]);
         if (argc == 3 && !strcmp(argv[1], "--harness-note")) return BBRunHarnessNote(argv[2]);
         if (argc == 3 && !strcmp(argv[1], "--harness-map")) return BBRunHarnessMap(argv[2]);
+        if (argc == 3 && !strcmp(argv[1], "--harness-map-mock")) return BBRunHarnessMapMock(argv[2]);
         if (argc < 2) { fprintf(stderr, "用法：beanbaod [--claude] [--approve-ui] '任务文字'\n"); return 2; }
         BOOL claude = NO, allowUI = NO, autoMap = NO, autoNote = NO;
         NSString *task = nil;

@@ -67,7 +67,7 @@ static NSString *BBAllowedTarget(NSString *task) {
 
 static BOOL BBTaskModelAllowed(NSString *task, NSString *model) {
     if ([task isEqualToString:@"打开通讯录"]) return [model isEqualToString:@"mock"];
-    return ![task hasPrefix:@"在地图搜索"] || [model isEqualToString:@"claude"];
+    return YES;
 }
 
 static BOOL BBUsesTextHarness(NSString *task) {
@@ -95,6 +95,8 @@ static NSString *BBFailureMessage(NSString *output) {
         return @"界面或任务疑似包含敏感信息，已停止";
     if ([output containsString:@"模型请求或输出失败"])
         return @"模型请求或输出失败，请稍后重试";
+    if ([output containsString:@"当前地图界面无法安全执行"])
+        return @"当前地图界面无法安全执行，请检查后重试";
     if ([output containsString:@"模型动作被策略拒绝"])
         return @"界面操作未通过安全校验，已停止";
     if ([output containsString:@"界面复核未通过"])
@@ -151,10 +153,10 @@ static NSDictionary *BBStart(NSDictionary *request) {
     if (!app || ![@[@"mock", @"claude"] containsObject:model])
         return @{@"ok": @NO, @"error": @"首版只接受打开指定 App、地图搜索或新建备忘录"};
     BOOL noteTask = BBIsNoteTask(task);
+    BOOL mapTask = [task hasPrefix:@"在地图搜索"];
     NSString *completionMessage = BBCompletionMessage(task);
     if (!BBTaskModelAllowed(task, model))
-        return @{@"ok": @NO, @"error": [task isEqualToString:@"打开通讯录"] ?
-            @"打开通讯录请使用模拟模型" : @"地图搜索请使用 Claude 模型"};
+        return @{@"ok": @NO, @"error": @"打开通讯录请使用模拟模型"};
     @synchronized (BBState) {
         if (BBState.child > 0) return @{@"ok": @NO, @"error": @"已有任务正在执行"};
         int outputPipe[2];
@@ -173,12 +175,14 @@ static NSDictionary *BBStart(NSDictionary *request) {
             return @{@"ok": @NO, @"error": @"无法定位任务程序"};
         }
         const char *argvMap[] = {executable, "--harness-map", task.UTF8String, NULL};
+        const char *argvMapMock[] = {executable, "--harness-map-mock", task.UTF8String, NULL};
         const char *argvNote[] = {executable, "--harness-note", task.UTF8String, NULL};
         const char *argvMock[] = {executable, "--harness-mock", task.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
                                      (char *const *)(noteTask ? argvNote :
-                                         (BBUsesTextHarness(task) ? argvMock : argvMap)), environ);
+                                         (BBUsesTextHarness(task) ? argvMock :
+                                          (mapTask && [model isEqualToString:@"mock"] ? argvMapMock : argvMap))), environ);
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,

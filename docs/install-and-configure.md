@@ -7,10 +7,10 @@
 三个 RootHide `iphoneos-arm64e` 包按顺序安装：
 
 1. `dev.beanbao.bridge` 0.2.2：SpringBoard 中的受限观察与点击/输入桥接；固定启动白名单包含通讯录。
-2. `dev.beanbao.agent` 0.3.40：手机端任务服务和 Claude 适配器，依赖 Bridge 0.2.2 以上。
-3. `dev.beanbao.app` 0.3.9：文字、语音、状态与配置界面，依赖 Agent 0.3.36 以上。
+2. `dev.beanbao.agent` 0.3.41：手机端任务服务、本地地图规则和 Claude 适配器，依赖 Bridge 0.2.2 以上。
+3. `dev.beanbao.app` 0.3.10：文字、语音、状态与配置界面，依赖 Agent 0.3.41 以上。
 
-本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备上已验收的仍是 Agent 0.3.34 / App 0.3.7；本机另有 Agent 0.3.40 / App 0.3.9 候选包，加入 Palmino harness 的固定打开 App、逐步新建备忘录和地图搜索路径、新图标及带身份校验的任务状态协议，尚未装机验收。四条固定打开 App 指令不论模型选项都在本地执行，无需 Claude Key。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
+本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备上已验收的仍是 Agent 0.3.34 / App 0.3.7；本机另有 Agent 0.3.41 / App 0.3.10 候选包，加入 Palmino harness 的固定打开 App、逐步新建备忘录和地图搜索路径、新图标及带身份校验的任务状态协议，尚未装机验收。模拟模式下打开指定 App、新建备忘录和受限地图搜索都无需模型 Key；地图搜索自身可能需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
 
 从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
 
@@ -18,8 +18,8 @@
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.2_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.40_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.9_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.41_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.10_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
 
@@ -28,7 +28,7 @@ dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ## 安装后如何配置
 
 1. 保持手机解锁、亮屏，打开 BeanBao。先选“模拟模型”，输入“打开地图”并点“开始”；它不需要模型 Key。界面应显示完成，地图应在前台。
-2. 新建测试备忘录可继续选“模拟模型”，输入“新建备忘录：测试内容”，无需 Key。Agent 会点新建、写入原文、点完成、返回列表，并核对列表里出现完整新标题才报完成；同名标题已存在时会拒绝再次创建。地图搜索才需要在 BeanBao 点“配置 Claude Key”、粘贴自己的 Anthropic Key 并选“Claude”。Key 保存在手机本地、由 mobile 用户持有的 0600 文件中，不写进包或仓库。备忘录界面不发送给模型；OpenAI API Key 尚不能直接填入此入口。
+2. 新建测试备忘录可继续选“模拟模型”，输入“新建备忘录：测试内容”，无需 Key。Agent 会点新建、写入原文、点完成、返回列表，并核对列表里出现完整新标题才报完成；同名标题已存在时会拒绝再次创建。地图搜索也可选“模拟模型”，输入“在地图搜索金门大桥”，由受限本地规则完成。若选 Claude 地图搜索，则在 BeanBao 点“配置 Claude Key”、粘贴自己的 Anthropic Key。Key 保存在手机本地、由 mobile 用户持有的 0600 文件中，不写进包或仓库。备忘录界面不发送给模型；OpenAI API Key 尚不能直接填入此入口。
 3. 点“🎙️ 语音输入”，按系统提示允许语音识别和麦克风。iOS 26 在这台设备上使用 Apple 本机中文听写；首次使用可能下载中文资源。说完点“结束录音”，先检查并编辑转写文字，再点“开始”。单次录音最长 30 秒，转写后临时音频文件会删除。
 4. 音量减键三连按开关默认关闭。实现会先调用系统原有音量处理，再尝试打开 BeanBao 录音。持机者已确认三连按能打开 App，但自动开始录音曾间歇失败；App 0.3.7 改为等前台可见后再消费唤醒标记，仍待实体按键复测。其他用户暂不应把它当作可靠入口。
 5. 运行中可在 BeanBao 查看状态或点“停止任务”。地图搜索只允许查看结果，不启动导航；备忘录任务只用于新建，不编辑旧内容。从其他 App 发起地图任务时，Agent 可先在本地打开地图，原界面不发给模型；目标界面若仍含疑似凭据，或遇到锁屏、不确定状态，任务会停止。任务运行时 Bridge 会尝试阻止系统自动锁屏，结束或停止后恢复先前设置；用户仍可手动锁屏。目前已验证锁屏拒绝和释放，尚待解锁后跨越系统自动锁屏时长的真机实测。

@@ -26,6 +26,7 @@ public enum BeanBaoMapHarness {
                 "wake_lease": "防自动锁屏不可用",
                 "sensitive": "界面或任务疑似包含敏感信息",
                 "model": "模型请求或输出失败",
+                "local_state": "当前地图界面无法安全执行",
                 "policy": "模型动作被策略拒绝",
                 "fresh_state": "界面复核未通过"
             ], step: step)
@@ -34,6 +35,8 @@ public enum BeanBaoMapHarness {
 
 #if os(iOS)
 @_silgen_name("BBMapStepJSON") private func BBMapStepJSON(
+    _ task: UnsafePointer<CChar>, _ history: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
+@_silgen_name("BBMapMockStepJSON") private func BBMapMockStepJSON(
     _ task: UnsafePointer<CChar>, _ history: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
 @_silgen_name("BBBridgeFreeJSON") private func BBMapFreeJSON(_ response: UnsafeMutablePointer<CChar>)
 @_silgen_name("BBReleaseWakeLease") private func BBReleaseWakeLeaseForMap()
@@ -47,13 +50,23 @@ private final class MapResultBox: @unchecked Sendable {
 
 @_cdecl("BBRunHarnessMap")
 public func BBRunHarnessMap(_ taskPointer: UnsafePointer<CChar>?) -> Int32 {
+    runDeviceMap(taskPointer, useClaude: true)
+}
+
+@_cdecl("BBRunHarnessMapMock")
+public func BBRunHarnessMapMock(_ taskPointer: UnsafePointer<CChar>?) -> Int32 {
+    runDeviceMap(taskPointer, useClaude: false)
+}
+
+private func runDeviceMap(_ taskPointer: UnsafePointer<CChar>?, useClaude: Bool) -> Int32 {
     guard let taskPointer else { return 2 }
     let task = String(cString: taskPointer)
     let step: BeanBaoMapStep = { command, history in
         let historyJSON = mapJSON(.array(history))
         return command.withCString { taskCString in
             historyJSON.withCString { historyCString in
-                guard let reply = BBMapStepJSON(taskCString, historyCString) else {
+                guard let reply = useClaude ? BBMapStepJSON(taskCString, historyCString) :
+                        BBMapMockStepJSON(taskCString, historyCString) else {
                     return .object(["ok": .bool(false)])
                 }
                 defer { BBMapFreeJSON(reply) }

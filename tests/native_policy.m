@@ -11,6 +11,7 @@
 int32_t BBRunHarnessMock(const char *task) { (void)task; return 1; }
 int32_t BBRunHarnessNote(const char *task) { (void)task; return 1; }
 int32_t BBRunHarnessMap(const char *task) { (void)task; return 1; }
+int32_t BBRunHarnessMapMock(const char *task) { (void)task; return 1; }
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
     return @{@"device_state": @{@"locked_known": @YES, @"locked": @(locked),
@@ -60,6 +61,14 @@ int main(void) {
         free(invalidNoteJSON);
         if (!Check([invalidNote[@"error"] isEqualToString:@"invalid_task"],
                    "note step rejects an unsupported task before Bridge access")) return 1;
+        char *invalidMapJSON = BBMapMockStepJSON("打开地图", "[]");
+        NSDictionary *invalidMap = invalidMapJSON ?
+            [NSJSONSerialization JSONObjectWithData:
+                [[NSString stringWithUTF8String:invalidMapJSON] dataUsingEncoding:NSUTF8StringEncoding]
+                                              options:0 error:nil] : nil;
+        free(invalidMapJSON);
+        if (!Check([invalidMap[@"error"] isEqualToString:@"invalid_task"],
+                   "mock map C entry rejects an unsupported task before Bridge access")) return 1;
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||
             !Check(BBAuditRecord(@"task", @"地图", @"start", @"accepted").count == 5,
@@ -105,8 +114,9 @@ int main(void) {
                     Observation(@"dev.beanbao.app", NO, @{}, @{}), 0)[@"bundle_id"]
                     isEqualToString:@"com.apple.MobileAddressBook"],
                    "mock action launches Contacts") ||
-            !Check(!BBTaskModelAllowed(@"在地图搜索金门大桥", @"mock"),
-                   "map search still requires Claude mode") ||
+            !Check(BBTaskModelAllowed(@"在地图搜索金门大桥", @"mock") &&
+                   BBTaskModelAllowed(@"在地图搜索金门大桥", @"claude"),
+                   "map search accepts local and Claude planning") ||
             !Check(BBAllowedTarget(@"新建备忘录：短") == nil, "short note task refused") ||
             !Check(BBAllowedTarget(@"打开设置并删除账户") == nil, "unsafe extra instruction refused")) return 1;
         NSDictionary *mapUI = @{@"elements": @[@{@"text": @"搜索地图", @"visible_rect":
@@ -252,6 +262,30 @@ int main(void) {
         if (!Check([mapJourneyResult[@"ok"] boolValue] && [mapJourneyResult[@"done"] boolValue] &&
                    mapJourneyStage == 3 && mapJourneyHistory.count == 3 && mapJourneyModelCalls == 4,
                    "map harness completes a full bounded local search journey")) return 1;
+        NSDictionary *localClose = BBFixedMapAction(mapTask, oldCard, @[]);
+        if (!Check([localClose[@"action"] isEqualToString:@"tap"] &&
+                   BBValidAction(localClose, oldCard, mapTask, @[], YES, YES, NO),
+                   "local planner closes an old map place card within policy")) return 1;
+        NSDictionary *unsupportedMap = BBFixedMapAction(mapTask,
+            Observation(@"com.apple.Maps", NO, @{}, @{}), @[]);
+        if (!Check([unsupportedMap[@"error"] isEqualToString:@"local_state"],
+                   "local planner stops when Maps controls are not recognized")) return 1;
+        mapJourneyStage = 0;
+        mapJourneyReads = 0;
+        NSMutableArray *localMapHistory = [NSMutableArray array];
+        NSDictionary *localMapResult = nil;
+        BBMapActionProvider localMapModel = ^NSDictionary *(NSString *command,
+                NSDictionary *observation, NSArray *history) {
+            return BBFixedMapAction(command, observation, history);
+        };
+        for (NSUInteger step = 0; step < 4; step++) {
+            localMapResult = BBMapStep(mapTask, localMapHistory, mapJourneyBridge, localMapModel);
+            if (![localMapResult[@"ok"] boolValue] || [localMapResult[@"done"] boolValue]) break;
+            [localMapHistory addObject:localMapResult[@"action"]];
+        }
+        if (!Check([localMapResult[@"ok"] boolValue] && [localMapResult[@"done"] boolValue] &&
+                   mapJourneyStage == 3 && localMapHistory.count == 3,
+                   "mock map planner completes the search without a remote model")) return 1;
         NSDictionary *fishermanCard = Observation(@"com.apple.Maps", NO,
             @{@"elements": @[
                 @{@"text": @"Fisherman's Wharf", @"visible_rect":
@@ -279,6 +313,12 @@ int main(void) {
         NSDictionary *academyTap = @{@"action": @"tap", @"x": @196, @"y": @150};
         NSDictionary *academyRowTap = @{@"action": @"tap", @"x": @300, @"y": @185};
         NSDictionary *academyInput = @{@"action": @"input_text", @"text": @"加州科学院"};
+        NSDictionary *afterSuggestion = BBFixedMapAction(@"在地图搜索加州科学院",
+            academySuggestion, @[tapSearch, academyInput, academyTap]);
+        if (!Check([afterSuggestion[@"action"] isEqualToString:@"done"] &&
+                   !BBValidAction(afterSuggestion, academySuggestion,
+                       @"在地图搜索加州科学院", @[tapSearch, academyInput, academyTap], YES, YES, NO),
+                   "local planner waits for a verified result after tapping a suggestion")) return 1;
         NSDictionary *islandSuggestion = Observation(@"com.apple.Maps", NO,
             @{@"elements": @[
                 @{@"text": @"Search field", @"aliases": @[@"Alcatraz Island"], @"visible_rect":

@@ -27,8 +27,8 @@
 
 - 已复制未修改的 `AgentRuntime` 六个源文件与经过 Theos 导入适配的 `AgentTools` 六个源文件，保留 Apache 许可证、NOTICE 与来源 commit。BeanBao Agent 的 Theos 目标改为 iOS 17，`arm64e` 编译、链接、签名和 RootHide `.deb` 打包通过。
 - `harness/TextHarness.swift` 已用上游 `PHKAgentRuntime` 和 `PHKToolRegistry` 执行四个固定打开 App 文字指令；“模拟模型”和 Claude 模式都进入本地 harness，不向模型发送截图，也不需要 Claude Key。
-- Agent 0.3.40 的 `harness/StepHarness.swift` 统一驱动本地备忘录与 Claude 地图搜索的逐步工具循环。`NoteHarness.swift` 每次只执行一个经旧策略与新鲜界面复核的动作，最多 10 次；笔记内容与 AX/OCR 界面只在本机进程中处理，不发送给远程模型。`MapHarness.swift` 最多 20 次，沿用现有 Claude Messages 动作适配器和地图策略；每次模型动作经本地策略与新鲜界面复核，地点标记和详情卡片一致才报完成。工具结果只返回固定状态字段。
-- Mac 假 Bridge / 步骤测试 15 项通过：固定 App 白名单、锁屏、Bridge 拒绝、前台复核，以及备忘录和地图的完成、失败、错误指令及步数上限。原生策略测试覆盖备忘录完整五步和前台变化拒绝，以及地图完整搜索步骤、敏感界面的本地启动、错误动作拒绝及地点结果复核；8 项 Python 测试通过。
+- Agent 0.3.41 的 `harness/StepHarness.swift` 统一驱动本地备忘录与地图搜索的逐步工具循环。`NoteHarness.swift` 每次只执行一个经旧策略与新鲜界面复核的动作，最多 10 次；笔记内容与 AX/OCR 界面只在本机进程中处理，不发送给远程模型。`MapHarness.swift` 最多 20 次；模拟模式由本地规则识别搜索框、输入原文、提交和核对结果，不需要模型 Key，Claude 模式继续沿用现有 Messages 动作适配器。两种地图路径的动作都经本地策略与新鲜界面复核，地点标记和详情卡片一致才报完成。工具结果只返回固定状态字段。
+- Mac 假 Bridge / 步骤测试 15 项通过：固定 App 白名单、锁屏、Bridge 拒绝、前台复核，以及备忘录和地图的完成、失败、错误指令及步数上限。原生策略测试覆盖备忘录完整五步和前台变化拒绝，以及本地与模型地图的完整搜索步骤、敏感界面的本地启动、错误动作拒绝及地点结果复核；8 项 Python 测试通过。
 - Agent 0.3.36 / App 0.3.9 给每次任务和服务实例分配 ID；App 丢弃旧轮询回复，拒绝把其他任务的完成状态显示为当前任务成功，停止请求也带任务 ID。本地原生策略测试及三包构建通过。
 - **尚未装机或在真机验证新 harness 路径。** 图标和 harness 候选包仅在本机生成；用户休息期间不操作手机。
 
@@ -36,7 +36,7 @@
 
 1. **扩展设备工具。** 当前已引入 `AgentRuntime` 和 `AgentTools`，并用 `PHKToolRegistry` 注册 `open_app`、`note_step` 和 `map_step`。后续可把单步工具进一步拆为 `observe` / `act`，但每次动作仍需经 BeanBao 的观察 ID、新鲜界面和目标 App 策略复核。保持来源锁定，不复制 Palmino App 或 Linux Guest。
 2. **桥接设备工具。** Swift 适配器通过现有本机 Unix socket 调用 Bridge 的 `observe`、`act`、`wake_lease`。`act` 每次都要带上刚获取的 `observation_id`；执行前检查解锁、前台 App、时间戳和任务白名单，Bridge 继续做最终拒绝。所有 GUI 工具设为串行；一次模型响应中多个动作不能绕过“观察一次、执行一步”。
-3. **桥接模型。** 固定 App 和备忘录使用本地确定性模型替身。地图步骤工具内部仍调用现有 `BBClaudeAction`，再把策略结果交给运行时；这已把地图任务纳入统一步数和时限治理。若要让 Palmino 直接管理模型流与工具调用，还需为 Claude Messages 写 `ModelProvider` 适配器，把 JSON action 映射到 `ModelEvent`。无需向用户索取新模型。
+3. **桥接模型。** 固定 App、备忘录和模拟模式地图使用本地确定性模型替身。Claude 地图步骤工具内部仍调用现有 `BBClaudeAction`，再把策略结果交给运行时；这已把地图任务纳入统一步数和时限治理。若要让 Palmino 直接管理模型流与工具调用，还需为 Claude Messages 写 `ModelProvider` 适配器，把 JSON action 映射到 `ModelEvent`。无需向用户索取新模型。
 4. **保留现有安全策略。** 地图搜索和新建备忘录的限定步骤、敏感内容本地拦截、完成条件和 wake lease 仍由 BeanBao 适配层负责。Palmino 的通用工具治理不表达这些具体屏幕条件。
 5. **真机验收状态协议。** 新入口已接入同一个 `beanbaod` 及 `AgentService`，每次 `start` 返回唯一任务 ID；App 只把同一服务、同一任务的状态视为当前结果。仍需在用户方便时验证新旧任务交错和服务重启；旧实现保留为可回退版本，直到相同用例全部通过。
 
