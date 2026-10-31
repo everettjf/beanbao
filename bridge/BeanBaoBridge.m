@@ -6,6 +6,7 @@
 #import "HIDManager.h"
 #import "TextInputManager.h"
 #import <Security/Security.h>
+#import <UIKit/UIKit.h>
 #import <sys/socket.h>
 #import <sys/un.h>
 #import <sys/stat.h>
@@ -22,6 +23,7 @@ static NSString *BBSocket(void) { return [BBDirectory() stringByAppendingPathCom
 static NSString *BBTokenFile(void) { return [BBDirectory() stringByAppendingPathComponent:@"bridge.token"]; }
 static const size_t BBMaxRequest = 65536;
 static const size_t BBMaxResponse = 8 * 1024 * 1024;
+static const NSTimeInterval BBWakeLeaseSeconds = 90;
 
 @interface BeanBaoBridge ()
 @property (nonatomic, copy) NSString *token;
@@ -29,6 +31,10 @@ static const size_t BBMaxResponse = 8 * 1024 * 1024;
 @property (nonatomic, copy) NSString *observationApp;
 @property (nonatomic) NSTimeInterval observationTime;
 @property (nonatomic) int listenFD;
+@property (nonatomic) BOOL wakeLeaseActive;
+@property (nonatomic) BOOL idleTimerBeforeLease;
+@property (nonatomic) NSTimeInterval wakeLeaseExpiry;
+@property (nonatomic, strong) NSTimer *wakeLeaseTimer;
 @end
 
 @implementation BeanBaoBridge
@@ -125,6 +131,66 @@ static NSString *BBTokenFromFile(void) {
     NSDictionary *state = [[ScreenManager sharedInstance] deviceInteractionState];
     return [state[@"locked_known"] boolValue] && ![state[@"locked"] boolValue] &&
            [state[@"screen_on_known"] boolValue] && [state[@"screen_on"] boolValue];
+}
+
+- (void)endWakeLeaseOnMain {
+    if (!self.wakeLeaseActive) return;
+    self.wakeLeaseActive = NO;
+    self.wakeLeaseExpiry = 0;
+    [self.wakeLeaseTimer invalidate];
+    self.wakeLeaseTimer = nil;
+    UIApplication.sharedApplication.idleTimerDisabled = self.idleTimerBeforeLease;
+}
+
+- (void)checkWakeLeaseOnMain {
+    if (!self.wakeLeaseActive) return;
+    if (NSProcessInfo.processInfo.systemUptime >= self.wakeLeaseExpiry || ![self unlocked]) {
+        [self endWakeLeaseOnMain];
+        return;
+    }
+    // SpringBoard may update its own idle timer state while an app changes.
+    UIApplication.sharedApplication.idleTimerDisabled = YES;
+}
+
+- (NSDictionary *)wakeLeaseOnMain:(NSString *)mode {
+    if ([mode isEqualToString:@"release"]) {
+        [self endWakeLeaseOnMain];
+        return @{@"ok": @YES, @"active": @NO};
+    }
+    if (![mode isEqualToString:@"renew"]) return BBError(@"Invalid wake lease mode");
+    if (![self unlocked]) {
+        [self endWakeLeaseOnMain];
+        return BBError(@"Device is locked, screen is off, or state is unknown");
+    }
+    UIApplication *application = UIApplication.sharedApplication;
+    if (!application) {
+        [self endWakeLeaseOnMain];
+        return BBError(@"SpringBoard application unavailable");
+    }
+    if (!self.wakeLeaseActive) self.idleTimerBeforeLease = application.idleTimerDisabled;
+    application.idleTimerDisabled = YES;
+    if (!application.idleTimerDisabled) {
+        [self endWakeLeaseOnMain];
+        return BBError(@"Idle timer could not be disabled");
+    }
+    self.wakeLeaseActive = YES;
+    self.wakeLeaseExpiry = NSProcessInfo.processInfo.systemUptime + BBWakeLeaseSeconds;
+    if (!self.wakeLeaseTimer) {
+        self.wakeLeaseTimer = [NSTimer timerWithTimeInterval:1 target:self
+            selector:@selector(checkWakeLeaseOnMain) userInfo:nil repeats:YES];
+        [NSRunLoop.mainRunLoop addTimer:self.wakeLeaseTimer forMode:NSRunLoopCommonModes];
+    }
+    return @{@"ok": @YES, @"active": @YES, @"lease_seconds": @(BBWakeLeaseSeconds)};
+}
+
+- (NSDictionary *)wakeLease:(NSDictionary *)request {
+    NSString *mode = request[@"mode"];
+    if (![mode isKindOfClass:NSString.class] ||
+        ![@[@"renew", @"release"] containsObject:mode]) return BBError(@"Invalid wake lease mode");
+    __block NSDictionary *result = nil;
+    if (NSThread.isMainThread) result = [self wakeLeaseOnMain:mode];
+    else dispatch_sync(dispatch_get_main_queue(), ^{ result = [self wakeLeaseOnMain:mode]; });
+    return result;
 }
 
 - (NSDictionary *)observe:(NSDictionary *)request {
@@ -247,6 +313,7 @@ static NSString *BBTokenFromFile(void) {
             response = BBError(@"Unauthorized");
         else if ([request[@"op"] isEqualToString:@"observe"]) response = [self observe:request];
         else if ([request[@"op"] isEqualToString:@"act"]) response = [self perform:request];
+        else if ([request[@"op"] isEqualToString:@"wake_lease"]) response = [self wakeLease:request];
         else response = BBError(@"Unknown operation");
     } @catch (NSException *exception) {
         response = BBError([NSString stringWithFormat:@"Bridge operation failed: %@", exception.name]);

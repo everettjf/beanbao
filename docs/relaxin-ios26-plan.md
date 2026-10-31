@@ -1,6 +1,6 @@
 # BeanBao：Relaxin / iOS 26 真机落地方案
 
-更新：2026-10-30。本方案以当前通过 USB 连接的 iPhone 为首发目标。Bridge 0.2.0、原生 Agent 0.3.31、BeanBao App 0.3.6 已安装；逐项证据与未完成关卡见 [build-and-test.md](build-and-test.md)。安装与配置见 [install-and-configure.md](install-and-configure.md)。
+更新：2026-10-30。本方案以当前通过 USB 连接的 iPhone 为首发目标。Bridge 0.2.1、原生 Agent 0.3.32、BeanBao App 0.3.6 已安装；逐项证据与未完成关卡见 [build-and-test.md](build-and-test.md)。安装与配置见 [install-and-configure.md](install-and-configure.md)。
 
 通过 copyapp 的 USB iCTRL 通道重新启用 Relaxin 后，SSH 已恢复。手机端 Claude 服务已完成地图搜索和新建备忘录；App Claude 地图任务从旧结果卡片出发完成渔人码头、旧金山市政厅和金门大桥搜索。Agent 0.3.12 增加精确匹配搜索建议点击后，手机端又从旧结果卡片连续完成旧金山市政厅和加州科学院；0.3.13 再由 App 文字入口完成加州科学院。仍不能宣称任意地点可靠。电脑播报“打开地图”经手机录音、本机转写、确认后完成任务；真人语音与实体音量键三连按仍需验收。
 
@@ -64,7 +64,7 @@
 - **BeanBao App**：UIKit 文字入口、模型选择、状态和停止按钮已安装；App 按钮发起模拟模型“打开地图”已在真机完成。iOS 26 使用 Apple `DictationTranscriber` 在录音后本机转写，旧系统保留 `SFSpeechRecognizer` 路径。电脑中文播报的“打开地图”已从录音、转写到任务完成；真人语音以及 iOS 26 实体按键事件仍待实测。
 - **模型适配器**：已接入 Claude Messages API，输入任务、当前 App、精简 UI 树/OCR 和截图；输出单个受限动作。后续可接 OpenAI 兼容的多模态服务或 AutoGLM-Phone，但不是首版验收前提。官方 [AutoGLM iOS 配置](https://github.com/zai-org/Open-AutoGLM/blob/main/docs/ios_setup/ios_setup.md)基于 Mac + WebDriverAgent，其执行代码不能直接放上手机，需做自己的动作适配。
 
-单步循环：检查已解锁与白名单 → 采集有时间戳的 UI 树 → 不足时 OCR → 地图等模型任务在必要时截图交模型 → 解析一个动作 → 校验坐标、前台 App、观察新鲜度与禁止操作 → 执行一次 → 再观察并验证。设置 20 步和 5 分钟上限。输入失败、模型超时、屏幕变化不符即停，不连续盲点。审计只记录动作类型、目标 App、时间和结果；截图不默认持久化。
+单步循环：检查已解锁与白名单 → 采集有时间戳的 UI 树 → 不足时 OCR → 地图等模型任务在必要时截图交模型 → 解析一个动作 → 校验坐标、前台 App、观察新鲜度与禁止操作 → 执行一次 → 再观察并验证。任务运行时 Agent 每轮向 Bridge 续租 90 秒防自动锁屏；完成、停止、锁屏后释放，服务异常退出由超时兜底。防自动锁屏的持续效果仍待解锁真机时长测试。设置 20 步和 5 分钟上限。输入失败、模型超时、屏幕变化不符即停，不连续盲点。审计只记录动作类型、目标 App、时间和结果；截图不默认持久化。
 
 ## 5. 真机开发关卡
 

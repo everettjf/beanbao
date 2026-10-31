@@ -83,6 +83,10 @@ static NSDictionary *BBBridge(NSDictionary *request) {
     return [result isKindOfClass:NSDictionary.class] ? result : BBError(@"Invalid bridge response");
 }
 
+void BBReleaseWakeLease(void) {
+    BBBridge(@{@"op": @"wake_lease", @"mode": @"release"});
+}
+
 static BOOL BBHasSecret(id value) {
     static NSArray<NSRegularExpression *> *patterns;
     static dispatch_once_t once;
@@ -732,9 +736,19 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
     NSString *key = claude && !autoNote ? (BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0)) : nil;
     if (claude && !autoNote && (![key hasPrefix:@"sk-ant-"] || key.length < 24)) { fprintf(stderr, "Claude Key 未配置或权限不安全\n"); return 1; }
     if ((claude || autoNote) && BBHasSecret(task)) { fprintf(stderr, "任务文字包含疑似密钥，已停止模型请求\n"); return 1; }
+    @try {
     NSMutableArray *history = [NSMutableArray array];
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:300];
     for (int step = 0; step < 20 && [deadline timeIntervalSinceNow] > 0; step++) {
+        NSDictionary *lease = BBBridge(@{@"op": @"wake_lease", @"mode": @"renew"});
+        if (![lease[@"ok"] boolValue]) {
+            NSString *leaseError = [lease[@"error"] isKindOfClass:NSString.class] ? lease[@"error"] : @"";
+            if ([leaseError containsString:@"locked"] ||
+                [leaseError containsString:@"screen is off"])
+                fprintf(stderr, "设备已锁定或屏幕关闭，停止模型请求\n");
+            else fprintf(stderr, "防自动锁屏不可用，已停止任务\n");
+            return 1;
+        }
         NSDictionary *observation = BBBridge(@{@"op": @"observe", @"ui": @YES,
             @"ocr": @(claude || autoNote), @"screenshot": @(claude && !autoNote)});
         if (![observation[@"ok"] boolValue]) { fprintf(stderr, "观察失败\n"); return 1; }
@@ -885,6 +899,9 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         [history addObject:action];
     }
     fprintf(stderr, "任务超过时间或步数上限\n"); return 1;
+    } @finally {
+        BBReleaseWakeLease();
+    }
 }
 
 int main(int argc, const char *argv[]) {

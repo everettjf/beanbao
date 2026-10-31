@@ -42,6 +42,9 @@ int main(void) {
             !Check([BBFailureMessage(@"备忘录界面状态不符合安全条件")
                     isEqualToString:@"备忘录界面状态不符合安全条件，已停止"],
                    "note state error is specific and fixed") ||
+            !Check([BBFailureMessage(@"防自动锁屏不可用，已停止任务")
+                    isEqualToString:@"防自动锁屏不可用，已停止任务"],
+                   "wake lease failure has a fixed message") ||
             !Check([BBAllowedTarget(@"新建备忘录：测试内容") isEqualToString:@"备忘录"],
                    "note task accepted") ||
             !Check(BBTaskModelAllowed(@"新建备忘录：测试内容", @"mock"),

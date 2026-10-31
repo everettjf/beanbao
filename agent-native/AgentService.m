@@ -13,6 +13,7 @@
 #import "BBAudit.h"
 
 extern char **environ;
+extern void BBReleaseWakeLease(void);
 
 static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.sock";
 
@@ -78,6 +79,8 @@ static NSString *BBFailureMessage(NSString *output) {
         return @"设备已锁定或屏幕关闭，请解锁后重试";
     if ([output containsString:@"Claude Key 未配置"])
         return @"Claude Key 未配置或权限不安全";
+    if ([output containsString:@"防自动锁屏不可用"])
+        return @"防自动锁屏不可用，已停止任务";
     if ([output containsString:@"疑似密钥"])
         return @"界面或任务疑似包含敏感信息，已停止";
     if ([output containsString:@"模型请求或输出失败"])
@@ -107,6 +110,9 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
     int status = 0;
     pid_t waited;
     do { waited = waitpid(child, &status, 0); } while (waited < 0 && errno == EINTR);
+    // SIGTERM does not execute the child's @finally. Release before another
+    // task can start; the bridge lease also expires if this service dies.
+    BBReleaseWakeLease();
     NSString *summary = [[NSString alloc] initWithData:output encoding:NSUTF8StringEncoding];
     summary = [summary stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     NSString *auditAction = nil, *auditResult = nil;
