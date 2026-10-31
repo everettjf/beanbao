@@ -27,6 +27,8 @@ dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 
 包名和依赖请以当前构建产物的 `control` 为准。当前仓库还没有软件源、自动兼容性检查、图形安装器或面向普通用户的发布包；不能把这台手机上的成功直接推广到其他设备。
 
+装机后可在已配对的电脑上运行 `python3 scripts/verify_device.py --host 127.0.0.1 --port <转发端口> --identity <专用私钥路径> --known-hosts <主机密钥文件> --expect-bundle`。该只读检查会要求设备上的三包版本与本仓库一致、Agent 返回带服务和任务 ID 的状态，并确认 Bridge 可观察；它不能代替下面的实际文字任务验收。
+
 ## 安装后如何配置
 
 1. 保持手机解锁、亮屏，打开 BeanBao。先选“模拟模型”，输入“打开地图”并点“开始”；它不需要模型 Key。界面应显示完成，地图应在前台。
