@@ -5,6 +5,7 @@
 #import <fcntl.h>
 #import <unistd.h>
 #import <errno.h>
+#import <float.h>
 #import "BBAudit.h"
 
 static const char *BBSocket = "/var/mobile/Library/Caches/BeanBao/bridge.sock";
@@ -260,7 +261,21 @@ static BOOL BBMapResultVisible(NSDictionary *observation, NSString *query) {
             y >= 0 && y < screenHeight * 0.6) pin = YES;
         if ([lower hasPrefix:target] && width >= 200 && y >= screenHeight * 0.45) card = YES;
     }
-    return pin && card;
+    if (pin && card) return YES;
+    if (!card) return NO;
+    // Some 3D landmark views expose the place card to AX but render the
+    // selected landmark label only into the map image.
+    for (NSDictionary *item in observation[@"ocr"][@"texts"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isKindOfClass:NSString.class] ||
+            [item[@"text"] caseInsensitiveCompare:title] != NSOrderedSame) continue;
+        NSDictionary *rect = item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double y = [rect[@"y"] doubleValue], width = [rect[@"width"] doubleValue];
+        if (y >= screenHeight * 0.12 && y < screenHeight * 0.45 &&
+            width >= 40 && width <= 160) return YES;
+    }
+    return NO;
 }
 
 static BOOL BBUnlockedObservation(NSDictionary *observation) {
@@ -289,25 +304,45 @@ static BOOL BBMapSearchInputReady(NSDictionary *observation) {
     return searchField && keyboardSubmit;
 }
 
+static BOOL BBMapSearchTapAllowed(NSDictionary *observation, double x, double y) {
+    double height = [observation[@"screen"][@"height"] doubleValue];
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSString *label = item[@"text"];
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![label isKindOfClass:NSString.class] || ![rect isKindOfClass:NSDictionary.class]) continue;
+        NSString *lower = label.lowercaseString;
+        if (![@[@"search field", @"search maps", @"search", @"搜索地图", @"搜索", @"搜尋"] containsObject:lower]) continue;
+        double left = [rect[@"x"] doubleValue], top = [rect[@"y"] doubleValue];
+        double width = [rect[@"width"] doubleValue], rowHeight = [rect[@"height"] doubleValue];
+        if (width < 40 || rowHeight < 20 || rowHeight > 100 || top < 0 || top > height * 0.8) continue;
+        if (x >= left && x < left + width && y >= top && y < top + rowHeight) return YES;
+    }
+    return NO;
+}
+
 static BOOL BBMapSuggestionTapAllowed(NSDictionary *observation, NSString *query, double x, double y) {
     if (!BBMapSearchInputReady(observation)) return NO;
     NSString *title = BBMapResultName(query);
     if (title.length < 5) return NO;
     BOOL queryInField = NO, matchingSuggestion = NO;
-    double suggestionLeft = 0, suggestionRight = 0;
+    double suggestionLeft = DBL_MAX, suggestionRight = 0;
     for (NSDictionary *item in observation[@"ui"][@"elements"]) {
         if (![item isKindOfClass:NSDictionary.class]) continue;
         NSString *label = item[@"text"];
         NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
         if (![label isKindOfClass:NSString.class] || ![rect isKindOfClass:NSDictionary.class]) continue;
         if ([label isEqualToString:@"Search field"] &&
-            [item[@"aliases"] isKindOfClass:NSArray.class] &&
-            [item[@"aliases"] containsObject:query]) queryInField = YES;
-        if ([label hasPrefix:[title stringByAppendingString:@","]] &&
+            [item[@"aliases"] isKindOfClass:NSArray.class])
+            for (NSString *alias in item[@"aliases"])
+                if ([alias isKindOfClass:NSString.class] &&
+                    [alias caseInsensitiveCompare:query] == NSOrderedSame) queryInField = YES;
+        if ([label.lowercaseString hasPrefix:[title.lowercaseString stringByAppendingString:@","]] &&
+            [label.lowercaseString rangeOfString:@"search nearby"].location == NSNotFound &&
             [rect[@"width"] doubleValue] >= 200) {
             matchingSuggestion = YES;
-            suggestionLeft = [rect[@"x"] doubleValue];
-            suggestionRight = suggestionLeft + [rect[@"width"] doubleValue];
+            suggestionLeft = MIN(suggestionLeft, [rect[@"x"] doubleValue]);
+            suggestionRight = MAX(suggestionRight, [rect[@"x"] doubleValue] + [rect[@"width"] doubleValue]);
         }
     }
     if (!queryInField || !matchingSuggestion) return NO;
@@ -317,17 +352,45 @@ static BOOL BBMapSuggestionTapAllowed(NSDictionary *observation, NSString *query
     for (NSDictionary *item in observation[@"ocr"][@"texts"]) {
         if (![item isKindOfClass:NSDictionary.class] ||
             ![item[@"text"] isKindOfClass:NSString.class] ||
-            ![item[@"text"] isEqualToString:title]) continue;
+            [item[@"text"] caseInsensitiveCompare:title] != NSOrderedSame) continue;
         NSDictionary *rect = item[@"rect"];
         if (![rect isKindOfClass:NSDictionary.class]) continue;
         double top = [rect[@"y"] doubleValue];
         double width = [rect[@"width"] doubleValue], height = [rect[@"height"] doubleValue];
-        if (width < 100 || height < 10 || top < screenHeight * 0.11 ||
-            top >= screenHeight * 0.45) continue;
+        if (width < 50 || height < 10 || top < screenHeight * 0.11 ||
+            top >= screenHeight * 0.7) continue;
+        BOOL nearbySearch = NO;
+        for (NSDictionary *other in observation[@"ocr"][@"texts"]) {
+            if (![other isKindOfClass:NSDictionary.class] ||
+                ![other[@"text"] isKindOfClass:NSString.class]) continue;
+            double otherTop = [other[@"rect"][@"y"] doubleValue];
+            if (otherTop > top + height && otherTop < top + height + 35 &&
+                [@[@"Search Nearby", @"搜索附近", @"搜尋附近"] containsObject:other[@"text"]]) {
+                nearbySearch = YES; break;
+            }
+        }
+        if (nearbySearch) continue;
         if (x >= suggestionLeft && x <= suggestionRight &&
             y >= top - 20 && y <= top + height + 42) return YES;
     }
     return NO;
+}
+
+static NSDictionary *BBMapFixedSuggestionAction(NSDictionary *observation, NSString *query) {
+    NSString *title = BBMapResultName(query);
+    if (title.length < 5) return nil;
+    for (NSDictionary *item in observation[@"ocr"][@"texts"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isKindOfClass:NSString.class] ||
+            [item[@"text"] caseInsensitiveCompare:title] != NSOrderedSame) continue;
+        NSDictionary *rect = item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double x = [rect[@"x"] doubleValue] + [rect[@"width"] doubleValue] / 2;
+        double y = [rect[@"y"] doubleValue] + [rect[@"height"] doubleValue] / 2;
+        if (BBMapSuggestionTapAllowed(observation, query, x, y))
+            return @{@"action": @"tap", @"x": @(x), @"y": @(y)};
+    }
+    return nil;
 }
 
 static NSString *BBNoteTimestamp(NSDictionary *observation) {
@@ -496,9 +559,10 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
             id x = action[@"x"], y = action[@"y"];
             if (![x isKindOfClass:NSNumber.class] || ![y isKindOfClass:NSNumber.class] ||
                 !isfinite([x doubleValue]) || !isfinite([y doubleValue])) return NO;
-            BOOL search = BBElementContainsPoint(observation, [x doubleValue], [y doubleValue],
-                                                 @[@"搜索", @"search"], NO);
+            BOOL search = BBMapSearchTapAllowed(observation, [x doubleValue], [y doubleValue]);
             if (search) return YES;
+            if (BBMapSuggestionTapAllowed(observation, query,
+                                          [x doubleValue], [y doubleValue])) return YES;
             double height = [observation[@"screen"][@"height"] doubleValue];
             return uiSteps == 0 && [y doubleValue] > height * 0.4 &&
                 [y doubleValue] < height * 0.8 &&
@@ -650,8 +714,26 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"]))) {
             fprintf(stderr, "界面包含疑似密钥，已停止模型请求\n"); return 1;
         }
+        NSDictionary *fixedMapAction = autoMap ? BBMapFixedSuggestionAction(observation, BBMapQuery(task)) : nil;
+        if (autoMap && !fixedMapAction &&
+            [history.lastObject[@"action"] isEqualToString:@"input_text"] &&
+            [observation[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] &&
+            BBVisibleContains(observation, BBMapQuery(task))) {
+            // iOS Maps often paints matching suggestions after the input
+            // action returns. Give AX and OCR a short chance to agree.
+            for (NSUInteger retry = 0; retry < 8; retry++) {
+                usleep(500000);
+                NSDictionary *settled = BBBridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+                if (![settled[@"ok"] boolValue] || !BBUnlockedObservation(settled) ||
+                    ![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] ||
+                    BBHasSecret(settled[@"ui"]) || BBHasSecret(settled[@"ocr"])) break;
+                observation = settled;
+                fixedMapAction = BBMapFixedSuggestionAction(observation, BBMapQuery(task));
+                if (fixedMapAction) break;
+            }
+        }
         NSDictionary *action = autoNote ? fixedNoteAction :
-            (claude ? BBClaudeAction(task, observation, history, key) : BBMockAction(task, observation, history.count));
+            (fixedMapAction ?: (claude ? BBClaudeAction(task, observation, history, key) : BBMockAction(task, observation, history.count)));
         if (action[@"error"]) {
             fprintf(stderr, autoNote ? "备忘录界面状态不符合安全条件\n" : "模型请求或输出失败\n");
             return 1;
@@ -702,20 +784,24 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         }
         if (![name isEqualToString:@"launch_app"] && !autoMap && !autoNote && !BBApprove(action)) { fprintf(stderr, "用户未批准动作\n"); return 1; }
         BOOL suggestionTap = autoMap && [name isEqualToString:@"tap"] &&
-            [history.lastObject[@"action"] isEqualToString:@"input_text"];
+            BBMapSuggestionTapAllowed(observation, BBMapQuery(task),
+                                      [action[@"x"] doubleValue], [action[@"y"] doubleValue]);
         NSDictionary *fresh = BBBridge(@{@"op": @"observe", @"ui": @YES,
             @"ocr": @(suggestionTap || autoNote)});
         BOOL sameUI = [fresh[@"ui"] isEqual:observation[@"ui"]];
         BOOL sameNoteEditor = autoNote && [name isEqualToString:@"input_text"] &&
             BBNoteEditorReady(observation) && BBNoteEditorReady(fresh) &&
             [BBNoteTimestamp(observation) isEqualToString:BBNoteTimestamp(fresh)];
+        BOOL sameNoteControl = autoNote && safeNewNoteTap &&
+            BBValidAction(action, fresh, task, history, allowUI, autoMap, autoNote);
         BOOL sameApp = [fresh[@"frontmost_app"][@"bundleId"] isEqual:observation[@"frontmost_app"][@"bundleId"]];
         BOOL allowed = BBValidAction(action, fresh, task, history, allowUI, autoMap, autoNote);
         BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
         if (![fresh[@"ok"] boolValue] ||
             (claude && !safeNewNoteTap &&
              (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
-            (!autoMap && !sameUI && !sameNoteEditor) || !sameApp || !allowed || !recent) {
+            (!autoMap && !sameUI && !sameNoteEditor && !sameNoteControl) ||
+            !sameApp || !allowed || !recent) {
             fprintf(stderr, "界面复核未通过：步骤 %d，UI=%d，App=%d，策略=%d，时效=%d\n",
                     step + 1, sameUI, sameApp, allowed, recent);
             return 1;

@@ -4,7 +4,7 @@
 
 ## 最新状态（2026-10-30）
 
-真机当前安装 `dev.beanbao.bridge` **0.2.0**、`dev.beanbao.agent` **0.3.19** 和 `dev.beanbao.app` **0.3.5**。通过已配对的 USB iCTRL 通道重新触发 Relaxin Jailbreak，mobile/root SSH 恢复。此前一次设备重启后，已安装包保留，Agent 服务自动运行；当前版本尚未再做重启后的完整任务复测。RootHide 的 SSH shell 与 App/launchd 使用不同的 `/var/mobile` 视图，客户端已加入 socket 路径回退。
+真机当前安装 `dev.beanbao.bridge` **0.2.0**、`dev.beanbao.agent` **0.3.27** 和 `dev.beanbao.app` **0.3.5**。通过已配对的 USB iCTRL 通道重新触发 Relaxin Jailbreak，mobile/root SSH 恢复。此前一次设备重启后，已安装包保留，Agent 服务自动运行；当前版本尚未再做重启后的完整任务复测。RootHide 的 SSH shell 与 App/launchd 使用不同的 `/var/mobile` 视图，客户端已加入 socket 路径回退。
 
 真机 App 点击“开始”已用模拟模型完成“打开地图”，也用 Claude 完成地图搜索。Agent 0.3.10 从旧地点卡片出发，App 连续完成“渔人码头”“旧金山市政厅”；0.3.11 收紧地图完成判据后，App 完成“金门大桥”，iCTRL 独立看见 Golden Gate Bridge 地图标记和详情卡片，未启动导航。0.3.11 曾在“加州科学院”动态搜索状态下拒绝模型的 `done`，避免把旧 CA-1 S 卡片误报为成功。手动复现发现输入后搜索建议中有准确的 California Academy of Sciences；点击该建议会显示正确地点。Agent 0.3.12 只在 AX 确认精确匹配建议、搜索框含原样查询且 OCR 确认建议文字的位置时允许点击。手机端 Claude 在新版本先从已打开的搜索建议完成加州科学院，随后从旧卡片依次搜索旧金山市政厅、加州科学院，三次服务状态均为 `done`；最后一次独立观察看到加州科学院标记和详情卡片，未启动导航。App 在 0.3.12 上从加州科学院卡片搜索金门大桥时停在准确建议页并返回未完成；0.3.13 将允许点击位置扩至同一条精确匹配结果行，仍要求 AX、搜索框原文和 OCR 同时吻合。再次由 App 输入“在地图搜索加州科学院”、选择 Claude 并点击“开始”，服务返回 `done`；独立观察确认加州科学院标记和详情卡片。任意地点的稳定成功率尚未证明。手机端 Claude 服务此前也完成一次金门大桥搜索和一次“新建备忘录：BeanBao 测试 2026-10-30”，备忘录正文可见且 Done 已点击。备忘录列表中有疑似密钥形态的旧内容时，Agent 在网络请求前停止；测试改从安全的测试笔记进入，没有记录旧笔记文字。30 条禁止任务在服务入口全部拒绝，重复运行结果一致。8 个 Python 单元测试与原生地图/备忘录策略测试通过。
 
@@ -17,6 +17,8 @@ App 0.3.5 的 Claude Key 配置入口用无效测试字符串验证：界面报�
 从加州科学院地点卡片启动手机端 Claude“在地图搜索旧金山市政厅”后，关闭 Mac 的 USB SSH 转发，并确认本机 22326 端口不再监听。约一分钟后恢复转发；Agent 状态为 `done`，前台地图同时显示 San Francisco City Hall 标记和 City Hall 地点卡片，审计记录了两次点击、原样输入、选择建议和完成。期间数据线仍插着，因此这是无 Mac 调试通道的任务证据，不能替代物理拔线验收。
 
 Agent 0.3.19 将“新建备忘录：指定内容”改为本地确定性动作，不把备忘录列表或截图送给 Claude。旧列表含疑似密钥形态的内容时，只允许点击经过 AX 核对的“新建”按钮；进入空白编辑器后再通过 AX/OCR 检查，过渡帧最多有限次重观测。真机从列表连续创建 A、B 两条不同的测试备忘录，服务状态均为 `done`，第二条由独立观察核对正文准确可见；此前 B 曾因新建后瞬态界面被安全停止，0.3.19 加入有限重观测后复测通过。原生策略测试与 8 个 Python 测试通过。
+
+Agent 0.3.27 进一步收紧地图搜索框点击，同时允许 AX 与 OCR 精确核对的同名建议行，并在输入后有限等待建议出现；名称大小写变化可匹配，3D 地标以地点卡片加地图区域精确 OCR 标签复核。真机新增样本：Alcatraz Island、Coit Tower、Ferry Building、Exploratorium、Palace of Fine Arts、PIER 39、Japanese Tea Garden 均最终返回 `done`；其中 Alcatraz Island、Ferry Building、Exploratorium、Palace of Fine Arts、PIER 39、Japanese Tea Garden 由独立观察核对标记和卡片，Coit Tower 由截图确认 3D 建筑标签及卡片。前期 Alcatraz Island、Coit Tower、Exploratorium、PIER 39 的首次尝试曾因策略过严安全停止；不能把修复前的失败计为成功率。修复后的 Palace of Fine Arts 与 Japanese Tea Garden 从旧卡片直接一次完成。Agent 0.3.27 还从备忘录列表及从地图切入备忘录各创建一条指定内容测试笔记，状态 `done`，独立观察正文准确可见。三个包已由 `scripts/build_packages.sh` 重新构建；原生策略、8 个 Python 测试和 Bridge 包内容审计通过。当前版本的 `verify_device.py` 读数正常，`forbidden_device.py` 再次验证 30/30 禁止任务在服务入口拒绝、执行 0 条。
 
 **未完成**：拔线后的独立任务验收；当前版本重启后完整任务复测；真人发声的语音任务；实体音量键三连按与普通音量行为；地图动态界面的更大样本。当前不能宣称 G1–G4 全部通过。iCTRL 的安全方法列表没有音量键事件，因此不能用它代替实体按键验收。一次 Frida 客户端连接报协议错误，随后设备重启，因果关系未确认；本轮后续不依赖 Frida。
 

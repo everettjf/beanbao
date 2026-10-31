@@ -106,12 +106,56 @@ int main(void) {
         NSDictionary *academyTap = @{@"action": @"tap", @"x": @196, @"y": @150};
         NSDictionary *academyRowTap = @{@"action": @"tap", @"x": @300, @"y": @185};
         NSDictionary *academyInput = @{@"action": @"input_text", @"text": @"加州科学院"};
+        NSDictionary *islandSuggestion = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[
+                @{@"text": @"Search field", @"aliases": @[@"Alcatraz Island"], @"visible_rect":
+                  @{@"x": @16, @"y": @64, @"width": @327, @"height": @44}},
+                @{@"text": @"search", @"visible_rect":
+                  @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}},
+                @{@"text": @"Search results", @"visible_rect":
+                  @{@"x": @0, @"y": @0, @"width": @414, @"height": @820}},
+                @{@"text": @"Alcatraz Island, 43 mi · CA, United States", @"visible_rect":
+                  @{@"x": @16, @"y": @144, @"width": @382, @"height": @68}},
+                @{@"text": @"Alcatraz Island, Search Nearby", @"visible_rect":
+                  @{@"x": @16, @"y": @282, @"width": @382, @"height": @68}},
+                @{@"text": @"Alcatraz Island, 43 mi · San Francisco, CA, United States", @"visible_rect":
+                  @{@"x": @16, @"y": @420, @"width": @382, @"height": @68}}]},
+            @{@"texts": @[
+                @{@"text": @"Alcatraz Island", @"rect": @{@"x": @76, @"y": @237, @"width": @118, @"height": @15}},
+                @{@"text": @"Alcatraz Island", @"rect": @{@"x": @76, @"y": @375, @"width": @118, @"height": @15}},
+                @{@"text": @"Search Nearby", @"rect": @{@"x": @76, @"y": @399, @"width": @130, @"height": @15}},
+                @{@"text": @"Alcatraz Island", @"rect": @{@"x": @76, @"y": @513, @"width": @118, @"height": @15}}]});
+        NSDictionary *towerSuggestion = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[
+                @{@"text": @"Search field", @"aliases": @[@"Coit Tower"], @"visible_rect":
+                  @{@"x": @16, @"y": @64, @"width": @327, @"height": @44}},
+                @{@"text": @"search", @"visible_rect":
+                  @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}},
+                @{@"text": @"Coit Tower, 41 mi · 1 Telegraph Hill Blvd", @"visible_rect":
+                  @{@"x": @76, @"y": @62, @"width": @291, @"height": @62}}]},
+            @{@"texts": @[@{@"text": @"Coit Tower", @"rect":
+                @{@"x": @75, @"y": @138, @"width": @88, @"height": @19}}]});
+        NSDictionary *pierSuggestion = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[
+                @{@"text": @"Search field", @"aliases": @[@"PIER 39"], @"visible_rect":
+                  @{@"x": @16, @"y": @64, @"width": @327, @"height": @44}},
+                @{@"text": @"search", @"visible_rect":
+                  @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}},
+                @{@"text": @"Pier 39, 41 mi · San Francisco", @"visible_rect":
+                  @{@"x": @16, @"y": @144, @"width": @382, @"height": @68}}]},
+            @{@"texts": @[@{@"text": @"Pier 39", @"rect":
+                @{@"x": @75, @"y": @234, @"width": @59, @"height": @17}}]});
         NSDictionary *academyCard = Observation(@"com.apple.Maps", NO,
             @{@"elements": @[
                 @{@"text": @"California Academy of Sciences", @"visible_rect":
                   @{@"x": @188, @"y": @298, @"width": @30, @"height": @30}},
                 @{@"text": @"California Academy of Sciences, Science Museum", @"visible_rect":
                   @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}}]}, @{});
+        NSDictionary *tower3DCard = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[@{@"text": @"Coit Tower, Observation Deck", @"visible_rect":
+                @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}}]},
+            @{@"texts": @[@{@"text": @"COIT TOWER", @"rect":
+                @{@"x": @171, @"y": @169, @"width": @76, @"height": @12}}]});
         NSArray *mapDirectOne = @[inputPlace], *mapDirectTwo = @[inputPlace, enter];
         NSArray *mapAfterClose = @[closeOldCard], *mapAfterTwoTaps = @[closeOldCard, tapSearch];
         NSArray *mapAfterTwoTapsInput = @[closeOldCard, tapSearch, inputPlace];
@@ -161,6 +205,27 @@ int main(void) {
             !Check(BBValidAction(academyRowTap, academySuggestion, @"在地图搜索加州科学院",
                                  @[closeOldCard, tapSearch, academyInput], YES, YES, NO),
                    "matching suggestion row allowed below OCR title") ||
+            !Check(BBValidAction(@{@"action": @"tap", @"x": @190, @"y": @522}, islandSuggestion,
+                                 @"在地图搜索Alcatraz Island", @[], YES, YES, NO),
+                   "existing exact lower suggestion can be selected") ||
+            !Check(BBValidAction(@{@"action": @"tap", @"x": @190, @"y": @522}, islandSuggestion,
+                                 @"在地图搜索Alcatraz Island", @[tapSearch], YES, YES, NO),
+                   "exact suggestion can be selected after focusing existing query") ||
+            !Check([BBMapFixedSuggestionAction(islandSuggestion, @"Alcatraz Island")[@"action"] isEqualToString:@"tap"] &&
+                   [BBMapFixedSuggestionAction(islandSuggestion, @"Alcatraz Island")[@"y"] doubleValue] < 300,
+                   "fixed map suggestion skips obscured first row and picks a visible exact place") ||
+            !Check(BBMapFixedSuggestionAction(islandSuggestion, @"Golden Gate Bridge") == nil,
+                   "fixed map suggestion refuses a different query") ||
+            !Check([BBMapFixedSuggestionAction(towerSuggestion, @"Coit Tower")[@"action"] isEqualToString:@"tap"],
+                   "shorter exact place name remains selectable") ||
+            !Check([BBMapFixedSuggestionAction(pierSuggestion, @"PIER 39")[@"action"] isEqualToString:@"tap"],
+                   "suggestion title matching ignores display case") ||
+            !Check(!BBValidAction(@{@"action": @"tap", @"x": @190, @"y": @400}, islandSuggestion,
+                                  @"在地图搜索Alcatraz Island", @[], YES, YES, NO),
+                   "Search Nearby candidate is excluded") ||
+            !Check(!BBValidAction(@{@"action": @"tap", @"x": @190, @"y": @580}, islandSuggestion,
+                                  @"在地图搜索Alcatraz Island", @[], YES, YES, NO),
+                   "Search results container cannot authorize a tap") ||
             !Check(!BBValidAction(@{@"action": @"tap", @"x": @196, @"y": @92}, academySuggestion,
                                   @"在地图搜索加州科学院", @[academyInput], YES, YES, NO),
                    "search field tap blocked while suggestion visible") ||
@@ -173,6 +238,12 @@ int main(void) {
             !Check(BBValidAction(@{@"action": @"done"}, academyCard,
                                  @"在地图搜索加州科学院", @[academyInput, academyTap], YES, YES, NO),
                    "localized map suggestion completion verified") ||
+            !Check(BBValidAction(@{@"action": @"done"}, tower3DCard,
+                                 @"在地图搜索Coit Tower", @[], YES, YES, NO),
+                   "3D landmark map label and exact card verify completion") ||
+            !Check(!BBValidAction(@{@"action": @"done"}, tower3DCard,
+                                  @"在地图搜索Alcatraz Island", @[], YES, YES, NO),
+                   "3D landmark card does not verify a different query") ||
             !Check(!BBValidAction(@{@"action": @"done"}, placeCard,
                                   @"在地图搜索其它地点", @[], YES, YES, NO),
                    "different place card rejected") ||
@@ -205,6 +276,10 @@ int main(void) {
             @{@"text": @"Note", @"visible_rect": @{@"x": @0, @"y": @0, @"width": @414, @"height": @794}},
             @{@"text": @"New note", @"visible_rect": @{@"x": @343, @"y": @825, @"width": @38, @"height": @38}}]};
         NSDictionary *noteList = Observation(@"com.apple.mobilenotes", NO, noteListUI, @{});
+        NSDictionary *changingNoteList = Observation(@"com.apple.mobilenotes", NO,
+            @{@"elements": @[
+                @{@"text": @"新建备忘录", @"visible_rect": @{@"x": @300, @"y": @50, @"width": @60, @"height": @40}},
+                @{@"text": @"列表刚更新", @"visible_rect": @{@"x": @20, @"y": @150, @"width": @200, @"height": @40}}]}, @{});
         NSDictionary *blankNote = Observation(@"com.apple.mobilenotes", NO, noteEditorUI, @{});
         NSDictionary *unfocusedNote = Observation(@"com.apple.mobilenotes", NO, unfocusedNoteUI,
                                                   @{@"texts": @[]});
@@ -248,6 +323,8 @@ int main(void) {
             !Check(BBFixedNoteAction(noteTask, blankNote, @[])[@"error"] != nil,
                    "fixed note planner refuses existing editor without new note action")) return 1;
         if (!Check(BBValidAction(newNote, noteList, noteTask, @[], YES, NO, YES), "new note tap allowed") ||
+            !Check(BBValidAction(newNote, changingNoteList, noteTask, @[], YES, NO, YES),
+                   "new note control remains valid while list content changes") ||
             !Check(!BBValidAction(@{@"action": @"tap", @"x": @280, @"y": @320},
                                   noteList, noteTask, @[], YES, NO, YES), "delete tap blocked") ||
             !Check(BBValidAction(noteText, blankNote, noteTask, noteOne, YES, NO, YES), "exact note text allowed") ||

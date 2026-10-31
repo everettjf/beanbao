@@ -7,16 +7,18 @@
 三个 RootHide `iphoneos-arm64e` 包按顺序安装：
 
 1. `dev.beanbao.bridge` 0.2.0：SpringBoard 中的受限观察与点击/输入桥接。
-2. `dev.beanbao.agent` 0.3.19：手机端任务服务和 Claude 适配器，依赖 Bridge 0.2.0 以上。
+2. `dev.beanbao.agent` 0.3.27：手机端任务服务和 Claude 适配器，依赖 Bridge 0.2.0 以上。
 3. `dev.beanbao.app` 0.3.5：文字、语音、状态与配置界面，依赖 Agent 0.3.11 以上。
 
 本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
+
+从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
 
 有 root shell 的开发者可将三个 `.deb` 复制到手机临时目录，依次执行：
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.0_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.19_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.27_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.5_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
@@ -35,9 +37,9 @@ Agent 的本地审计文件位于手机的 `/var/mobile/Library/Application Supp
 
 ## 当前能力边界
 
-- 已验证：文字打开设置、备忘录、地图；受限 Claude 地图搜索；连续两次受限新建指定内容的测试备忘录；电脑中文播报经手机录音、转写、用户确认后执行“打开地图”。
-- 地图动态界面仍可能使任务安全停止。当前已对金门大桥、渔人码头、旧金山市政厅和加州科学院的英文结果卡片做明确核对；其他地点若无法核对，不能显示为成功。
+- 已验证：文字打开设置、备忘录、地图；受限 Claude 地图搜索；多次受限新建指定内容的测试备忘录；电脑中文播报经手机录音、转写、用户确认后执行“打开地图”。
+- 地图动态界面仍可能使任务安全停止。除金门大桥、渔人码头、旧金山市政厅和加州科学院外，新增 Alcatraz Island、Coit Tower、Ferry Building、Exploratorium、Palace of Fine Arts、Pier 39、Japanese Tea Garden 等真机样本；结果需由地图标记或 3D 地图标签与地点卡片共同核对，不能推断任意地点可靠。
 - 尚待验收：真人语音、实体音量键三连按、拔掉 USB 后的独立任务、当前版本重启后完整任务恢复，以及其他设备兼容性。
 - 运行设计不依赖 Mac、iCTRL 或 Frida；Mac/iCTRL 目前只用于安装和测试。这台手机的无 USB 使用仍需实测。
 
-故障恢复与已配对设备的复测命令见 [device-recovery.md](device-recovery.md)，逐项测试证据见 [build-and-test.md](build-and-test.md)。
+故障恢复与已配对设备的复测命令见 [device-recovery.md](device-recovery.md)，逐项测试证据见 [build-and-test.md](build-and-test.md)，需要真人参与的最后验收见 [human-acceptance.md](human-acceptance.md)。
