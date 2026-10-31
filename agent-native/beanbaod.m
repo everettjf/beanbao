@@ -731,6 +731,15 @@ static BOOL BBApprove(NSDictionary *action) {
     return fgets(answer, sizeof(answer), stdin) && !strncmp(answer, "yes", 3);
 }
 
+static BOOL BBFreshUICompatible(NSString *action, BOOL sameUI, BOOL sameNoteEditor,
+                                BOOL sameNoteControl, BOOL autoMap) {
+    // Launching a named, allowlisted app does not use coordinates or text from
+    // the source UI. BeanBao can update its status while the fresh observation
+    // is captured; keep exact UI matching for actions that use that UI.
+    return [action isEqualToString:@"launch_app"] || autoMap || sameUI ||
+        sameNoteEditor || sameNoteControl;
+}
+
 static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
     NSString *auditApp = BBRequestedApp(task);
     NSString *key = claude && !autoNote ? (BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0)) : nil;
@@ -881,8 +890,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         if (![fresh[@"ok"] boolValue] ||
             ((claude || autoNote) && !safeNewNoteTap && !fixedMapLaunch &&
              (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
-            (!autoMap && !sameUI && !sameNoteEditor && !sameNoteControl &&
-             !(autoNote && [name isEqualToString:@"launch_app"])) ||
+            !BBFreshUICompatible(name, sameUI, sameNoteEditor, sameNoteControl, autoMap) ||
             !sameApp || !allowed || !recent) {
             fprintf(stderr, "界面复核未通过：步骤 %d，UI=%d，App=%d，策略=%d，时效=%d\n",
                     step + 1, sameUI, sameApp, allowed, recent);

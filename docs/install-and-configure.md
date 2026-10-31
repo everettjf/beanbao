@@ -7,7 +7,7 @@
 三个 RootHide `iphoneos-arm64e` 包按顺序安装：
 
 1. `dev.beanbao.bridge` 0.2.1：SpringBoard 中的受限观察与点击/输入桥接。
-2. `dev.beanbao.agent` 0.3.32：手机端任务服务和 Claude 适配器，依赖 Bridge 0.2.1 以上。
+2. `dev.beanbao.agent` 0.3.33：手机端任务服务和 Claude 适配器，依赖 Bridge 0.2.1 以上。
 3. `dev.beanbao.app` 0.3.6：文字、语音、状态与配置界面，依赖 Agent 0.3.11 以上。
 
 本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
@@ -18,7 +18,7 @@
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.1_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.32_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.33_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.6_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```

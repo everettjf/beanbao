@@ -45,6 +45,10 @@ int main(void) {
             !Check([BBFailureMessage(@"防自动锁屏不可用，已停止任务")
                     isEqualToString:@"防自动锁屏不可用，已停止任务"],
                    "wake lease failure has a fixed message") ||
+            !Check(BBFreshUICompatible(@"launch_app", NO, NO, NO, NO),
+                   "allowlisted app launch tolerates source UI status changes") ||
+            !Check(!BBFreshUICompatible(@"tap", NO, NO, NO, NO),
+                   "coordinate action still requires matching source UI") ||
             !Check([BBAllowedTarget(@"新建备忘录：测试内容") isEqualToString:@"备忘录"],
                    "note task accepted") ||
             !Check(BBTaskModelAllowed(@"新建备忘录：测试内容", @"mock"),

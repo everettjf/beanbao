@@ -1,6 +1,6 @@
 # BeanBao：Relaxin / iOS 26 真机落地方案
 
-更新：2026-10-30。本方案以当前通过 USB 连接的 iPhone 为首发目标。Bridge 0.2.1、原生 Agent 0.3.32、BeanBao App 0.3.6 已安装；逐项证据与未完成关卡见 [build-and-test.md](build-and-test.md)。安装与配置见 [install-and-configure.md](install-and-configure.md)。
+更新：2026-10-30。本方案以当前通过 USB 连接的 iPhone 为首发目标。Bridge 0.2.1、原生 Agent 0.3.33、BeanBao App 0.3.6 已安装；逐项证据与未完成关卡见 [build-and-test.md](build-and-test.md)。安装与配置见 [install-and-configure.md](install-and-configure.md)。
 
 通过 copyapp 的 USB iCTRL 通道重新启用 Relaxin 后，SSH 已恢复。手机端 Claude 服务已完成地图搜索和新建备忘录；App Claude 地图任务从旧结果卡片出发完成渔人码头、旧金山市政厅和金门大桥搜索。Agent 0.3.12 增加精确匹配搜索建议点击后，手机端又从旧结果卡片连续完成旧金山市政厅和加州科学院；0.3.13 再由 App 文字入口完成加州科学院。仍不能宣称任意地点可靠。电脑播报“打开地图”经手机录音、本机转写、确认后完成任务；真人语音与实体音量键三连按仍需验收。
 
