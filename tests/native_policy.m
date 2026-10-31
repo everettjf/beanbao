@@ -76,6 +76,24 @@ int main(void) {
                   @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}},
                 @{@"text": @"Directions"}, @{@"text": @"Searching…"}]},
             @{@"text": @"加州科学院"});
+        NSDictionary *academySuggestion = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[
+                @{@"text": @"Search field", @"aliases": @[@"加州科学院"], @"visible_rect":
+                  @{@"x": @16, @"y": @64, @"width": @327, @"height": @44}},
+                @{@"text": @"search", @"visible_rect":
+                  @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}},
+                @{@"text": @"California Academy of Sciences, 41 mi · 55 Music Concourse Dr", @"visible_rect":
+                  @{@"x": @76, @"y": @62, @"width": @300, @"height": @62}}]},
+            @{@"texts": @[@{@"text": @"California Academy of Sciences", @"rect":
+                @{@"x": @76, @"y": @141, @"width": @241, @"height": @18}}]});
+        NSDictionary *academyTap = @{@"action": @"tap", @"x": @196, @"y": @150};
+        NSDictionary *academyInput = @{@"action": @"input_text", @"text": @"加州科学院"};
+        NSDictionary *academyCard = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[
+                @{@"text": @"California Academy of Sciences", @"visible_rect":
+                  @{@"x": @188, @"y": @298, @"width": @30, @"height": @30}},
+                @{@"text": @"California Academy of Sciences, Science Museum", @"visible_rect":
+                  @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}}]}, @{});
         NSArray *mapDirectOne = @[inputPlace], *mapDirectTwo = @[inputPlace, enter];
         NSArray *mapAfterClose = @[closeOldCard], *mapAfterTwoTaps = @[closeOldCard, tapSearch];
         NSArray *mapAfterTwoTapsInput = @[closeOldCard, tapSearch, inputPlace];
@@ -119,6 +137,18 @@ int main(void) {
             !Check(!BBValidAction(@{@"action": @"done"}, staleCard,
                                   @"在地图搜索加州科学院", @[inputPlace, enter], YES, YES, NO),
                    "stale card with searching text rejected") ||
+            !Check(BBValidAction(academyTap, academySuggestion, @"在地图搜索加州科学院",
+                                 @[closeOldCard, tapSearch, academyInput], YES, YES, NO),
+                   "exact localized map suggestion allowed") ||
+            !Check(!BBValidAction(@{@"action": @"tap", @"x": @196, @"y": @370}, academySuggestion,
+                                  @"在地图搜索加州科学院", @[academyInput], YES, YES, NO),
+                   "directions area blocked while search suggestion visible") ||
+            !Check(!BBValidAction(academyTap, academySuggestion, @"在地图搜索金门大桥",
+                                  @[inputPlace], YES, YES, NO),
+                   "different map suggestion blocked") ||
+            !Check(BBValidAction(@{@"action": @"done"}, academyCard,
+                                 @"在地图搜索加州科学院", @[academyInput, academyTap], YES, YES, NO),
+                   "localized map suggestion completion verified") ||
             !Check(!BBValidAction(@{@"action": @"done"}, placeCard,
                                   @"在地图搜索其它地点", @[], YES, YES, NO),
                    "different place card rejected") ||

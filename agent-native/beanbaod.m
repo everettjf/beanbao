@@ -127,7 +127,7 @@ static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, N
         @"text": @{@"type": @"string"}, @"key": @{@"type": @"string"}, @"summary": @{@"type": @"string"}},
         @"required": @[@"action"], @"additionalProperties": @NO};
     NSDictionary *body = @{@"model": BBClaudeModel, @"max_tokens": @4096,
-        @"system": @"Return one JSON action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. For a Maps search, if the requested result is already visible return done. Otherwise open Maps; if an old place card covers search, tap its Close button first. Then tap the search field if needed, input the exact requested place only when the field is empty, press enter if needed, and return done after results appear; never start navigation. For a new Note, open Notes, tap the new note button, input the exact requested content, tap Done, then return done only when the new content is visible. Never edit an existing note. Never install, run shell, read files, purchase, send messages, delete, or act on locked screen. If uncertain, return done with a short reason.",
+        @"system": @"Return one JSON action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. For a Maps search, if the requested result is already visible return done. Otherwise open Maps; if an old place card covers search, tap its Close button first. Then tap the search field if needed and input the exact requested place only when the field is empty. If a search suggestion names the exact requested place (including a known localized name), tap that suggestion before using Enter. Return done only after the matching map pin and place card appear; never start navigation. For a new Note, open Notes, tap the new note button, input the exact requested content, tap Done, then return done only when the new content is visible. Never edit an existing note. Never install, run shell, read files, purchase, send messages, delete, or act on locked screen. If uncertain, return done with a short reason.",
         @"output_config": @{@"effort": @"low", @"format": @{@"type": @"json_schema", @"schema": schema}},
         @"messages": @[@{@"role": @"user", @"content": content}]};
     NSData *bodyData = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
@@ -227,19 +227,23 @@ static BOOL BBVisibleContains(NSDictionary *observation, NSString *needle) {
     return NO;
 }
 
-static BOOL BBMapResultVisible(NSDictionary *observation, NSString *query) {
-    NSArray *elements = observation[@"ui"][@"elements"];
-    if (![elements isKindOfClass:NSArray.class]) return NO;
-    // Maps may replace a Chinese search with an English place card. Accept
-    // a result only when both the map pin and the large place card name it;
-    // a search-field value, OCR hit, or stale Directions button is insufficient.
+static NSString *BBMapResultName(NSString *query) {
     NSDictionary<NSString *, NSString *> *knownMapNames = @{
         @"金门大桥": @"Golden Gate Bridge",
         @"渔人码头": @"Fisherman's Wharf",
         @"旧金山市政厅": @"San Francisco City Hall",
         @"加州科学院": @"California Academy of Sciences",
     };
-    NSString *title = knownMapNames[query] ?: query;
+    return knownMapNames[query] ?: query;
+}
+
+static BOOL BBMapResultVisible(NSDictionary *observation, NSString *query) {
+    NSArray *elements = observation[@"ui"][@"elements"];
+    if (![elements isKindOfClass:NSArray.class]) return NO;
+    // Maps may replace a Chinese search with an English place card. Accept
+    // a result only when both the map pin and the large place card name it;
+    // a search-field value, OCR hit, or stale Directions button is insufficient.
+    NSString *title = BBMapResultName(query);
     if (title.length < 5) return NO;
     BOOL pin = NO, card = NO;
     double screenHeight = [observation[@"screen"][@"height"] doubleValue];
@@ -282,6 +286,42 @@ static BOOL BBMapSearchInputReady(NSDictionary *observation) {
              [lower isEqualToString:@"搜尋"]) && y > height * 0.65) keyboardSubmit = YES;
     }
     return searchField && keyboardSubmit;
+}
+
+static BOOL BBMapSuggestionTapAllowed(NSDictionary *observation, NSString *query, double x, double y) {
+    if (!BBMapSearchInputReady(observation)) return NO;
+    NSString *title = BBMapResultName(query);
+    if (title.length < 5) return NO;
+    BOOL queryInField = NO, matchingSuggestion = NO;
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSString *label = item[@"text"];
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![label isKindOfClass:NSString.class] || ![rect isKindOfClass:NSDictionary.class]) continue;
+        if ([label isEqualToString:@"Search field"] &&
+            [item[@"aliases"] isKindOfClass:NSArray.class] &&
+            [item[@"aliases"] containsObject:query]) queryInField = YES;
+        if ([label hasPrefix:[title stringByAppendingString:@","]] &&
+            [rect[@"width"] doubleValue] >= 200) matchingSuggestion = YES;
+    }
+    if (!queryInField || !matchingSuggestion) return NO;
+    double screenHeight = [observation[@"screen"][@"height"] doubleValue];
+    // The Maps AX suggestion rectangle can be offset upward on iOS 26.
+    // Use the actual screenshot OCR bounds for the tap, corroborated by AX.
+    for (NSDictionary *item in observation[@"ocr"][@"texts"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isKindOfClass:NSString.class] ||
+            ![item[@"text"] isEqualToString:title]) continue;
+        NSDictionary *rect = item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double left = [rect[@"x"] doubleValue], top = [rect[@"y"] doubleValue];
+        double width = [rect[@"width"] doubleValue], height = [rect[@"height"] doubleValue];
+        if (width < 100 || height < 10 || top < screenHeight * 0.11 ||
+            top >= screenHeight * 0.45) continue;
+        if (x >= left - 12 && x <= left + width + 12 &&
+            y >= top - 8 && y <= top + height + 8) return YES;
+    }
+    return NO;
 }
 
 static NSString *BBNoteTimestamp(NSDictionary *observation) {
@@ -352,6 +392,13 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
                 [y doubleValue] < height * 0.8 &&
                 BBElementContainsPoint(observation, [x doubleValue], [y doubleValue],
                                        @[@"close", @"关闭"], NO);
+        }
+        if ([name isEqualToString:@"tap"] && uiSteps > 0 &&
+            [uiHistory.lastObject isEqualToString:@"input_text"]) {
+            id x = action[@"x"], y = action[@"y"];
+            return [x isKindOfClass:NSNumber.class] && [y isKindOfClass:NSNumber.class] &&
+                isfinite([x doubleValue]) && isfinite([y doubleValue]) &&
+                BBMapSuggestionTapAllowed(observation, query, [x doubleValue], [y doubleValue]);
         }
         if ([name isEqualToString:@"input_text"] && BBMapSearchInputReady(observation) &&
             !BBVisibleContains(observation, query) &&
@@ -483,7 +530,10 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         NSString *name = action[@"action"];
         if ([name isEqualToString:@"done"]) { puts([action[@"summary"] isKindOfClass:NSString.class] ? [action[@"summary"] UTF8String] : "完成"); return 0; }
         if (![name isEqualToString:@"launch_app"] && !autoMap && !autoNote && !BBApprove(action)) { fprintf(stderr, "用户未批准动作\n"); return 1; }
-        NSDictionary *fresh = BBBridge(@{@"op": @"observe", @"ui": @YES});
+        BOOL suggestionTap = autoMap && [name isEqualToString:@"tap"] &&
+            [history.lastObject[@"action"] isEqualToString:@"input_text"];
+        NSDictionary *fresh = BBBridge(@{@"op": @"observe", @"ui": @YES,
+            @"ocr": @(suggestionTap)});
         BOOL sameUI = [fresh[@"ui"] isEqual:observation[@"ui"]];
         BOOL sameNoteEditor = autoNote && [name isEqualToString:@"input_text"] &&
             BBNoteEditorReady(observation) && BBNoteEditorReady(fresh) &&
@@ -491,7 +541,9 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         BOOL sameApp = [fresh[@"frontmost_app"][@"bundleId"] isEqual:observation[@"frontmost_app"][@"bundleId"]];
         BOOL allowed = BBValidAction(action, fresh, task, history, allowUI, autoMap, autoNote);
         BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
-        if (![fresh[@"ok"] boolValue] || (!autoMap && !sameUI && !sameNoteEditor) || !sameApp || !allowed || !recent) {
+        if (![fresh[@"ok"] boolValue] ||
+            (claude && (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
+            (!autoMap && !sameUI && !sameNoteEditor) || !sameApp || !allowed || !recent) {
             fprintf(stderr, "界面复核未通过：步骤 %d，UI=%d，App=%d，策略=%d，时效=%d\n",
                     step + 1, sameUI, sameApp, allowed, recent);
             return 1;

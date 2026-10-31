@@ -7,7 +7,7 @@
 三个 RootHide `iphoneos-arm64e` 包按顺序安装：
 
 1. `dev.beanbao.bridge` 0.2.0：SpringBoard 中的受限观察与点击/输入桥接。
-2. `dev.beanbao.agent` 0.3.11：手机端任务服务和 Claude 适配器，依赖 Bridge 0.2.0 以上。
+2. `dev.beanbao.agent` 0.3.12：手机端任务服务和 Claude 适配器，依赖 Bridge 0.2.0 以上。
 3. `dev.beanbao.app` 0.3.5：文字、语音、状态与配置界面，依赖 Agent 0.3.11 以上。
 
 本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
@@ -16,7 +16,7 @@
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.0_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.11_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.12_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.5_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
@@ -34,7 +34,7 @@ dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ## 当前能力边界
 
 - 已验证：文字打开设置、备忘录、地图；受限 Claude 地图搜索；一次受限新建测试备忘录；电脑中文播报经手机录音、转写、用户确认后执行“打开地图”。
-- 地图动态界面仍可能使任务安全停止。当前已对金门大桥、渔人码头和旧金山市政厅的英文结果卡片做明确核对；其他地点若无法核对，不能显示为成功。
+- 地图动态界面仍可能使任务安全停止。当前已对金门大桥、渔人码头、旧金山市政厅和加州科学院的英文结果卡片做明确核对；其他地点若无法核对，不能显示为成功。
 - 尚待验收：真人语音、实体音量键三连按、拔掉 USB 后的独立任务、当前版本重启后完整任务恢复，以及其他设备兼容性。
 - 运行设计不依赖 Mac、iCTRL 或 Frida；Mac/iCTRL 目前只用于安装和测试。这台手机的无 USB 使用仍需实测。
 
