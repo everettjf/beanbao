@@ -21,7 +21,7 @@ private struct CustomOpenModel: PHKModelClient {
 
 private final class FakeBridge: @unchecked Sendable {
     private let lock = NSLock()
-    private var foreground = "com.apple.springboard"
+    private var foreground: String
     private var observationID = 0
     private var leaseActive = false
     private var actionCount = 0
@@ -29,13 +29,17 @@ private final class FakeBridge: @unchecked Sendable {
     let rejectAction: Bool
     let ignoreLaunch: Bool
     let timestampOffset: TimeInterval
+    let switchAfterFirstObservation: String?
 
     init(locked: Bool = false, rejectAction: Bool = false, ignoreLaunch: Bool = false,
-         timestampOffset: TimeInterval = 0) {
+         timestampOffset: TimeInterval = 0, initialForeground: String = "com.apple.springboard",
+         switchAfterFirstObservation: String? = nil) {
         self.locked = locked
         self.rejectAction = rejectAction
         self.ignoreLaunch = ignoreLaunch
         self.timestampOffset = timestampOffset
+        self.foreground = initialForeground
+        self.switchAfterFirstObservation = switchAfterFirstObservation
     }
 
     var actions: Int { lock.lock(); defer { lock.unlock() }; return actionCount }
@@ -56,6 +60,10 @@ private final class FakeBridge: @unchecked Sendable {
             return .object(["ok": .bool(true)])
         case "observe":
             observationID += 1
+            let observedForeground = foreground
+            if observationID == 1, let switchAfterFirstObservation {
+                foreground = switchAfterFirstObservation
+            }
             return .object([
                 "ok": .bool(true), "observation_id": .string(String(observationID)),
                 "timestamp": .number(Date().timeIntervalSince1970 + timestampOffset),
@@ -63,7 +71,7 @@ private final class FakeBridge: @unchecked Sendable {
                     "locked_known": .bool(true), "locked": .bool(locked),
                     "screen_on_known": .bool(true), "screen_on": .bool(!locked)
                 ]),
-                "frontmost_app": .object(["bundleId": .string(foreground)])
+                "frontmost_app": .object(["bundleId": .string(observedForeground)])
             ])
         case "act":
             actionCount += 1
@@ -90,6 +98,21 @@ final class TextHarnessTests: XCTestCase {
             XCTAssertEqual(fake.actions, 1, task)
             XCTAssertTrue(fake.leaseReleased, task)
         }
+    }
+
+    func testAlreadyForegroundNeedsTwoMatchingObservations() async {
+        let stable = FakeBridge(initialForeground: "com.apple.Maps")
+        let result = await BeanBaoTextHarness.run("打开地图", bridge: stable.request)
+        XCTAssertTrue(result.succeeded)
+        XCTAssertEqual(stable.actions, 0)
+        XCTAssertTrue(stable.leaseReleased)
+
+        let switched = FakeBridge(initialForeground: "com.apple.Maps",
+                                  switchAfterFirstObservation: "com.apple.springboard")
+        let staleResult = await BeanBaoTextHarness.run("打开地图", bridge: switched.request)
+        XCTAssertFalse(staleResult.succeeded)
+        XCTAssertEqual(switched.actions, 0)
+        XCTAssertTrue(switched.leaseReleased)
     }
 
     func testUnsupportedTaskDoesNotTouchBridge() async {

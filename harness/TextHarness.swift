@@ -70,7 +70,15 @@ private struct OpenAppTool: PHKNativeTool {
 
         let initial = bridge(.object(["op": .string("observe")]))
         guard Self.unlocked(initial) else { return errorResult("Device is locked or screen is off.") }
-        if Self.foreground(initial) == expectedBundle { return .object(["ok": .bool(true)]) }
+        if Self.foreground(initial) == expectedBundle {
+            try? await Task.sleep(for: .milliseconds(200))
+            if Task.isCancelled { return errorResult("Task cancelled.") }
+            let confirmed = bridge(.object(["op": .string("observe")]))
+            guard Self.unlocked(confirmed), Self.foreground(confirmed) == expectedBundle else {
+                return errorResult("Foreground app changed during verification.")
+            }
+            return .object(["ok": .bool(true)])
+        }
         if Task.isCancelled { return errorResult("Task cancelled.") }
 
         // Refresh immediately before acting. The Bridge rejects a stale ID or
