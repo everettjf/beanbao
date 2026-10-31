@@ -9,6 +9,7 @@
 // The policy fixture includes the Objective-C entry point without linking the
 // Swift harness; harness behavior has its own Swift package tests.
 int32_t BBRunHarnessMock(const char *task) { (void)task; return 1; }
+int32_t BBRunHarnessNote(const char *task) { (void)task; return 1; }
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
     return @{@"device_state": @{@"locked_known": @YES, @"locked": @(locked),
@@ -41,7 +42,15 @@ int main(void) {
             if (!Check(BBUsesTextHarness(task), "fixed text opens use Palmino harness")) return 1;
         if (!Check(!BBUsesTextHarness(@"在地图搜索金门大桥") &&
                    !BBUsesTextHarness(@"新建备忘录：测试内容"),
-                   "map search and note creation retain their bounded workflows")) return 1;
+                   "map search and note creation have separate bounded workflows")) return 1;
+        char *invalidNoteJSON = BBNoteStepJSON("打开地图", "[]");
+        NSDictionary *invalidNote = invalidNoteJSON ?
+            [NSJSONSerialization JSONObjectWithData:
+                [[NSString stringWithUTF8String:invalidNoteJSON] dataUsingEncoding:NSUTF8StringEncoding]
+                                              options:0 error:nil] : nil;
+        free(invalidNoteJSON);
+        if (!Check([invalidNote[@"error"] isEqualToString:@"invalid_task"],
+                   "note step rejects an unsupported task before Bridge access")) return 1;
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||
             !Check(BBAuditRecord(@"task", @"地图", @"start", @"accepted").count == 5,
@@ -354,6 +363,48 @@ int main(void) {
             @{@"texts": @[@{@"text": @"Existing content", @"rect": @{@"y": @180}}]});
         NSDictionary *note = Observation(@"com.apple.mobilenotes", NO, noteEditorUI, @{@"text": @"测试内容"});
         NSString *noteTask = @"新建备忘录：测试内容";
+        __block NSUInteger noteObserveCount = 0, noteActCount = 0;
+        BBNoteBridgeRequest fakeNoteBridge = ^NSDictionary *(NSDictionary *request) {
+            if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                noteObserveCount++;
+                NSMutableDictionary *result = [noteList mutableCopy];
+                result[@"ok"] = @YES;
+                result[@"timestamp"] = @(NSDate.date.timeIntervalSince1970);
+                result[@"observation_id"] = [NSString stringWithFormat:@"note-%lu", (unsigned long)noteObserveCount];
+                return result;
+            }
+            if ([request[@"op"] isEqualToString:@"act"]) {
+                noteActCount++;
+                return [request[@"observation_id"] isEqualToString:@"note-2"] &&
+                    [request[@"action"] isEqualToString:@"tap"] ? @{@"ok": @YES} : @{@"ok": @NO};
+            }
+            return @{@"ok": @NO};
+        };
+        NSDictionary *firstNoteStep = BBNoteStep(noteTask, @[], fakeNoteBridge);
+        if (!Check([firstNoteStep[@"ok"] boolValue] && ![firstNoteStep[@"done"] boolValue] &&
+                   [firstNoteStep[@"action"][@"action"] isEqualToString:@"tap"] &&
+                   noteObserveCount == 2 && noteActCount == 1,
+                   "harness note step observes twice and executes one validated action")) return 1;
+        __block NSUInteger changedReads = 0, rejectedNoteActCount = 0;
+        BBNoteBridgeRequest changedNoteBridge = ^NSDictionary *(NSDictionary *request) {
+            if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                NSMutableDictionary *result = [noteList mutableCopy];
+                changedReads++;
+                if (changedReads == 2) result[@"frontmost_app"] = @{@"bundleId": @"com.apple.Maps"};
+                result[@"ok"] = @YES;
+                result[@"timestamp"] = @(NSDate.date.timeIntervalSince1970);
+                result[@"observation_id"] = [NSString stringWithFormat:@"changed-%lu", (unsigned long)changedReads];
+                return result;
+            }
+            if ([request[@"op"] isEqualToString:@"act"]) rejectedNoteActCount++;
+            return @{@"ok": @NO};
+        };
+        NSDictionary *changedNoteStep = BBNoteStep(noteTask, @[], changedNoteBridge);
+        if (!Check([changedNoteStep[@"error"] isEqualToString:@"fresh_state"] &&
+                   rejectedNoteActCount == 0,
+                   "harness note step refuses a foreground change before acting")) return 1;
         if (!Check(BBUnlockedObservation(note), "unlocked observation accepted") ||
             !Check(BBNoteEditorReady(blankNote), "new note editor recognized") ||
             !Check(!BBUnlockedObservation(Observation(@"com.apple.mobilenotes", YES, noteListUI, nil)),
@@ -370,6 +421,38 @@ int main(void) {
         NSArray *noteFocusedTyped = @[newNote, focusNote, noteText];
         NSArray *noteFocusedDone = @[newNote, focusNote, noteText, doneTap];
         NSArray *noteFocusedListed = @[newNote, focusNote, noteText, doneTap, backTap];
+        NSArray *noteJourney = @[noteList, blankNote, note, note, persistedNoteList];
+        NSArray *expectedJourneyActions = @[@"tap", @"input_text", @"tap", @"tap"];
+        __block NSUInteger journeyStage = 0, journeyObservation = 0;
+        BBNoteBridgeRequest journeyBridge = ^NSDictionary *(NSDictionary *request) {
+            NSString *op = request[@"op"];
+            if ([op isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([op isEqualToString:@"observe"]) {
+                NSMutableDictionary *result = [noteJourney[MIN(journeyStage, 4)] mutableCopy];
+                result[@"ok"] = @YES;
+                result[@"timestamp"] = @(NSDate.date.timeIntervalSince1970);
+                result[@"observation_id"] = [NSString stringWithFormat:@"journey-%lu", (unsigned long)++journeyObservation];
+                return result;
+            }
+            if ([op isEqualToString:@"act"] && journeyStage < 4 &&
+                [request[@"action"] isEqualToString:expectedJourneyActions[journeyStage]] &&
+                [request[@"observation_id"] isEqualToString:
+                    [NSString stringWithFormat:@"journey-%lu", (unsigned long)journeyObservation]]) {
+                journeyStage++;
+                return @{@"ok": @YES};
+            }
+            return @{@"ok": @NO};
+        };
+        NSMutableArray *journeyHistory = [NSMutableArray array];
+        NSDictionary *journeyResult = nil;
+        for (NSUInteger step = 0; step < 5; step++) {
+            journeyResult = BBNoteStep(noteTask, journeyHistory, journeyBridge);
+            if (![journeyResult[@"ok"] boolValue] || [journeyResult[@"done"] boolValue]) break;
+            [journeyHistory addObject:journeyResult[@"action"]];
+        }
+        if (!Check([journeyResult[@"ok"] boolValue] && [journeyResult[@"done"] boolValue] &&
+                   journeyStage == 4 && journeyHistory.count == 4 && journeyObservation == 9,
+                   "harness note steps create and verify one note through a full local journey")) return 1;
         NSDictionary *fixedNewNote = BBFixedNoteAction(noteTask, noteList, @[]);
         if (!Check([fixedNewNote[@"action"] isEqualToString:@"tap"] &&
                    [fixedNewNote[@"x"] doubleValue] == 330 && [fixedNewNote[@"y"] doubleValue] == 70,

@@ -175,7 +175,7 @@ static NSDictionary *BBStart(NSDictionary *request) {
         }
         const char *argvClaude[] = {executable, "--claude", mapSearch ? "--auto-map" : "--auto-note",
                                     task.UTF8String, NULL};
-        const char *argvNote[] = {executable, "--auto-note", task.UTF8String, NULL};
+        const char *argvNote[] = {executable, "--harness-note", task.UTF8String, NULL};
         const char *argvMock[] = {executable, "--harness-mock", task.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,

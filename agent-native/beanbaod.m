@@ -107,6 +107,7 @@ char *BBBridgeRequestJSON(const char *requestJSON) {
 
 void BBBridgeFreeJSON(char *response) { free(response); }
 extern int32_t BBRunHarnessMock(const char *task);
+extern int32_t BBRunHarnessNote(const char *task);
 
 void BBReleaseWakeLease(void) {
     BBBridge(@{@"op": @"wake_lease", @"mode": @"release"});
@@ -767,6 +768,114 @@ static BOOL BBFreshUICompatible(NSString *action, BOOL sameUI, BOOL sameNoteEdit
         sameNoteEditor || sameNoteControl;
 }
 
+// One bounded Notes action for the Swift harness. Keep the existing Notes
+// planner and policy as the authority while the runtime owns the step loop.
+typedef NSDictionary * (^BBNoteBridgeRequest)(NSDictionary *request);
+
+static NSDictionary *BBNoteStep(NSString *task, NSArray *history, BBNoteBridgeRequest bridge) {
+    if (!BBNoteText(task) || BBHasSecret(task) || history.count > 12)
+        return @{@"ok": @NO, @"error": @"invalid_task"};
+    NSDictionary *lease = bridge(@{@"op": @"wake_lease", @"mode": @"renew"});
+    if (![lease[@"ok"] boolValue]) return @{@"ok": @NO, @"error": @"wake_lease"};
+    NSDictionary *observation = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+    if (![observation[@"ok"] boolValue]) return @{@"ok": @NO, @"error": @"observe"};
+    if (!BBUnlockedObservation(observation)) return @{@"ok": @NO, @"error": @"locked"};
+    BOOL priorUIAction = NO;
+    for (NSDictionary *item in history)
+        if (![item[@"action"] isEqualToString:@"launch_app"]) priorUIAction = YES;
+    BOOL listVerified = priorUIAction && BBNoteInList(observation, BBNoteText(task));
+    if (priorUIAction && !listVerified &&
+        (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"]))) {
+        for (NSUInteger retry = 0; retry < 6; retry++) {
+            usleep(350000);
+            NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+            if (![settled[@"ok"] boolValue] || !BBUnlockedObservation(settled) ||
+                ![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.mobilenotes"])
+                break;
+            observation = settled;
+            if (!BBHasSecret(observation[@"ui"]) && !BBHasSecret(observation[@"ocr"])) break;
+        }
+    }
+    NSDictionary *action = BBFixedNoteAction(task, observation, history);
+    if (priorUIAction && action[@"error"]) {
+        for (NSUInteger retry = 0; retry < 6; retry++) {
+            usleep(350000);
+            NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+            if (![settled[@"ok"] boolValue] || !BBUnlockedObservation(settled) ||
+                ![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.mobilenotes"])
+                break;
+            observation = settled;
+            if (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"])) continue;
+            action = BBFixedNoteAction(task, observation, history);
+            if (!action[@"error"]) break;
+        }
+    }
+    BOOL safeNewTap = !priorUIAction && [action[@"action"] isEqualToString:@"tap"];
+    BOOL safeListDone = [action[@"action"] isEqualToString:@"done"];
+    if (action[@"error"] ||
+        (!safeNewTap && !safeListDone &&
+         (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"]))) ||
+        !BBValidAction(action, observation, task, history, YES, NO, YES)) {
+        BBAudit(@"step", @"com.apple.mobilenotes", @"policy_block", @"blocked");
+        return @{@"ok": @NO, @"error": @"note_state"};
+    }
+    if (safeListDone) {
+        BBAudit(@"step", @"com.apple.mobilenotes", @"done", @"ok");
+        return @{@"ok": @YES, @"done": @YES};
+    }
+
+    NSString *name = action[@"action"];
+    NSDictionary *fresh = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+    BOOL sameUI = [fresh[@"ui"] isEqual:observation[@"ui"]];
+    BOOL sameEditor = [name isEqualToString:@"input_text"] &&
+        BBNoteEditorReady(observation) && BBNoteEditorReady(fresh) &&
+        [BBNoteTimestamp(observation) isEqualToString:BBNoteTimestamp(fresh)];
+    BOOL sameControl = [name isEqualToString:@"tap"] &&
+        BBValidAction(action, fresh, task, history, YES, NO, YES);
+    BOOL sameApp = [fresh[@"frontmost_app"][@"bundleId"]
+        isEqual:observation[@"frontmost_app"][@"bundleId"]];
+    BOOL allowed = BBValidAction(action, fresh, task, history, YES, NO, YES);
+    BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
+    if (![fresh[@"ok"] boolValue] ||
+        (!safeNewTap && (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
+        !BBFreshUICompatible(name, sameUI, sameEditor, sameControl, NO) ||
+        !sameApp || !allowed || !recent) {
+        BBAudit(@"step", @"com.apple.mobilenotes", @"policy_block", @"blocked");
+        return @{@"ok": @NO, @"error": @"fresh_state"};
+    }
+    NSMutableDictionary *request = [action mutableCopy];
+    request[@"op"] = @"act";
+    request[@"observation_id"] = fresh[@"observation_id"];
+    if (![bridge(request)[@"ok"] boolValue]) {
+        BBAudit(@"step", @"com.apple.mobilenotes", name, @"failed");
+        return @{@"ok": @NO, @"error": @"act"};
+    }
+    BBAudit(@"step", @"com.apple.mobilenotes", name, @"ok");
+    return @{@"ok": @YES, @"done": @NO, @"action": action};
+}
+
+char *BBNoteStepJSON(const char *taskText, const char *historyJSON) {
+    @autoreleasepool {
+        if (!taskText || !historyJSON) return NULL;
+        NSString *task = [NSString stringWithUTF8String:taskText];
+        NSData *historyData = [[NSString stringWithUTF8String:historyJSON] dataUsingEncoding:NSUTF8StringEncoding];
+        if (!task || !historyData) return NULL;
+        id history = [NSJSONSerialization JSONObjectWithData:historyData options:0 error:nil];
+        if (![history isKindOfClass:NSArray.class]) return NULL;
+        for (id item in history) if (![item isKindOfClass:NSDictionary.class]) return NULL;
+        NSDictionary *result = BBNoteStep(task, history, ^NSDictionary *(NSDictionary *request) {
+            return BBBridge(request);
+        });
+        NSData *encoded = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
+        if (!encoded || encoded.length > 8192) return NULL;
+        char *copy = malloc(encoded.length + 1);
+        if (!copy) return NULL;
+        memcpy(copy, encoded.bytes, encoded.length);
+        copy[encoded.length] = '\0';
+        return copy;
+    }
+}
+
 static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
     if (claude && [task isEqualToString:@"打开通讯录"]) {
         fprintf(stderr, "打开通讯录请使用模拟模型\n");
@@ -947,6 +1056,7 @@ int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc == 2 && !strcmp(argv[1], "--serve")) return BBServe();
         if (argc == 3 && !strcmp(argv[1], "--harness-mock")) return BBRunHarnessMock(argv[2]);
+        if (argc == 3 && !strcmp(argv[1], "--harness-note")) return BBRunHarnessNote(argv[2]);
         if (argc < 2) { fprintf(stderr, "用法：beanbaod [--claude] [--approve-ui] '任务文字'\n"); return 2; }
         BOOL claude = NO, allowUI = NO, autoMap = NO, autoNote = NO;
         NSString *task = nil;
