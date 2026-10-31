@@ -1006,6 +1006,24 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
         fixedAction = BBMapResultVisible(observation, query) ?
             @{@"action": @"done"} : BBMapFixedSuggestionAction(observation, query);
     }
+    // Opening Maps search can briefly leave AX with no usable controls. Give
+    // the local planner a bounded chance to see the focused search field.
+    if (!fixedAction && !captureScreenshotForModel &&
+        [history.lastObject[@"action"] isEqualToString:@"tap"]) {
+        for (NSUInteger retry = 0; retry < 8; retry++) {
+            usleep(350000);
+            NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+            if (![settled[@"ok"] boolValue]) return @{@"ok": @NO, @"error": @"observe"};
+            if (!BBUnlockedObservation(settled)) return @{@"ok": @NO, @"error": @"locked"};
+            if (![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"])
+                return @{@"ok": @NO, @"error": @"fresh_state"};
+            if (BBHasSecret(settled[@"ui"]) || BBHasSecret(settled[@"ocr"]))
+                return @{@"ok": @NO, @"error": @"sensitive"};
+            observation = settled;
+            NSDictionary *candidate = BBFixedMapAction(task, observation, history);
+            if (![candidate[@"error"] isEqualToString:@"local_state"]) break;
+        }
+    }
     NSDictionary *action = fixedAction ?: model(task, observation, history);
     if (![action isKindOfClass:NSDictionary.class] || action[@"error"])
         return @{@"ok": @NO, @"error": [action[@"error"] isEqualToString:@"local_state"] ?

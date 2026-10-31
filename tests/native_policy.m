@@ -369,6 +369,30 @@ int main(void) {
                    mapJourneyStage == 3 && localMapHistory.count == 3 &&
                    !mapJourneyScreenshotRequested,
                    "mock map planner completes the search without a screenshot or remote model")) return 1;
+        NSDictionary *transitionMap = Observation(@"com.apple.Maps", NO,
+            @{@"elements": @[]}, @{});
+        __block NSUInteger delayedFocusReads = 0, delayedFocusActs = 0;
+        BBNoteBridgeRequest delayedFocusBridge = ^NSDictionary *(NSDictionary *request) {
+            if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                delayedFocusReads++;
+                return StepObservation(delayedFocusReads == 1 ? transitionMap : focusedMap,
+                    [NSString stringWithFormat:@"delayed-focus-%lu", (unsigned long)delayedFocusReads]);
+            }
+            if ([request[@"op"] isEqualToString:@"act"] &&
+                [request[@"action"] isEqualToString:@"input_text"] &&
+                [request[@"text"] isEqualToString:@"金门大桥"]) {
+                delayedFocusActs++;
+                return @{@"ok": @YES};
+            }
+            return @{@"ok": @NO};
+        };
+        NSDictionary *delayedFocusStep = BBMapStep(mapTask, @[tapSearch],
+            delayedFocusBridge, localMapModel, NO);
+        if (!Check([delayedFocusStep[@"ok"] boolValue] &&
+                   [delayedFocusStep[@"action"][@"action"] isEqualToString:@"input_text"] &&
+                   delayedFocusReads >= 3 && delayedFocusActs == 1,
+                   "mock map planner waits for the search field after opening it")) return 1;
         NSDictionary *fishermanCard = Observation(@"com.apple.Maps", NO,
             @{@"elements": @[
                 @{@"text": @"Fisherman's Wharf", @"visible_rect":

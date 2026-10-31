@@ -34,7 +34,9 @@ BOOL BBLaunchAllowedApp(NSString *bundleID, NSString **error) {
             if (error) *error = @"LaunchServices rejected launch";
             return NO;
         }
-        for (NSUInteger i = 0; i < 25; i++) {
+        // System overlays can briefly own the focused scene while the target
+        // app is opening. Keep requiring a real foreground confirmation.
+        for (NSUInteger i = 0; i < 50; i++) {
             if ([BBFrontmostApp()[@"bundleId"] isEqualToString:bundleID]) return YES;
             usleep(200000);
         }

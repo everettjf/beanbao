@@ -4,6 +4,12 @@
 
 ## 最新状态（2026-10-31）
 
+当前已安装 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.11，并在 SpringBoard 重载后通过 `scripts/verify_device.py --expect-bundle` 核对三包、服务身份、Bridge socket 与锁屏状态。重载使手机再次锁定，最新版的文字任务需解锁后重跑。
+
+上一候选版已在解锁的手机上跑通文字主线：`scripts/accept_text_device.py` 从 BeanBao 前台发起服务任务，五条“打开 App”指令均返回独立任务 ID、`done` 和对应真实前台；带“发消息”的组合指令被拒绝且任务 ID 未变。BeanBao App 文字框与“开始”按钮完成打开通讯录、新建唯一测试备忘录；备忘录列表独立显示完整标题。App 地图搜索“加州科学院”返回 `done`，独立 AX 同时看到 California Academy of Sciences 的地图标记和地点卡片。App 中提交禁止的组合指令显示“未开始”和拒绝原因，未新建任务。首次通讯录服务任务因短暂系统界面成为前台而失败，稍后重试和 App 入口均成功；Bridge 0.2.4 将启动后的前台确认时间从约 5 秒延长到 10 秒，仍需真实前台匹配才报告完成。
+
+Agent 0.3.47 的模拟地图任务从 BeanBao 打开搜索框后，界面尚未稳定就返回“当前地图界面无法安全执行”；审计仅记录 `launch_app` 和 `tap`，没有输入。Agent 0.3.48 增加搜索框打开后的有限重观测并加入原生回归测试；装机后服务入口完成“金门大桥”，App 文字入口从已有地点结果搜索“加州科学院”成功。Agent 0.3.49 保留该修复，并声明依赖 Bridge 0.2.4。原生策略、18 项 Swift 测试、8 项 Python 测试、三包构建及审计均通过。
+
 已通过已配对的 root USB SSH 安装 Bridge 0.2.3 / Agent 0.3.47 / App 0.3.11，执行 `uicache -a`、Agent `kickstart` 与 `sbreload`，关闭旧 App 进程。`scripts/verify_device.py --expect-bundle` 核对三包版本、运行中的新版 Agent 状态字段与 Bridge socket 权限均通过；Bridge 观察报告当前设备锁定、屏幕关闭，前台是 SpringBoard。已配对 iCTRL 的 Home/唤醒命令未让 Bridge 观察到解锁，因此本轮新版文字任务的真实前台结果仍待持机者手动解锁后验证。验收脚本原先只接受 JSON 布尔 `running`，而设备端返回 0/1；已修正脚本并重新通过验证。当前只确认安装及服务可用，不把旧版任务结果算作新版通过。
 
 此前真机安装 `dev.beanbao.bridge` **0.2.2**、`dev.beanbao.agent` **0.3.34** 和 `dev.beanbao.app` **0.3.7**。通过已配对的 USB iCTRL 通道重新触发 Relaxin Jailbreak，mobile/root SSH 恢复。此前一次设备重启后，已安装包保留，Agent 服务自动运行；当前版本尚未再做重启后的完整任务复测。RootHide 的 SSH shell 与 App/launchd 使用不同的 `/var/mobile` 视图，客户端已加入 socket 路径回退。
