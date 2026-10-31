@@ -87,6 +87,7 @@ int main(void) {
             @{@"texts": @[@{@"text": @"California Academy of Sciences", @"rect":
                 @{@"x": @76, @"y": @141, @"width": @241, @"height": @18}}]});
         NSDictionary *academyTap = @{@"action": @"tap", @"x": @196, @"y": @150};
+        NSDictionary *academyRowTap = @{@"action": @"tap", @"x": @300, @"y": @185};
         NSDictionary *academyInput = @{@"action": @"input_text", @"text": @"加州科学院"};
         NSDictionary *academyCard = Observation(@"com.apple.Maps", NO,
             @{@"elements": @[
@@ -140,6 +141,12 @@ int main(void) {
             !Check(BBValidAction(academyTap, academySuggestion, @"在地图搜索加州科学院",
                                  @[closeOldCard, tapSearch, academyInput], YES, YES, NO),
                    "exact localized map suggestion allowed") ||
+            !Check(BBValidAction(academyRowTap, academySuggestion, @"在地图搜索加州科学院",
+                                 @[closeOldCard, tapSearch, academyInput], YES, YES, NO),
+                   "matching suggestion row allowed below OCR title") ||
+            !Check(!BBValidAction(@{@"action": @"tap", @"x": @196, @"y": @92}, academySuggestion,
+                                  @"在地图搜索加州科学院", @[academyInput], YES, YES, NO),
+                   "search field tap blocked while suggestion visible") ||
             !Check(!BBValidAction(@{@"action": @"tap", @"x": @196, @"y": @370}, academySuggestion,
                                   @"在地图搜索加州科学院", @[academyInput], YES, YES, NO),
                    "directions area blocked while search suggestion visible") ||

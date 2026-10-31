@@ -293,6 +293,7 @@ static BOOL BBMapSuggestionTapAllowed(NSDictionary *observation, NSString *query
     NSString *title = BBMapResultName(query);
     if (title.length < 5) return NO;
     BOOL queryInField = NO, matchingSuggestion = NO;
+    double suggestionLeft = 0, suggestionRight = 0;
     for (NSDictionary *item in observation[@"ui"][@"elements"]) {
         if (![item isKindOfClass:NSDictionary.class]) continue;
         NSString *label = item[@"text"];
@@ -302,7 +303,11 @@ static BOOL BBMapSuggestionTapAllowed(NSDictionary *observation, NSString *query
             [item[@"aliases"] isKindOfClass:NSArray.class] &&
             [item[@"aliases"] containsObject:query]) queryInField = YES;
         if ([label hasPrefix:[title stringByAppendingString:@","]] &&
-            [rect[@"width"] doubleValue] >= 200) matchingSuggestion = YES;
+            [rect[@"width"] doubleValue] >= 200) {
+            matchingSuggestion = YES;
+            suggestionLeft = [rect[@"x"] doubleValue];
+            suggestionRight = suggestionLeft + [rect[@"width"] doubleValue];
+        }
     }
     if (!queryInField || !matchingSuggestion) return NO;
     double screenHeight = [observation[@"screen"][@"height"] doubleValue];
@@ -314,12 +319,12 @@ static BOOL BBMapSuggestionTapAllowed(NSDictionary *observation, NSString *query
             ![item[@"text"] isEqualToString:title]) continue;
         NSDictionary *rect = item[@"rect"];
         if (![rect isKindOfClass:NSDictionary.class]) continue;
-        double left = [rect[@"x"] doubleValue], top = [rect[@"y"] doubleValue];
+        double top = [rect[@"y"] doubleValue];
         double width = [rect[@"width"] doubleValue], height = [rect[@"height"] doubleValue];
         if (width < 100 || height < 10 || top < screenHeight * 0.11 ||
             top >= screenHeight * 0.45) continue;
-        if (x >= left - 12 && x <= left + width + 12 &&
-            y >= top - 8 && y <= top + height + 8) return YES;
+        if (x >= suggestionLeft && x <= suggestionRight &&
+            y >= top - 20 && y <= top + height + 42) return YES;
     }
     return NO;
 }
