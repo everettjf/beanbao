@@ -4,7 +4,7 @@
 
 ## 最新状态（2026-10-31）
 
-当前已安装 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.11，并在 SpringBoard 重载后通过 `scripts/verify_device.py --expect-bundle` 核对三包、服务身份、Bridge socket 与锁屏状态。重载使手机再次锁定，最新版的文字任务需解锁后重跑。
+当前已安装 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12，并在 SpringBoard 重载后通过 `scripts/verify_device.py --expect-bundle` 核对三包、服务身份、Bridge socket 与锁屏状态。重载使手机再次锁定，最新版的文字任务需解锁后重跑。App 0.3.12 给文字键盘添加可见的“开始”入口；此前真机自动点击屏幕中的“开始”时，按钮被键盘遮挡而没有提交任务。该 App 已单独装机、完成包审计，但新入口仍待解锁后实际点击验收。
 
 上一候选版已在解锁的手机上跑通文字主线：`scripts/accept_text_device.py` 从 BeanBao 前台发起服务任务，五条“打开 App”指令均返回独立任务 ID、`done` 和对应真实前台；带“发消息”的组合指令被拒绝且任务 ID 未变。BeanBao App 文字框与“开始”按钮完成打开通讯录、新建唯一测试备忘录；备忘录列表独立显示完整标题。App 地图搜索“加州科学院”返回 `done`，独立 AX 同时看到 California Academy of Sciences 的地图标记和地点卡片。App 中提交禁止的组合指令显示“未开始”和拒绝原因，未新建任务。首次通讯录服务任务因短暂系统界面成为前台而失败，稍后重试和 App 入口均成功；Bridge 0.2.4 将启动后的前台确认时间从约 5 秒延长到 10 秒，仍需真实前台匹配才报告完成。
 

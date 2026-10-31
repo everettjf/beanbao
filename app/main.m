@@ -51,6 +51,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 @property(nonatomic, strong) UILabel *detailLabel;
 @property(nonatomic, strong) UILabel *feedbackLabel;
 @property(nonatomic, strong) UIButton *startButton;
+@property(nonatomic, strong) UIBarButtonItem *keyboardStartItem;
 @property(nonatomic, strong) UIButton *stopButton;
 @property(nonatomic, strong) UIButton *voiceButton;
 @property(nonatomic, strong) UIButton *clearButton;
@@ -109,6 +110,16 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.taskField.clearButtonMode = UITextFieldViewModeWhileEditing;
     self.taskField.returnKeyType = UIReturnKeyDone;
     self.taskField.delegate = self;
+    UIToolbar *inputBar = [UIToolbar new];
+    [inputBar sizeToFit];
+    UIBarButtonItem *dismissItem = [[UIBarButtonItem alloc] initWithTitle:@"完成"
+        style:UIBarButtonItemStylePlain target:self action:@selector(dismissKeyboardTapped)];
+    self.keyboardStartItem = [[UIBarButtonItem alloc] initWithTitle:@"开始"
+        style:UIBarButtonItemStyleDone target:self action:@selector(startTapped)];
+    UIBarButtonItem *space = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    inputBar.items = @[dismissItem, space, self.keyboardStartItem];
+    self.taskField.inputAccessoryView = inputBar;
     self.clearButton = [self button:@"清空输入" color:UIColor.systemGrayColor action:@selector(clearTapped)];
     self.modelControl = [[UISegmentedControl alloc] initWithItems:@[@"模拟模型", @"Claude"]];
     self.modelControl.selectedSegmentIndex = 0;
@@ -223,6 +234,10 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     return YES;
 }
 
+- (void)dismissKeyboardTapped {
+    [self.taskField resignFirstResponder];
+}
+
 - (void)showReply:(NSDictionary *)reply {
     BOOL ok = [reply[@"ok"] boolValue];
     NSString *phase = reply[@"phase"];
@@ -231,6 +246,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
                                    @"stopped": @"已停止", @"done": @"已完成", @"error": @"未完成"}[phase] ?: @"连接中") : @"服务不可用";
     self.detailLabel.text = ok ? (reply[@"message"] ?: @"") : (reply[@"error"] ?: @"无法连接本机服务");
     self.startButton.enabled = !running;
+    self.keyboardStartItem.enabled = !running;
     self.startButton.alpha = running ? 0.5 : 1.0;
     self.stopButton.enabled = running;
     self.stopButton.alpha = running ? 1.0 : 0.5;
@@ -253,6 +269,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
                     self.stateLabel.text = @"未开始";
                     self.detailLabel.text = self.startRejection;
                     self.startButton.enabled = YES;
+                    self.keyboardStartItem.enabled = YES;
                     self.startButton.alpha = 1.0;
                     self.stopButton.enabled = NO;
                     self.stopButton.alpha = 0.5;
@@ -284,6 +301,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
                 self.stateLabel.text = @"服务连接中";
                 self.detailLabel.text = @"暂时无法确认任务结果，连接恢复后会重新核对";
                 self.startButton.enabled = NO;
+                self.keyboardStartItem.enabled = NO;
                 self.startButton.alpha = 0.5;
                 self.stopButton.enabled = NO;
                 self.stopButton.alpha = 0.5;
@@ -301,6 +319,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
                     self.stateLabel.text = @"状态未知";
                     self.detailLabel.text = self.startRejection;
                     self.startButton.enabled = YES;
+                    self.keyboardStartItem.enabled = YES;
                     self.startButton.alpha = 1.0;
                     self.stopButton.enabled = NO;
                     self.stopButton.alpha = 0.5;
@@ -313,6 +332,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 }
 
 - (void)startTapped {
+    if (self.startRequestPending || !self.startButton.enabled) return;
     [self.taskField resignFirstResponder];
     NSString *task = [self.taskField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!task.length) { self.feedbackLabel.text = @"请输入文字指令"; return; }
@@ -325,6 +345,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.stateLabel.text = @"提交中";
     self.detailLabel.text = @"";
     self.startButton.enabled = NO;
+    self.keyboardStartItem.enabled = NO;
     [self request:@{@"op": @"start", @"task": task,
                     @"model": self.modelControl.selectedSegmentIndex == 1 ? @"claude" : @"mock"}];
 }
