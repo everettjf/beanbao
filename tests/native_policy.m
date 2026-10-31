@@ -93,6 +93,9 @@ int main(void) {
             !Check([BBFailureMessage(@"防自动锁屏不可用，已停止任务")
                     isEqualToString:@"防自动锁屏不可用，已停止任务"],
                    "wake lease failure has a fixed message") ||
+            !Check([BBFailureMessage(@"未能确认地图已显示输入地点")
+                    isEqualToString:@"未能确认地图已显示输入地点，已停止"],
+                   "unverified map input has a fixed message") ||
             !Check(BBFreshUICompatible(@"launch_app", NO, NO, NO, NO),
                    "allowlisted app launch tolerates source UI status changes") ||
             !Check(!BBFreshUICompatible(@"tap", NO, NO, NO, NO),
@@ -365,6 +368,42 @@ int main(void) {
         NSDictionary *academyTap = @{@"action": @"tap", @"x": @196, @"y": @150};
         NSDictionary *academyRowTap = @{@"action": @"tap", @"x": @300, @"y": @185};
         NSDictionary *academyInput = @{@"action": @"input_text", @"text": @"加州科学院"};
+        __block NSUInteger delayedMapReads = 0, delayedMapActs = 0;
+        BBNoteBridgeRequest delayedMapBridge = ^NSDictionary *(NSDictionary *request) {
+            NSString *op = request[@"op"];
+            if ([op isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([op isEqualToString:@"observe"]) {
+                delayedMapReads++;
+                return StepObservation(delayedMapReads == 1 ? focusedMap : academySuggestion,
+                    [NSString stringWithFormat:@"delayed-map-%lu", (unsigned long)delayedMapReads]);
+            }
+            if ([op isEqualToString:@"act"] && [request[@"action"] isEqualToString:@"tap"] &&
+                [request[@"observation_id"] isEqualToString:
+                    [NSString stringWithFormat:@"delayed-map-%lu", (unsigned long)delayedMapReads]]) {
+                delayedMapActs++;
+                return @{@"ok": @YES};
+            }
+            return @{@"ok": @NO};
+        };
+        NSDictionary *delayedMapStep = BBMapStep(@"在地图搜索加州科学院",
+            @[tapSearch, academyInput], delayedMapBridge, unusedMapModel, NO);
+        if (!Check([delayedMapStep[@"ok"] boolValue] &&
+                   [delayedMapStep[@"action"][@"action"] isEqualToString:@"tap"] &&
+                   delayedMapActs == 1 && mapLaunchModelCalls == 0,
+                   "map harness waits for typed text and then taps a verified suggestion")) return 1;
+        __block NSUInteger missingTextActs = 0;
+        BBNoteBridgeRequest missingTextBridge = ^NSDictionary *(NSDictionary *request) {
+            if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([request[@"op"] isEqualToString:@"observe"])
+                return StepObservation(focusedMap, @"missing-text");
+            if ([request[@"op"] isEqualToString:@"act"]) missingTextActs++;
+            return @{@"ok": @NO};
+        };
+        NSDictionary *missingTextStep = BBMapStep(@"在地图搜索加州科学院",
+            @[tapSearch, academyInput], missingTextBridge, unusedMapModel, NO);
+        if (!Check([missingTextStep[@"error"] isEqualToString:@"input_unverified"] &&
+                   missingTextActs == 0 && mapLaunchModelCalls == 0,
+                   "map harness stops when entered text never becomes visible")) return 1;
         NSDictionary *afterSuggestion = BBFixedMapAction(@"在地图搜索加州科学院",
             academySuggestion, @[tapSearch, academyInput, academyTap]);
         if (!Check([afterSuggestion[@"action"] isEqualToString:@"done"] &&

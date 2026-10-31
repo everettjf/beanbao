@@ -950,6 +950,30 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
     NSDictionary *fixedAction = fixedLaunch ?: (BBMapResultVisible(observation, query) ?
         @{@"action": @"done"} : BBMapFixedSuggestionAction(observation, query));
     if (!fixedAction && [history.lastObject[@"action"] isEqualToString:@"input_text"] &&
+        !BBVisibleContains(observation, query)) {
+        for (NSUInteger retry = 0; retry < 5; retry++) {
+            usleep(350000);
+            NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
+            if (![settled[@"ok"] boolValue]) return @{@"ok": @NO, @"error": @"observe"};
+            if (!BBUnlockedObservation(settled)) return @{@"ok": @NO, @"error": @"locked"};
+            if (![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"])
+                return @{@"ok": @NO, @"error": @"fresh_state"};
+            if (BBHasSecret(settled[@"ui"]) || BBHasSecret(settled[@"ocr"]))
+                return @{@"ok": @NO, @"error": @"sensitive"};
+            observation = settled;
+            if (BBMapResultVisible(observation, query)) {
+                fixedAction = @{@"action": @"done"};
+                break;
+            }
+            if (BBVisibleContains(observation, query)) {
+                fixedAction = BBMapFixedSuggestionAction(observation, query);
+                break;
+            }
+        }
+        if (!fixedAction && !BBVisibleContains(observation, query))
+            return @{@"ok": @NO, @"error": @"input_unverified"};
+    }
+    if (!fixedAction && [history.lastObject[@"action"] isEqualToString:@"input_text"] &&
         [observation[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] &&
         BBVisibleContains(observation, query)) {
         for (NSUInteger retry = 0; retry < 8; retry++) {

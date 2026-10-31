@@ -54,6 +54,13 @@ final class MapHarnessTests: XCTestCase {
         XCTAssertEqual(result.message, "Claude Key 未配置或权限不安全")
     }
 
+    func testUnverifiedMapInputHasFixedMessage() async {
+        let fake = FakeMapStepper(failAt: 1, failureCode: "input_unverified")
+        let result = await BeanBaoMapHarness.run("在地图搜索金门大桥", step: fake.step)
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(result.message, "未能确认地图已显示输入地点")
+    }
+
     func testUnsupportedMapTaskNeverCallsDeviceStep() async {
         let fake = FakeMapStepper(doneAt: 1)
         let result = await BeanBaoMapHarness.run("打开地图", step: fake.step)

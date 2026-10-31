@@ -97,6 +97,8 @@ static NSString *BBFailureMessage(NSString *output) {
         return @"模型请求或输出失败，请稍后重试";
     if ([output containsString:@"当前地图界面无法安全执行"])
         return @"当前地图界面无法安全执行，请检查后重试";
+    if ([output containsString:@"未能确认地图已显示输入地点"])
+        return @"未能确认地图已显示输入地点，已停止";
     if ([output containsString:@"模型动作被策略拒绝"])
         return @"界面操作未通过安全校验，已停止";
     if ([output containsString:@"界面复核未通过"])

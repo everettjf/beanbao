@@ -27,6 +27,7 @@ public enum BeanBaoMapHarness {
                 "sensitive": "界面或任务疑似包含敏感信息",
                 "model": "模型请求或输出失败",
                 "local_state": "当前地图界面无法安全执行",
+                "input_unverified": "未能确认地图已显示输入地点",
                 "policy": "模型动作被策略拒绝",
                 "fresh_state": "界面复核未通过"
             ], step: step)
