@@ -1,7 +1,23 @@
 import Foundation
 import XCTest
 import AgentRuntime
-import BeanBaoTextHarness
+@testable import BeanBaoTextHarness
+
+private struct CustomOpenModel: PHKModelClient {
+    let arguments: String
+
+    func stream(request: PHKCompletionRequest) -> AsyncThrowingStream<PHKModelEvent, Error> {
+        let events: [PHKModelEvent] = request.messages.last?.role == .tool
+            ? [.completed(.stop)]
+            : [.toolCallDelta(.init(index: 0, id: UUID().uuidString,
+                                    name: "open_app", arguments: arguments)),
+               .completed(.toolCalls)]
+        return AsyncThrowingStream { continuation in
+            for event in events { continuation.yield(event) }
+            continuation.finish()
+        }
+    }
+}
 
 private final class FakeBridge: @unchecked Sendable {
     private let lock = NSLock()
@@ -101,5 +117,18 @@ final class TextHarnessTests: XCTestCase {
         XCTAssertFalse(result.succeeded)
         XCTAssertEqual(fake.actions, 1)
         XCTAssertTrue(fake.leaseReleased)
+    }
+
+    func testToolRegistryAndBeanBaoAllowlistRejectWrongBundleAndExtraArguments() async {
+        for arguments in [
+            "{\"bundle_id\":\"com.apple.Maps\"}",
+            "{\"bundle_id\":\"com.apple.Preferences\",\"extra\":true}"
+        ] {
+            let fake = FakeBridge()
+            let result = await BeanBaoTextHarness.run("打开设置", bridge: fake.request,
+                                                     client: CustomOpenModel(arguments: arguments))
+            XCTAssertFalse(result.succeeded, arguments)
+            XCTAssertEqual(fake.actions, 0, arguments)
+        }
     }
 }

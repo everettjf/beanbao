@@ -7,7 +7,8 @@ let package = Package(
     products: [.library(name: "BeanBaoTextHarness", targets: ["BeanBaoTextHarness"])],
     targets: [
         .target(name: "AgentRuntime", path: "vendor/palmino-harness-runtime/Sources/AgentRuntime"),
-        .target(name: "BeanBaoTextHarness", dependencies: ["AgentRuntime"], path: "harness"),
-        .testTarget(name: "BeanBaoTextHarnessTests", dependencies: ["BeanBaoTextHarness", "AgentRuntime"], path: "tests/text-harness")
+        .target(name: "AgentTools", dependencies: ["AgentRuntime"], path: "vendor/palmino-harness-runtime/Sources/AgentTools"),
+        .target(name: "BeanBaoTextHarness", dependencies: ["AgentRuntime", "AgentTools"], path: "harness"),
+        .testTarget(name: "BeanBaoTextHarnessTests", dependencies: ["BeanBaoTextHarness", "AgentRuntime", "AgentTools"], path: "tests/text-harness")
     ]
 )

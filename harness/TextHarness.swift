@@ -1,6 +1,7 @@
 import Foundation
 #if SWIFT_PACKAGE
 import AgentRuntime
+import AgentTools
 #endif
 
 public typealias BeanBaoBridgeRequest = @Sendable (PHKJSONValue) -> PHKJSONValue
@@ -39,39 +40,29 @@ private func encode(_ value: PHKJSONValue) -> String {
     return String(decoding: data, as: UTF8.self)
 }
 
-private func errorResult(_ message: String) -> String {
-    encode(.object(["ok": .bool(false), "error": .string(message)]))
+private func errorResult(_ message: String) -> PHKJSONValue {
+    .object(["ok": .bool(false), "error": .string(message)])
 }
 
-private struct OpenAppTool: PHKToolProviding {
+private struct OpenAppTool: PHKNativeTool {
     let expectedBundle: String
     let bridge: BeanBaoBridgeRequest
 
-    var definitions: [PHKToolDefinition] {
-        [.init(name: "open_app", description: "Open the exact approved iPhone app and verify it is foreground.",
+    var definition: PHKToolDefinition {
+        .init(name: "open_app", description: "Open the exact approved iPhone app and verify it is foreground.",
                parameters: .object([
                 "type": .string("object"),
                 "properties": .object(["bundle_id": .object(["type": .string("string")])]),
                 "required": .array([.string("bundle_id")]),
                 "additionalProperties": .bool(false)
-               ]))]
+               ]))
     }
 
-    func executionMode(for toolName: String) -> PHKToolExecutionMode { .serial }
-
-    func preflight(_ call: PHKToolCall) -> String? {
-        guard call.name == "open_app",
-              let data = call.arguments.data(using: .utf8),
-              let args = try? JSONDecoder().decode(PHKJSONValue.self, from: data),
-              let fields = args.object, fields.count == 1,
+    func execute(arguments: PHKJSONValue) async throws -> PHKJSONValue {
+        guard let fields = arguments.object, fields.count == 1,
               fields["bundle_id"]?.string == expectedBundle else {
-            return "App is outside this task's allowlist."
+            return errorResult("App is outside this task's allowlist.")
         }
-        return nil
-    }
-
-    func execute(_ call: PHKToolCall) async -> String {
-        if let reason = preflight(call) { return errorResult(reason) }
         if Task.isCancelled { return errorResult("Task cancelled.") }
         let lease = bridge(.object(["op": .string("wake_lease"), "mode": .string("renew")]))
         guard lease.object?["ok"]?.bool == true else { return errorResult("Screen wake lease unavailable.") }
@@ -79,7 +70,7 @@ private struct OpenAppTool: PHKToolProviding {
 
         let initial = bridge(.object(["op": .string("observe")]))
         guard Self.unlocked(initial) else { return errorResult("Device is locked or screen is off.") }
-        if Self.foreground(initial) == expectedBundle { return encode(.object(["ok": .bool(true)])) }
+        if Self.foreground(initial) == expectedBundle { return .object(["ok": .bool(true)]) }
         if Task.isCancelled { return errorResult("Task cancelled.") }
 
         // Refresh immediately before acting. The Bridge rejects a stale ID or
@@ -104,7 +95,7 @@ private struct OpenAppTool: PHKToolProviding {
             let observed = bridge(.object(["op": .string("observe")]))
             guard Self.unlocked(observed) else { return errorResult("Device locked during app launch.") }
             if Self.foreground(observed) == expectedBundle {
-                return encode(.object(["ok": .bool(true)]))
+                return .object(["ok": .bool(true)])
             }
             if attempt < 4 { try? await Task.sleep(for: .milliseconds(250)) }
         }
@@ -155,8 +146,16 @@ public enum BeanBaoTextHarness {
         guard let bundle = targets[task] else {
             return .init(succeeded: false, message: "不支持的文字指令")
         }
-        let agent = PHKAgentRuntime(client: FixedOpenAppModel(bundle: bundle), model: "fixed-open-app",
-                                    toolRegistry: OpenAppTool(expectedBundle: bundle, bridge: bridge),
+        return await run(task, bridge: bridge, client: FixedOpenAppModel(bundle: bundle))
+    }
+
+    static func run(_ task: String, bridge: @escaping BeanBaoBridgeRequest,
+                    client: any PHKModelClient) async -> BeanBaoTextResult {
+        guard let bundle = targets[task] else {
+            return .init(succeeded: false, message: "不支持的文字指令")
+        }
+        let agent = PHKAgentRuntime(client: client, model: "fixed-open-app",
+                                    toolRegistry: PHKToolRegistry([OpenAppTool(expectedBundle: bundle, bridge: bridge)]),
                                     executionBudget: .init(maximumSteps: 3, maximumToolCalls: 1,
                                                            maximumDuration: .seconds(30)))
         do {
@@ -164,7 +163,8 @@ public enum BeanBaoTextHarness {
             guard let toolMessage = snapshot.messages.last(where: { $0.role == .tool }),
                   let content = toolMessage.content,
                   let result = try? JSONDecoder().decode(PHKJSONValue.self, from: Data(content.utf8)),
-                  result.object?["ok"]?.bool == true else {
+                  result.object?["ok"]?.bool == true,
+                  result.object?["result"]?.object?["ok"]?.bool == true else {
                 return .init(succeeded: false, message: "打开 App 未完成")
             }
             return .init(succeeded: true, message: "目标 App 已在前台")

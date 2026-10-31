@@ -1,0 +1,10 @@
+public typealias ToolError = PHKToolError
+public typealias AgentTool = PHKNativeTool
+public typealias ToolRegistry = PHKToolRegistry
+public typealias ToolPermissionGate = PHKToolPermissionGate
+public typealias ToolPermission = PHKToolPermission
+public typealias ToolAuthorizationDecision = PHKToolAuthorizationDecision
+public typealias ToolAuthorizationPolicy = PHKToolAuthorizationPolicy
+public typealias ToolAuditSink = PHKToolAuditSink
+public typealias NoopToolAuditSink = PHKNoopToolAuditSink
+public typealias GovernedTool = PHKGovernedTool
