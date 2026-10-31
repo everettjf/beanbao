@@ -1,4 +1,5 @@
 #import "BeanBaoBridge.h"
+#import "BBObservationClock.h"
 #import "BeanBaoApp.h"
 #import "ScreenManager.h"
 #import "AccessibilityManager.h"
@@ -30,6 +31,7 @@ static const NSTimeInterval BBWakeLeaseSeconds = 90;
 @property (nonatomic, copy) NSString *observationID;
 @property (nonatomic, copy) NSString *observationApp;
 @property (nonatomic) NSTimeInterval observationTime;
+@property (nonatomic) NSTimeInterval observationUptime;
 @property (nonatomic) int listenFD;
 @property (nonatomic) BOOL wakeLeaseActive;
 @property (nonatomic) BOOL idleTimerBeforeLease;
@@ -197,9 +199,12 @@ static NSString *BBTokenFromFile(void) {
     NSDictionary *state = [[ScreenManager sharedInstance] deviceInteractionState] ?: @{};
     NSDictionary *frontmost = BBFrontmostApp();
     NSString *app = [frontmost[@"bundleId"] isKindOfClass:[NSString class]] ? frontmost[@"bundleId"] : @"";
+    NSTimeInterval observationUptime = BBObservationClockSeconds();
+    if (!isfinite(observationUptime)) return BBError(@"Observation clock unavailable");
     self.observationID = [NSUUID UUID].UUIDString;
     self.observationApp = app;
     self.observationTime = NSDate.date.timeIntervalSince1970;
+    self.observationUptime = observationUptime;
     NSMutableDictionary *payload = [@{@"ok": @YES, @"observation_id": self.observationID,
                                      @"timestamp": @(self.observationTime), @"device_state": state,
                                      @"frontmost_app": frontmost,
@@ -239,7 +244,8 @@ static NSString *BBTokenFromFile(void) {
     if (![self unlocked]) return BBError(@"Device is locked, screen is off, or state is unknown");
     NSString *observed = request[@"observation_id"];
     if (![observed isKindOfClass:[NSString class]] || ![observed isEqualToString:self.observationID] ||
-        NSDate.date.timeIntervalSince1970 - self.observationTime > 10.0) return BBError(@"Observation is missing or stale");
+        !BBObservationIsFresh(self.observationUptime, BBObservationClockSeconds()))
+        return BBError(@"Observation is missing or stale");
     NSString *currentApp = BBFrontmostApp()[@"bundleId"];
     if (![(currentApp ?: @"") isEqualToString:self.observationApp ?: @""]) return BBError(@"Foreground app changed");
     NSString *action = request[@"action"];

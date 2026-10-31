@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import "../bridge/BBObservationClock.h"
 
 // Exercise the exact on-device policy implementation without making bridge or model calls.
 #define main beanbaod_entry
@@ -36,6 +37,21 @@ static BOOL Check(BOOL condition, const char *message) {
 
 int main(void) {
     @autoreleasepool {
+        if (!Check(BBObservationIsFresh(100, 109.9),
+                   "recent monotonic observation remains valid") ||
+            !Check(!BBObservationIsFresh(100, 110.1),
+                   "expired monotonic observation is rejected") ||
+            !Check(!BBObservationIsFresh(100, 99),
+                   "clock rollback cannot revive an observation") ||
+            !Check(!BBObservationIsFresh(NAN, 101),
+                   "invalid observation time is rejected")) return 1;
+        NSTimeInterval testNow = NSDate.date.timeIntervalSince1970;
+        if (!Check(BBRecentObservation(@{@"timestamp": @(testNow - 1)}),
+                   "recent Agent observation remains valid") ||
+            !Check(!BBRecentObservation(@{@"timestamp": @(testNow + 60)}),
+                   "future Agent observation is rejected") ||
+            !Check(!BBRecentObservation(@{@"timestamp": @(testNow - 60)}),
+                   "stale Agent observation is rejected")) return 1;
         BBState = [BBServiceState new];
         BBState.serviceID = @"service-A";
         BBState.taskID = @"task-A";

@@ -80,7 +80,7 @@ private struct OpenAppTool: PHKNativeTool {
               Self.foreground(fresh) == Self.foreground(initial),
               let id = fresh.object?["observation_id"]?.string,
               let timestamp = fresh.object?["timestamp"]?.number,
-              Date().timeIntervalSince1970 - timestamp <= 8 else {
+              (0...8).contains(Date().timeIntervalSince1970 - timestamp) else {
             return errorResult("Device state changed before opening the app.")
         }
         if Task.isCancelled { return errorResult("Task cancelled.") }

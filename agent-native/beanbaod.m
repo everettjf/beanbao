@@ -318,6 +318,13 @@ static BOOL BBUnlockedObservation(NSDictionary *observation) {
         [state[@"screen_on_known"] boolValue] && [state[@"screen_on"] boolValue];
 }
 
+static BOOL BBRecentObservation(NSDictionary *observation) {
+    id value = observation[@"timestamp"];
+    if (![value isKindOfClass:NSNumber.class]) return NO;
+    double age = NSDate.date.timeIntervalSince1970 - [value doubleValue];
+    return isfinite(age) && age >= 0 && age <= 8;
+}
+
 static BOOL BBMapSearchInputReady(NSDictionary *observation) {
     NSArray *elements = observation[@"ui"][@"elements"];
     if (![elements isKindOfClass:NSArray.class]) return NO;
@@ -837,7 +844,7 @@ static NSDictionary *BBNoteStep(NSString *task, NSArray *history, BBNoteBridgeRe
     BOOL sameApp = [fresh[@"frontmost_app"][@"bundleId"]
         isEqual:observation[@"frontmost_app"][@"bundleId"]];
     BOOL allowed = BBValidAction(action, fresh, task, history, YES, NO, YES);
-    BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
+    BOOL recent = BBRecentObservation(fresh);
     if (![fresh[@"ok"] boolValue] ||
         (!safeNewTap && (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
         !BBFreshUICompatible(name, sameUI, sameEditor, sameControl, NO) ||
@@ -1046,7 +1053,7 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
     BOOL sameApp = [fresh[@"frontmost_app"][@"bundleId"]
         isEqual:observation[@"frontmost_app"][@"bundleId"]];
     BOOL allowed = BBValidAction(action, fresh, task, history, YES, YES, NO);
-    BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
+    BOOL recent = BBRecentObservation(fresh);
     if (![fresh[@"ok"] boolValue] ||
         (!fixedLaunch && (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
         !sameApp || !allowed || !recent) {
@@ -1251,7 +1258,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             BBValidAction(action, fresh, task, history, allowUI, autoMap, autoNote);
         BOOL sameApp = [fresh[@"frontmost_app"][@"bundleId"] isEqual:observation[@"frontmost_app"][@"bundleId"]];
         BOOL allowed = BBValidAction(action, fresh, task, history, allowUI, autoMap, autoNote);
-        BOOL recent = [NSDate.date timeIntervalSince1970] - [fresh[@"timestamp"] doubleValue] <= 8;
+        BOOL recent = BBRecentObservation(fresh);
         if (![fresh[@"ok"] boolValue] ||
             ((claude || autoNote) && !safeNewNoteTap && !fixedMapLaunch &&
              (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||

@@ -28,11 +28,14 @@ private final class FakeBridge: @unchecked Sendable {
     let locked: Bool
     let rejectAction: Bool
     let ignoreLaunch: Bool
+    let timestampOffset: TimeInterval
 
-    init(locked: Bool = false, rejectAction: Bool = false, ignoreLaunch: Bool = false) {
+    init(locked: Bool = false, rejectAction: Bool = false, ignoreLaunch: Bool = false,
+         timestampOffset: TimeInterval = 0) {
         self.locked = locked
         self.rejectAction = rejectAction
         self.ignoreLaunch = ignoreLaunch
+        self.timestampOffset = timestampOffset
     }
 
     var actions: Int { lock.lock(); defer { lock.unlock() }; return actionCount }
@@ -55,7 +58,7 @@ private final class FakeBridge: @unchecked Sendable {
             observationID += 1
             return .object([
                 "ok": .bool(true), "observation_id": .string(String(observationID)),
-                "timestamp": .number(Date().timeIntervalSince1970),
+                "timestamp": .number(Date().timeIntervalSince1970 + timestampOffset),
                 "device_state": .object([
                     "locked_known": .bool(true), "locked": .bool(locked),
                     "screen_on_known": .bool(true), "screen_on": .bool(!locked)
@@ -101,6 +104,14 @@ final class TextHarnessTests: XCTestCase {
         let result = await BeanBaoTextHarness.run("打开地图", bridge: fake.request)
         XCTAssertFalse(result.succeeded)
         XCTAssertEqual(fake.actions, 0)
+    }
+
+    func testFutureObservationCannotLaunchApp() async {
+        let fake = FakeBridge(timestampOffset: 60)
+        let result = await BeanBaoTextHarness.run("打开地图", bridge: fake.request)
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(fake.actions, 0)
+        XCTAssertTrue(fake.leaseReleased)
     }
 
     func testBridgeRejectionCannotBeReportedAsSuccess() async {
