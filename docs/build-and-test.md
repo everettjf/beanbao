@@ -1,12 +1,14 @@
 # BeanBao 真机实现与验收记录
 
-更新：2026-10-30。目标设备：iPhone 11、iOS 26.0.1、Relaxin 0.5.5 / RootHide。以下记录来自这台已连接的真机。后半部分保留首次装机时的历史数据；当前状态以本节为准。
+更新：2026-10-31。目标设备：iPhone 11、iOS 26.0.1、Relaxin 0.5.5 / RootHide。以下记录来自这台已连接的真机。后半部分保留首次装机时的历史数据；当前状态以本节为准。
 
-## 最新状态（2026-10-30）
+## 最新状态（2026-10-31）
 
-真机当前安装 `dev.beanbao.bridge` **0.2.2**、`dev.beanbao.agent` **0.3.34** 和 `dev.beanbao.app` **0.3.7**。通过已配对的 USB iCTRL 通道重新触发 Relaxin Jailbreak，mobile/root SSH 恢复。此前一次设备重启后，已安装包保留，Agent 服务自动运行；当前版本尚未再做重启后的完整任务复测。RootHide 的 SSH shell 与 App/launchd 使用不同的 `/var/mobile` 视图，客户端已加入 socket 路径回退。
+已通过已配对的 root USB SSH 安装 Bridge 0.2.3 / Agent 0.3.47 / App 0.3.11，执行 `uicache -a`、Agent `kickstart` 与 `sbreload`，关闭旧 App 进程。`scripts/verify_device.py --expect-bundle` 核对三包版本、运行中的新版 Agent 状态字段与 Bridge socket 权限均通过；Bridge 观察报告当前设备锁定、屏幕关闭，前台是 SpringBoard。已配对 iCTRL 的 Home/唤醒命令未让 Bridge 观察到解锁，因此本轮新版文字任务的真实前台结果仍待持机者手动解锁后验证。验收脚本原先只接受 JSON 布尔 `running`，而设备端返回 0/1；已修正脚本并重新通过验证。当前只确认安装及服务可用，不把旧版任务结果算作新版通过。
 
-本机在 2026-10-31 另构建了**未装机**的 Bridge 0.2.3 / Agent 0.3.47 / App 0.3.11 候选包。Agent 引入 Palmino Harness 的有界逐步执行；固定打开 App 和新建备忘录继续使用本地规则，地图搜索新增“模拟模型”本地规则路径，无需模型 Key，也不采集截图。Claude 地图路径在本地固定动作无匹配时才采集截图，切离地图或发现疑似凭据则停止。假 Bridge 上已跑通搜索框点击、原样输入、提交、结果复核，并验证识别不到控件时拒绝执行；输入地点后有限重观测，始终未能确认显示则停止。Bridge 以单调时间判断观察过期，Agent 也拒绝未来时间戳。原生策略、18 项 Swift Harness 测试、8 项 Python 测试、三包构建与三包内容/依赖审计通过。这些本地结果不代表新路径已经在 iOS 26 真机通过。
+此前真机安装 `dev.beanbao.bridge` **0.2.2**、`dev.beanbao.agent` **0.3.34** 和 `dev.beanbao.app` **0.3.7**。通过已配对的 USB iCTRL 通道重新触发 Relaxin Jailbreak，mobile/root SSH 恢复。此前一次设备重启后，已安装包保留，Agent 服务自动运行；当前版本尚未再做重启后的完整任务复测。RootHide 的 SSH shell 与 App/launchd 使用不同的 `/var/mobile` 视图，客户端已加入 socket 路径回退。
+
+本机在 2026-10-31 构建并随后装机 Bridge 0.2.3 / Agent 0.3.47 / App 0.3.11 候选包。Agent 引入 Palmino Harness 的有界逐步执行；固定打开 App 和新建备忘录继续使用本地规则，地图搜索新增“模拟模型”本地规则路径，无需模型 Key，也不采集截图。Claude 地图路径在本地固定动作无匹配时才采集截图，切离地图或发现疑似凭据则停止。假 Bridge 上已跑通搜索框点击、原样输入、提交、结果复核，并验证识别不到控件时拒绝执行；输入地点后有限重观测，始终未能确认显示则停止。Bridge 以单调时间判断观察过期，Agent 也拒绝未来时间戳。原生策略、18 项 Swift Harness 测试、8 项 Python 测试、三包构建与三包内容/依赖审计通过。这些本地结果不代表新路径已经在 iOS 26 真机通过。
 
 Agent 0.3.45 还为固定“打开 App”文字路径加入外层返回或超时后的主动释放防自动锁屏租约；本地编译、测试与三包审计通过，真机行为尚未复测。
 

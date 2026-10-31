@@ -1,10 +1,10 @@
 # 当前候选版真机验收
 
-更新：2026-10-31。iPhone 11 当前已安装 Bridge 0.2.2 / Agent 0.3.34 / App 0.3.7；本机候选包为 Bridge 0.2.3 / Agent 0.3.47 / App 0.3.11。以下步骤只在持机者明确允许操作手机、设备已解锁后进行。记录 BeanBao 状态和实际前台画面即可，不记录 Key、私钥、联系人或个人备忘录内容。
+更新：2026-10-31。iPhone 11 当前已安装 Bridge 0.2.3 / Agent 0.3.47 / App 0.3.11，已通过三包版本、Agent 服务与 Bridge 基础检查。持机者已允许操作手机；以下界面任务需设备已解锁。记录 BeanBao 状态和实际前台画面即可，不记录 Key、私钥、联系人或个人备忘录内容。
 
 ## 先确认新版确实在运行
 
-1. 按 [安装说明](install-and-configure.md)依次安装三包，重新加载 SpringBoard，重启 Agent 服务，并关闭旧 BeanBao 进程后重新打开。
+1. 三包安装、SpringBoard 重载、Agent 重启和关闭旧 BeanBao 进程已完成；解锁后重新打开 BeanBao。
 2. 从已配对电脑运行 `scripts/verify_device.py --expect-bundle`，核对三包版本、Agent 状态协议和 Bridge 观察。完整 SSH 参数见 [真机恢复说明](device-recovery.md)。若版本或服务身份不匹配，先修复环境，不把旧版任务结果算入本轮验收。
 3. 保持手机解锁、亮屏；确认“自动锁定”已恢复持机者原来的“永不”。本轮不再改自动锁定设置。
 
