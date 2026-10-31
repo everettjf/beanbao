@@ -28,6 +28,7 @@
 - 已复制未修改的 `AgentRuntime` 六个源文件，保留 Apache 许可证、NOTICE 与来源 commit。BeanBao Agent 的 Theos 目标改为 iOS 17，`arm64e` 编译、链接、签名和 RootHide `.deb` 打包通过。
 - `harness/TextHarness.swift` 已用上游 `PHKAgentRuntime` 执行四个固定打开 App 文字指令。App 的“模拟模型”打开 App 请求现由服务转到这个入口；地图搜索和本地新建备忘录仍沿用原有受限流程。
 - Mac 假 Bridge 测试 5 项通过：四个白名单指令完成、未知指令不动作、锁屏不动作、Bridge 拒绝不报成功、启动后未在前台不报成功。原生策略测试和 8 项 Python 测试通过。
+- Agent 0.3.36 / App 0.3.9 给每次任务和服务实例分配 ID；App 丢弃旧轮询回复，拒绝把其他任务的完成状态显示为当前任务成功，停止请求也带任务 ID。本地原生策略测试及三包构建通过。
 - **尚未装机或在真机验证新 harness 路径。** 图标和 harness 候选包仅在本机生成；用户休息期间不操作手机。
 
 ## 后续迁移路径
@@ -36,6 +37,6 @@
 2. **桥接设备工具。** Swift 适配器通过现有本机 Unix socket 调用 Bridge 的 `observe`、`act`、`wake_lease`。`act` 每次都要带上刚获取的 `observation_id`；执行前检查解锁、前台 App、时间戳和任务白名单，Bridge 继续做最终拒绝。所有 GUI 工具设为串行；一次模型响应中多个动作不能绕过“观察一次、执行一步”。
 3. **桥接模型。** 确定性模型替身已证明打开 App 工具调用和完成路径。后续为现有 Claude Messages 接口写适配器，将其工具调用映射到 `ModelEvent`；现有 `BBClaudeAction` 的 JSON action 格式不能直接喂给 `AgentRuntime` 的工具循环。无需向用户索取新模型。
 4. **保留现有安全策略。** 地图搜索和新建备忘录的限定步骤、敏感内容本地拦截、完成条件和 wake lease 仍由 BeanBao 适配层负责。Palmino 的通用工具治理不表达这些具体屏幕条件。
-5. **完成状态协议和真机验收。** 新入口已接入同一个 `beanbaod` 及 `AgentService`，但还需给每次 `start` 返回唯一任务 ID，`status` 只显示该 ID 的结果，避免旧任务 `done` 覆盖新任务拒绝。旧实现保留为可回退版本，直到相同用例全部通过。
+5. **真机验收状态协议。** 新入口已接入同一个 `beanbaod` 及 `AgentService`，每次 `start` 返回唯一任务 ID；App 只把同一服务、同一任务的状态视为当前结果。仍需在用户方便时验证新旧任务交错和服务重启；旧实现保留为可回退版本，直到相同用例全部通过。
 
 首期验收：离线测试四个打开 App 指令、地图搜索、新建备忘录、锁屏拒绝、过期 observation 拒绝、取消、重启后未确认动作不重放；随后在用户方便时用当前设备验证。此次评估不代表新 harness 已装机或真机兼容。

@@ -60,6 +60,9 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 @property(nonatomic) BOOL recording;
 @property(nonatomic) BOOL startRequestPending;
 @property(nonatomic, copy) NSString *startRejection;
+@property(nonatomic, copy) NSString *activeTaskID;
+@property(nonatomic, copy) NSString *activeServiceID;
+@property(nonatomic) NSUInteger statusEpoch;
 @property(nonatomic) NSUInteger speechGeneration;
 @property(nonatomic, strong) SFSpeechRecognizer *speechRecognizer;
 @property(nonatomic, strong) SFSpeechAudioBufferRecognitionRequest *speechRequest;
@@ -234,14 +237,67 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 
 - (void)request:(NSDictionary *)payload {
     BOOL starting = [payload[@"op"] isEqualToString:@"start"];
+    NSUInteger epoch = self.statusEpoch;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         NSDictionary *reply = BBAgentRequest(payload);
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (epoch != self.statusEpoch) return;
             if (starting) {
                 self.startRequestPending = NO;
-                if (![reply[@"ok"] boolValue]) {
-                    self.startRejection = [reply[@"error"] isKindOfClass:NSString.class] ? reply[@"error"] : @"任务未被接受";
+                NSString *taskID = [reply[@"task_id"] isKindOfClass:NSString.class] ? reply[@"task_id"] : nil;
+                NSString *serviceID = [reply[@"service_id"] isKindOfClass:NSString.class] ? reply[@"service_id"] : nil;
+                if (![reply[@"ok"] boolValue] || !taskID.length || !serviceID.length) {
+                    self.startRejection = ![reply[@"ok"] boolValue] && [reply[@"error"] isKindOfClass:NSString.class] ?
+                        reply[@"error"] : @"任务状态协议不兼容，请更新 BeanBao Agent";
                     self.stateLabel.text = @"未开始";
+                    self.detailLabel.text = self.startRejection;
+                    self.startButton.enabled = YES;
+                    self.startButton.alpha = 1.0;
+                    self.stopButton.enabled = NO;
+                    self.stopButton.alpha = 0.5;
+                    return;
+                }
+                self.activeTaskID = taskID;
+                self.activeServiceID = serviceID;
+            } else if (![reply[@"ok"] boolValue]) {
+                self.stateLabel.text = @"未停止";
+                self.detailLabel.text = [reply[@"error"] isKindOfClass:NSString.class] ?
+                    reply[@"error"] : @"停止请求未成功";
+                return;
+            }
+            [self showReply:reply];
+        });
+    });
+}
+
+- (void)refreshStatus {
+    if (self.polling || self.startRequestPending) return;
+    self.polling = YES;
+    NSUInteger epoch = self.statusEpoch;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSDictionary *reply = BBAgentRequest(@{@"op": @"status"});
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.polling = NO;
+            if (self.startRequestPending || epoch != self.statusEpoch || self.startRejection.length) return;
+            if (![reply[@"ok"] boolValue] && self.activeTaskID.length) {
+                self.stateLabel.text = @"服务连接中";
+                self.detailLabel.text = @"暂时无法确认任务结果，连接恢复后会重新核对";
+                self.startButton.enabled = NO;
+                self.startButton.alpha = 0.5;
+                self.stopButton.enabled = NO;
+                self.stopButton.alpha = 0.5;
+                return;
+            }
+            if (self.activeTaskID.length) {
+                BOOL sameService = [reply[@"service_id"] isEqualToString:self.activeServiceID];
+                BOOL sameTask = [reply[@"task_id"] isEqualToString:self.activeTaskID];
+                if (!sameService || !sameTask) {
+                    self.statusEpoch++;
+                    self.activeTaskID = nil;
+                    self.activeServiceID = nil;
+                    self.startRejection = sameService ? @"任务已变化，请核对目标 App 后重试" :
+                        @"服务已重启，上一任务结果未知；请核对目标 App";
+                    self.stateLabel.text = @"状态未知";
                     self.detailLabel.text = self.startRejection;
                     self.startButton.enabled = YES;
                     self.startButton.alpha = 1.0;
@@ -255,27 +311,15 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     });
 }
 
-- (void)refreshStatus {
-    if (self.polling || self.startRequestPending) return;
-    self.polling = YES;
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSDictionary *reply = BBAgentRequest(@{@"op": @"status"});
-        dispatch_async(dispatch_get_main_queue(), ^{
-            self.polling = NO;
-            if (self.startRequestPending) return;
-            if (self.startRejection.length && ![reply[@"running"] boolValue]) return;
-            if ([reply[@"running"] boolValue]) self.startRejection = nil;
-            [self showReply:reply];
-        });
-    });
-}
-
 - (void)startTapped {
     [self.taskField resignFirstResponder];
     NSString *task = [self.taskField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!task.length) { self.feedbackLabel.text = @"请输入文字指令"; return; }
     self.feedbackLabel.text = @"";
+    self.statusEpoch++;
     self.startRejection = nil;
+    self.activeTaskID = nil;
+    self.activeServiceID = nil;
     self.startRequestPending = YES;
     self.stateLabel.text = @"提交中";
     self.detailLabel.text = @"";
@@ -284,7 +328,12 @@ static BOOL BBSaveClaudeKey(NSString *key) {
                     @"model": self.modelControl.selectedSegmentIndex == 1 ? @"claude" : @"mock"}];
 }
 
-- (void)stopTapped { [self request:@{@"op": @"stop"}]; }
+- (void)stopTapped {
+    NSMutableDictionary *request = [@{@"op": @"stop"} mutableCopy];
+    if (self.activeTaskID.length) request[@"task_id"] = self.activeTaskID;
+    if (self.activeServiceID.length) request[@"service_id"] = self.activeServiceID;
+    [self request:request];
+}
 
 - (void)clearTapped { self.taskField.text = @""; [self.taskField resignFirstResponder]; }
 

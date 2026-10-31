@@ -1,16 +1,16 @@
 # 安装、配置与支持范围
 
-更新：2026-10-30。当前只在一台 iPhone 11、iOS 26.0.1、Relaxin 0.5.5 / RootHide 上完成真机验证。以下是开发者安装流程，不是面向普通用户的一键安装。其他型号、系统版本和越狱环境尚未验证。
+更新：2026-10-31。当前只在一台 iPhone 11、iOS 26.0.1、Relaxin 0.5.5 / RootHide 上完成真机验证。以下是开发者安装流程，不是面向普通用户的一键安装。其他型号、系统版本和越狱环境尚未验证。
 
 ## 现在能安装什么
 
 三个 RootHide `iphoneos-arm64e` 包按顺序安装：
 
 1. `dev.beanbao.bridge` 0.2.2：SpringBoard 中的受限观察与点击/输入桥接；固定启动白名单包含通讯录。
-2. `dev.beanbao.agent` 0.3.34：手机端任务服务和 Claude 适配器，依赖 Bridge 0.2.2 以上。
-3. `dev.beanbao.app` 0.3.7：文字、语音、状态与配置界面，依赖 Agent 0.3.34 以上。
+2. `dev.beanbao.agent` 0.3.36：手机端任务服务和 Claude 适配器，依赖 Bridge 0.2.2 以上。
+3. `dev.beanbao.app` 0.3.9：文字、语音、状态与配置界面，依赖 Agent 0.3.36 以上。
 
-本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备上已验收的仍是 Agent 0.3.34 / App 0.3.7；本机另有 Agent 0.3.35 / App 0.3.8 候选包，加入 Palmino harness 文字打开 App 路径与新图标，尚未装机验收。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
+本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备上已验收的仍是 Agent 0.3.34 / App 0.3.7；本机另有 Agent 0.3.36 / App 0.3.9 候选包，加入 Palmino harness 文字打开 App 路径、新图标和带身份校验的任务状态协议，尚未装机验收。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
 
 从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
 
@@ -18,8 +18,8 @@
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.2_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.34_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.7_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.36_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.9_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
 

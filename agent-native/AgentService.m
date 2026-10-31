@@ -23,6 +23,8 @@ static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.s
 @property(nonatomic, copy) NSString *phase;
 @property(nonatomic, copy) NSString *message;
 @property(nonatomic, copy) NSString *app;
+@property(nonatomic, copy) NSString *serviceID;
+@property(nonatomic, copy) NSString *taskID;
 @property(nonatomic) BOOL stopping;
 @end
 @implementation BBServiceState
@@ -72,7 +74,9 @@ static NSDictionary *BBStatus(void) {
     @synchronized (BBState) {
         return @{@"ok": @YES, @"phase": BBState.phase ?: @"idle",
                  @"message": BBState.message ?: @"",
-                 @"app": BBState.app ?: @"", @"running": @(BBState.child > 0)};
+                 @"app": BBState.app ?: @"", @"running": @(BBState.child > 0),
+                 @"service_id": BBState.serviceID ?: @"",
+                 @"task_id": BBState.taskID ?: @""};
     }
 }
 
@@ -182,6 +186,7 @@ static NSDictionary *BBStart(NSDictionary *request) {
         int readFD = outputPipe[0];
         BBState.generation++;
         NSUInteger generation = BBState.generation;
+        BBState.taskID = NSUUID.UUID.UUIDString;
         BBState.child = child;
         BBState.stopping = NO;
         BBState.phase = @"running";
@@ -195,8 +200,16 @@ static NSDictionary *BBStart(NSDictionary *request) {
     }
 }
 
-static NSDictionary *BBStop(void) {
+static NSDictionary *BBStop(NSDictionary *request) {
     @synchronized (BBState) {
+        NSString *requestedTask = request[@"task_id"];
+        NSString *requestedService = request[@"service_id"];
+        if (requestedService && (![requestedService isKindOfClass:NSString.class] ||
+                                 ![requestedService isEqualToString:BBState.serviceID ?: @""]))
+            return @{@"ok": @NO, @"error": @"服务已变化，未停止其他任务"};
+        if (requestedTask && (![requestedTask isKindOfClass:NSString.class] ||
+                              ![requestedTask isEqualToString:BBState.taskID ?: @""]))
+            return @{@"ok": @NO, @"error": @"任务已变化，未停止其他任务"};
         if (BBState.child <= 0) return BBStatus();
         BBState.stopping = YES;
         BBState.phase = @"stopping";
@@ -210,7 +223,7 @@ static NSDictionary *BBHandle(NSDictionary *request) {
     NSString *op = request[@"op"];
     if ([op isEqualToString:@"status"]) return BBStatus();
     if ([op isEqualToString:@"start"]) return BBStart(request);
-    if ([op isEqualToString:@"stop"]) return BBStop();
+    if ([op isEqualToString:@"stop"]) return BBStop(request);
     return @{@"ok": @NO, @"error": @"未知操作"};
 }
 
@@ -245,6 +258,7 @@ int BBServe(void) {
     @autoreleasepool {
         if (getuid() != 501) { fputs("beanbaod --serve must run as mobile\n", stderr); return 1; }
         BBState = [BBServiceState new];
+        BBState.serviceID = NSUUID.UUID.UUIDString;
         BBState.phase = @"idle";
         BBState.message = @"等待任务";
         signal(SIGPIPE, SIG_IGN);

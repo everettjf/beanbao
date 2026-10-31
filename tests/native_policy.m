@@ -25,6 +25,18 @@ static BOOL Check(BOOL condition, const char *message) {
 
 int main(void) {
     @autoreleasepool {
+        BBState = [BBServiceState new];
+        BBState.serviceID = @"service-A";
+        BBState.taskID = @"task-A";
+        BBState.phase = @"done";
+        NSDictionary *identifiedStatus = BBStatus();
+        if (!Check([identifiedStatus[@"service_id"] isEqualToString:@"service-A"] &&
+                   [identifiedStatus[@"task_id"] isEqualToString:@"task-A"],
+                   "status carries service and task identity") ||
+            !Check(![BBStop(@{@"task_id": @"task-B"})[@"ok"] boolValue],
+                   "stop refuses a different task identity") ||
+            !Check(![BBStop(@{@"service_id": @"service-B"})[@"ok"] boolValue],
+                   "stop refuses a different service identity")) return 1;
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||
             !Check(BBAuditRecord(@"task", @"地图", @"start", @"accepted").count == 5,
