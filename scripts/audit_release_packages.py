@@ -32,6 +32,13 @@ ICON_SIZES = {
 }
 APP_BASE = "Applications/BeanBao.app/"
 APP_FILES = {APP_BASE + name for name in ("BeanBao", "Info.plist", *ICON_SIZES)}
+MACHO_FILES = {
+    "Library/MobileSubstrate/DynamicLibraries/BeanBaoBridge.dylib": 6,
+    "usr/bin/beanbaoctl": 2,
+    "usr/bin/beanbaod": 2,
+    "usr/bin/beanbaoagentctl": 2,
+    APP_BASE + "BeanBao": 2,
+}
 
 
 def fail(message: str) -> None:
@@ -117,13 +124,46 @@ def check_icon(name: str, data: bytes, expected: int) -> None:
         fail(f"{name}: expected {expected}x{expected}, got {width}x{height}")
 
 
+def check_macho(name: str, data: bytes, expected_type: int) -> None:
+    if len(data) < 32 or data[:4] != b"\xcf\xfa\xed\xfe":
+        fail(f"{name}: expected a 64-bit little-endian Mach-O file")
+    cpu, subtype, file_type, commands, command_bytes, _, _ = struct.unpack_from("<7I", data, 4)
+    if cpu != 0x0100000C or subtype & 0x00FFFFFF != 2 or file_type != expected_type:
+        fail(f"{name}: wrong Mach-O architecture or file type")
+    command_end = 32 + command_bytes
+    if commands == 0 or commands > 256 or command_end > len(data):
+        fail(f"{name}: invalid Mach-O load commands")
+    offset = 32
+    signature = False
+    for _ in range(commands):
+        if offset + 8 > command_end:
+            fail(f"{name}: truncated Mach-O load command")
+        command, size = struct.unpack_from("<II", data, offset)
+        if size < 8 or offset + size > command_end:
+            fail(f"{name}: invalid Mach-O load command size")
+        if command == 0x1D:
+            if size < 16 or signature:
+                fail(f"{name}: invalid code signature command")
+            signature_offset, signature_size = struct.unpack_from("<II", data, offset + 8)
+            if signature_size < 12 or signature_offset < command_end or \
+                    signature_offset + signature_size > len(data):
+                fail(f"{name}: invalid embedded code signature range")
+            magic, blob_size = struct.unpack_from(">II", data, signature_offset)
+            if magic != 0xFADE0CC0 or blob_size < 12 or blob_size > signature_size:
+                fail(f"{name}: invalid embedded code signature structure")
+            signature = True
+        offset += size
+    if offset != command_end or not signature:
+        fail(f"{name}: missing or malformed code signature load command")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("bridge", type=Path)
     parser.add_argument("agent", type=Path)
     parser.add_argument("app", type=Path)
     args = parser.parse_args()
-    bridge, _ = audit_package(args.bridge, ROOT / "bridge/control", "dev.beanbao.bridge", None)
+    bridge, bridge_files = audit_package(args.bridge, ROOT / "bridge/control", "dev.beanbao.bridge", None)
     agent, agent_files = audit_package(args.agent, ROOT / "agent-native/control",
                                        "dev.beanbao.agent", AGENT_FILES)
     app, app_files = audit_package(args.app, ROOT / "app/control",
@@ -133,6 +173,11 @@ def main() -> None:
             fail(f"{path}: Agent executable bit is missing")
     if not app_files[APP_BASE + "BeanBao"][0].mode & 0o111:
         fail("BeanBao app executable bit is missing")
+    binaries = {**bridge_files, **agent_files, **app_files}
+    for path, file_type in MACHO_FILES.items():
+        if path not in binaries:
+            fail(f"Missing Mach-O file {path}")
+        check_macho(path, binaries[path][1], file_type)
     if agent.get("Depends") != f"dev.beanbao.bridge (>= {bridge['Version']})":
         fail("Agent does not require this Bridge version")
     if version(agent) < minimum_dependency(app, "dev.beanbao.agent"):
@@ -152,7 +197,7 @@ def main() -> None:
         fail("App Info.plist does not match its package or icon files")
     for name, size in ICON_SIZES.items():
         check_icon(name, app_files[APP_BASE + name][1], size)
-    print("PASS: Agent/App file manifests, dependency chain, mobile service, icon assets, and no maintainer scripts")
+    print("PASS: release manifests, dependencies, mobile service, icons, arm64e Mach-O/signature structures, and no maintainer scripts")
 
 
 if __name__ == "__main__":

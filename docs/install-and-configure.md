@@ -12,7 +12,7 @@
 
 本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备上已验收的仍是 Bridge 0.2.2 / Agent 0.3.34 / App 0.3.7；本机另有 Bridge 0.2.3 / Agent 0.3.45 / App 0.3.10 候选包，加入 Palmino harness 的固定打开 App、逐步新建备忘录和地图搜索路径、新图标及带身份校验的任务状态协议，尚未装机验收。模拟模式下打开指定 App、新建备忘录和受限地图搜索都无需模型 Key，地图步骤不采集截图；地图搜索自身可能需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装 Bridge 后需要让 SpringBoard 重新加载，才能注入桥接；不要把安装成功等同于注入已生效。
 
-从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容及 Agent/App 文件清单、依赖链、启动身份、图标和安装脚本，并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
+从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容及 Agent/App 文件清单、依赖链、启动身份、图标、包内 arm64e Mach-O 架构和嵌入式签名结构、安装脚本，并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
 
 构建后运行 `python3 scripts/prepare_release_bundle.py`，可在 `dist/` 生成只含三包、`SHA256SUMS` 和 `INSTALL.md` 的离线传输归档。脚本会再次审计每个包，并打印归档的 SHA-256；不连接设备，也不加入模型 Key 或 SSH 凭据。归档是开发者候选包，尚未完成这台手机上的新版验收。
 
