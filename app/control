@@ -1,6 +1,6 @@
 Package: dev.beanbao.app
 Name: BeanBao
-Version: 0.3.5
+Version: 0.3.6
 Architecture: iphoneos-arm
 Depends: dev.beanbao.agent (>= 0.3.11)
 Description: On-device text entry and task controls for BeanBao.

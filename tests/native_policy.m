@@ -44,6 +44,12 @@ int main(void) {
                    "note state error is specific and fixed") ||
             !Check([BBAllowedTarget(@"新建备忘录：测试内容") isEqualToString:@"备忘录"],
                    "note task accepted") ||
+            !Check(BBTaskModelAllowed(@"新建备忘录：测试内容", @"mock"),
+                   "local note task accepts mock mode") ||
+            !Check(BBTaskModelAllowed(@"新建备忘录：测试内容", @"claude"),
+                   "local note task also accepts Claude selection") ||
+            !Check(!BBTaskModelAllowed(@"在地图搜索金门大桥", @"mock"),
+                   "map search still requires Claude mode") ||
             !Check(BBAllowedTarget(@"新建备忘录：短") == nil, "short note task refused") ||
             !Check(BBAllowedTarget(@"打开设置并删除账户") == nil, "unsafe extra instruction refused")) return 1;
         NSDictionary *mapUI = @{@"elements": @[@{@"text": @"搜索地图", @"visible_rect":
@@ -265,6 +271,7 @@ int main(void) {
             @{@"text": @"新建备忘录", @"visible_rect": @{@"x": @300, @"y": @50, @"width": @60, @"height": @40}},
             @{@"text": @"删除备忘录", @"visible_rect": @{@"x": @250, @"y": @300, @"width": @100, @"height": @40}}]};
         NSDictionary *noteEditorUI = @{@"elements": @[
+            @{@"text": @"Notes", @"visible_rect": @{@"x": @20, @"y": @48, @"width": @44, @"height": @44}},
             @{@"text": @"完成", @"visible_rect": @{@"x": @350, @"y": @50, @"width": @50, @"height": @40}},
             @{@"text": @"October 30, 2026 at 15:28", @"aliases": @[@"Timestamp", @"Created", @"Edited"],
               @"visible_rect": @{@"x": @0, @"y": @84, @"width": @414, @"height": @18}},
@@ -276,6 +283,11 @@ int main(void) {
             @{@"text": @"Note", @"visible_rect": @{@"x": @0, @"y": @0, @"width": @414, @"height": @794}},
             @{@"text": @"New note", @"visible_rect": @{@"x": @343, @"y": @825, @"width": @38, @"height": @38}}]};
         NSDictionary *noteList = Observation(@"com.apple.mobilenotes", NO, noteListUI, @{});
+        NSDictionary *persistedNoteList = Observation(@"com.apple.mobilenotes", NO,
+            @{@"elements": @[
+                @{@"text": @"新建备忘录", @"visible_rect": @{@"x": @300, @"y": @50, @"width": @60, @"height": @40}},
+                @{@"text": @"测试内容, modified 18:30, No additional text", @"visible_rect":
+                  @{@"x": @20, @"y": @200, @"width": @374, @"height": @60}}]}, @{});
         NSDictionary *changingNoteList = Observation(@"com.apple.mobilenotes", NO,
             @{@"elements": @[
                 @{@"text": @"新建备忘录", @"visible_rect": @{@"x": @300, @"y": @50, @"width": @60, @"height": @40}},
@@ -295,29 +307,40 @@ int main(void) {
         NSDictionary *focusNote = @{@"action": @"tap", @"x": @82.8, @"y": @179.2};
         NSDictionary *noteText = @{@"action": @"input_text", @"text": @"测试内容"};
         NSDictionary *doneTap = @{@"action": @"tap", @"x": @370, @"y": @70};
+        NSDictionary *backTap = @{@"action": @"tap", @"x": @42, @"y": @70};
         NSArray *noteOne = @[newNote], *noteTwo = @[newNote, noteText];
         NSArray *noteThree = @[newNote, noteText, doneTap];
+        NSArray *noteFour = @[newNote, noteText, doneTap, backTap];
         NSArray *noteFocused = @[newNote, focusNote];
         NSArray *noteFocusedTyped = @[newNote, focusNote, noteText];
         NSArray *noteFocusedDone = @[newNote, focusNote, noteText, doneTap];
+        NSArray *noteFocusedListed = @[newNote, focusNote, noteText, doneTap, backTap];
         NSDictionary *fixedNewNote = BBFixedNoteAction(noteTask, noteList, @[]);
         if (!Check([fixedNewNote[@"action"] isEqualToString:@"tap"] &&
                    [fixedNewNote[@"x"] doubleValue] == 330 && [fixedNewNote[@"y"] doubleValue] == 70,
                    "fixed note planner taps exact new note control") ||
+            !Check(BBFixedNoteAction(noteTask, persistedNoteList, @[])[@"error"] != nil,
+                   "duplicate title is refused before creation") ||
             !Check([BBFixedNoteAction(noteTask, blankNote, noteOne)[@"action"] isEqualToString:@"input_text"],
                    "fixed note planner enters exact content") ||
             !Check([BBFixedNoteAction(noteTask, note, noteTwo)[@"action"] isEqualToString:@"tap"],
                    "fixed note planner taps Done after content") ||
-            !Check([BBFixedNoteAction(noteTask, note, noteThree)[@"action"] isEqualToString:@"done"],
-                   "fixed note planner completes after verification") ||
+            !Check([BBFixedNoteAction(noteTask, note, noteThree)[@"action"] isEqualToString:@"tap"],
+                   "fixed note planner returns to list after Done") ||
+            !Check([BBFixedNoteAction(noteTask, persistedNoteList, noteFour)[@"action"] isEqualToString:@"done"],
+                   "fixed note planner completes only after list persistence") ||
+            !Check(BBFixedNoteAction(noteTask, noteList, noteFour)[@"error"] != nil,
+                   "missing new note in list cannot complete") ||
             !Check([BBFixedNoteAction(noteTask, unfocusedNote, noteOne)[@"action"] isEqualToString:@"tap"],
                    "fixed note planner focuses a verified blank canvas") ||
             !Check([BBFixedNoteAction(noteTask, blankNote, noteFocused)[@"action"] isEqualToString:@"input_text"],
                    "fixed note planner types after focus") ||
             !Check([BBFixedNoteAction(noteTask, note, noteFocusedTyped)[@"action"] isEqualToString:@"tap"],
                    "fixed note planner taps Done after focused typing") ||
-            !Check([BBFixedNoteAction(noteTask, note, noteFocusedDone)[@"action"] isEqualToString:@"done"],
-                   "fixed note planner verifies focused sequence") ||
+            !Check([BBFixedNoteAction(noteTask, note, noteFocusedDone)[@"action"] isEqualToString:@"tap"],
+                   "focused sequence also returns to list") ||
+            !Check([BBFixedNoteAction(noteTask, persistedNoteList, noteFocusedListed)[@"action"] isEqualToString:@"done"],
+                   "focused sequence verifies list persistence") ||
             !Check(BBFixedNoteAction(noteTask, nonblankNote, noteOne)[@"error"] != nil,
                    "fixed note planner refuses existing body text") ||
             !Check(BBFixedNoteAction(noteTask, blankNote, @[])[@"error"] != nil,
@@ -336,8 +359,11 @@ int main(void) {
                    "input after blank focus allowed") ||
             !Check(BBValidAction(doneTap, note, noteTask, noteFocusedTyped, YES, NO, YES),
                    "Done after focused input allowed") ||
-            !Check(BBValidAction(@{@"action": @"done"}, note, noteTask, noteFocusedDone, YES, NO, YES),
-                   "focused note completion allowed") ||
+            !Check(BBValidAction(backTap, note, noteTask, noteFocusedDone, YES, NO, YES),
+                   "focused note back-to-list allowed") ||
+            !Check(BBValidAction(@{@"action": @"done"}, persistedNoteList, noteTask,
+                                 noteFocusedListed, YES, NO, YES),
+                   "focused note completion requires list row") ||
             !Check(!BBValidAction(@{@"action": @"input_text", @"text": @"别的内容"},
                                   blankNote, noteTask, noteOne, YES, NO, YES), "different note text blocked") ||
             !Check(!BBValidAction(noteText, note, noteTask, noteOne, YES, NO, YES),
@@ -345,8 +371,14 @@ int main(void) {
             !Check(BBValidAction(doneTap, note, noteTask, noteTwo, YES, NO, YES), "note Done allowed") ||
             !Check(!BBValidAction(doneTap, blankNote, noteTask, noteTwo, YES, NO, YES),
                    "empty note cannot be marked Done") ||
-            !Check(BBValidAction(@{@"action": @"done"}, note, noteTask, noteThree, YES, NO, YES),
-                   "note completion with visible content allowed") ||
+            !Check(BBValidAction(backTap, note, noteTask, noteThree, YES, NO, YES),
+                   "note back-to-list allowed after Done") ||
+            !Check(BBValidAction(@{@"action": @"done"}, persistedNoteList, noteTask,
+                                 noteFour, YES, NO, YES),
+                   "note completion with persisted list row allowed") ||
+            !Check(!BBValidAction(@{@"action": @"done"}, noteList, noteTask,
+                                  noteFour, YES, NO, YES),
+                   "note completion without persisted row blocked") ||
             !Check(!BBValidAction(@{@"action": @"done"}, note, noteTask, noteTwo, YES, NO, YES),
                    "premature note completion blocked") ||
             !Check(!BBValidAction(newNote, Observation(@"com.apple.mobilenotes", YES, noteListUI, nil),
