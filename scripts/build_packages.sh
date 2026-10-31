@@ -32,5 +32,6 @@ for package in "$bridge_deb" "$agent_deb" "$app_deb"; do
 done
 
 python3 "$repo_root/scripts/audit_bridge_package.py" "$bridge_deb"
+python3 "$repo_root/scripts/audit_release_packages.py" "$bridge_deb" "$agent_deb" "$app_deb"
 echo "Built packages (SHA-256):"
 shasum -a 256 "$bridge_deb" "$agent_deb" "$app_deb"
