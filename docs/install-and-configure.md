@@ -37,7 +37,7 @@ dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 4. 音量减键三连按开关默认关闭。实现会先调用系统原有音量处理，再尝试打开 BeanBao 录音。持机者已确认三连按能打开 App，但自动开始录音曾间歇失败；App 0.3.7 改为等前台可见后再消费唤醒标记；App 0.3.11 起在确实收到标记时显示“已收到按键唤醒，正在准备录音”，以便区分信号丢失与录音启动失败，仍待实体按键复测。其他用户暂不应把它当作可靠入口。
 5. 运行中可在 BeanBao 查看状态或点“停止任务”。地图搜索只允许查看结果，不启动导航；备忘录任务只用于新建，不编辑旧内容。从其他 App 发起地图任务时，Agent 可先在本地打开地图，原界面不发给模型；目标界面若仍含疑似凭据，或遇到锁屏、不确定状态，任务会停止。任务运行时 Bridge 会尝试阻止系统自动锁屏，结束或停止后恢复先前设置；用户仍可手动锁屏。目前已验证锁屏拒绝和释放，尚待解锁后跨越系统自动锁屏时长的真机实测。
 
-Agent 的本地审计文件位于手机的 `/var/mobile/Library/Application Support/BeanBao/audit.jsonl`，仅 mobile 可读写。它记录时间、事件类别、目标 App、动作类型和结果，不记录指令正文、地点、备忘录内容、坐标、截图、模型回复或 Key；文件超过 512 KiB 时从头重新记录。App 状态只显示固定的完成或错误类别。
+Agent 的本地审计文件在进程视图中位于 `/var/mobile/Library/Application Support/BeanBao/audit.jsonl`；从这台 RootHide 设备的 SSH shell 查看时，实际路径为 `/rootfs/private/var/mobile/Library/Application Support/BeanBao/audit.jsonl`。文件仅 mobile 可读写。它记录时间、事件类别、目标 App、动作类型和结果，不记录指令正文、地点、备忘录内容、坐标、截图、模型回复或 Key；文件超过 512 KiB 时从头重新记录。App 状态只显示固定的完成或错误类别。
 
 ## 当前能力边界
 

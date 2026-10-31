@@ -10,7 +10,7 @@
 4. 以 mobile 查询 `beanbaoagentctl status`，以 root 查询 `dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app` 和 `launchctl print user/501/dev.beanbao.agent`。当前安装版本为 Bridge 0.2.4、Agent 0.3.49、App 0.3.12。
 5. 确认手机已解锁、亮屏，然后从 BeanBao App 执行“打开设置”；复核服务状态为 `done`，前台为 `com.apple.Preferences`。Claude 地图任务应从没有疑似密钥内容的界面开始；备忘录新建任务可用模拟模式，无需 Key。
 
-RootHide 的 SSH shell 与 App/launchd 对 `/var/mobile` 的路径视图不同。`beanbaoagentctl` 已依次尝试两种 Agent socket 路径；不要因 SSH shell 中第一个路径不可见就重复安装包。若服务未运行，先查 `launchctl print user/501/dev.beanbao.agent`，再决定是否 `launchctl kickstart -k user/501/dev.beanbao.agent`。
+RootHide 的 SSH shell 与 App/launchd 对 `/var/mobile` 的路径视图不同。`beanbaoagentctl` 已依次尝试两种 Agent socket 路径；不要因 SSH shell 中第一个路径不可见就重复安装包。审计文件在这台设备的 SSH shell 中位于 `/rootfs/private/var/mobile/Library/Application Support/BeanBao/audit.jsonl`。若服务未运行，先查 `launchctl print user/501/dev.beanbao.agent`，再决定是否 `launchctl kickstart -k user/501/dev.beanbao.agent`。
 
 ## USB 复测命令
 
