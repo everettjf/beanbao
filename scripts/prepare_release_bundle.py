@@ -59,7 +59,8 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             "首次安装或更新 Bridge 后，重新加载 SpringBoard 才能启用注入；"
             "重载可能使手机锁定，需自行解锁。只更新 Agent 或 App 时不需重载 SpringBoard。"
             "确认 Agent 已由 launchd 以 mobile 身份运行，再解锁打开 BeanBao，"
-            "选择“模拟模型”测试“打开地图”。步骤和限制见仓库 docs/install-and-configure.md。"
+            "先配置自己的 Claude Key，再测试“打开地图”和地图搜索。"
+            "固定打开 App 与新建备忘录在本机执行；步骤见仓库 docs/install-and-configure.md。"
             "此归档不含模型 Key、SSH 凭据或设备数据。\n").encode("utf-8")
 
 

@@ -9,10 +9,9 @@
 
 // The policy fixture includes the Objective-C entry point without linking the
 // Swift harness; harness behavior has its own Swift package tests.
-int32_t BBRunHarnessMock(const char *task) { (void)task; return 1; }
+int32_t BBRunHarnessText(const char *task) { (void)task; return 1; }
 int32_t BBRunHarnessNote(const char *task) { (void)task; return 1; }
 int32_t BBRunHarnessMap(const char *task) { (void)task; return 1; }
-int32_t BBRunHarnessMapMock(const char *task) { (void)task; return 1; }
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
     return @{@"device_state": @{@"locked_known": @YES, @"locked": @(locked),
@@ -77,14 +76,10 @@ int main(void) {
         free(invalidNoteJSON);
         if (!Check([invalidNote[@"error"] isEqualToString:@"invalid_task"],
                    "note step rejects an unsupported task before Bridge access")) return 1;
-        char *invalidMapJSON = BBMapMockStepJSON("打开地图", "[]");
-        NSDictionary *invalidMap = invalidMapJSON ?
-            [NSJSONSerialization JSONObjectWithData:
-                [[NSString stringWithUTF8String:invalidMapJSON] dataUsingEncoding:NSUTF8StringEncoding]
-                                              options:0 error:nil] : nil;
-        free(invalidMapJSON);
+        NSDictionary *invalidMap = BBMapStep(@"打开地图", @[], nil, nil, YES);
         if (!Check([invalidMap[@"error"] isEqualToString:@"invalid_task"],
-                   "mock map C entry rejects an unsupported task before Bridge access")) return 1;
+                   "map step rejects an unsupported task before Bridge access")) return 1;
+        NSDictionary *rejectedModel = BBStart(@{@"task": @"打开设置", @"model": @"mock"});
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||
             !Check([BBNormalizeTask(@"请帮我打开一下地图。") isEqualToString:@"打开地图"],
@@ -130,24 +125,14 @@ int main(void) {
                    "coordinate action still requires matching source UI") ||
             !Check([BBAllowedTarget(@"新建备忘录：测试内容") isEqualToString:@"备忘录"],
                    "note task accepted") ||
-            !Check(BBTaskModelAllowed(@"新建备忘录：测试内容", @"mock"),
-                   "local note task accepts mock mode") ||
-            !Check(BBTaskModelAllowed(@"新建备忘录：测试内容", @"claude"),
-                   "local note task also accepts Claude selection") ||
+            !Check(![rejectedModel[@"ok"] boolValue],
+                   "service rejects removed mock mode") ||
             !Check([BBAllowedTarget(@"打开通讯录") isEqualToString:@"通讯录"],
                    "Contacts opens only through the exact task") ||
             !Check([BBRequestedApp(@"打开通讯录") isEqualToString:@"com.apple.MobileAddressBook"],
                    "Contacts targets the installed bundle") ||
-            !Check(BBTaskModelAllowed(@"打开通讯录", @"mock") &&
-                   !BBTaskModelAllowed(@"打开通讯录", @"claude"),
-                   "Contacts stays local and never sends its UI to Claude") ||
-            !Check([BBMockAction(@"打开通讯录",
-                    Observation(@"dev.beanbao.app", NO, @{}, @{}), 0)[@"bundle_id"]
-                    isEqualToString:@"com.apple.MobileAddressBook"],
-                   "mock action launches Contacts") ||
-            !Check(BBTaskModelAllowed(@"在地图搜索金门大桥", @"mock") &&
-                   BBTaskModelAllowed(@"在地图搜索金门大桥", @"claude"),
-                   "map search accepts local and Claude planning") ||
+            !Check([BBAllowedTarget(@"打开通讯录") isEqualToString:@"通讯录"],
+                   "Contacts remains an allowed fixed-open task") ||
             !Check(BBAllowedTarget(@"新建备忘录：短") == nil, "short note task refused") ||
             !Check(BBAllowedTarget(@"打开设置并删除账户") == nil, "unsafe extra instruction refused")) return 1;
         NSDictionary *mapUI = @{@"elements": @[@{@"text": @"搜索地图", @"visible_rect":

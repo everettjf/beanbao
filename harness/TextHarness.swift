@@ -194,8 +194,8 @@ private final class TextResultBox: @unchecked Sendable {
     func get() -> BeanBaoTextResult { lock.lock(); defer { lock.unlock() }; return result }
 }
 
-@_cdecl("BBRunHarnessMock")
-public func BBRunHarnessMock(_ taskPointer: UnsafePointer<CChar>?) -> Int32 {
+@_cdecl("BBRunHarnessText")
+public func BBRunHarnessText(_ taskPointer: UnsafePointer<CChar>?) -> Int32 {
     guard let taskPointer else { return 2 }
     let task = String(cString: taskPointer)
     let bridge: BeanBaoBridgeRequest = { request in

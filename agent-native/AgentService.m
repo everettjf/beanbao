@@ -84,11 +84,6 @@ static NSString *BBAllowedTarget(NSString *task) {
     return nil;
 }
 
-static BOOL BBTaskModelAllowed(NSString *task, NSString *model) {
-    if ([task isEqualToString:@"打开通讯录"]) return [model isEqualToString:@"mock"];
-    return YES;
-}
-
 static BOOL BBUsesTextHarness(NSString *task) {
     return [@[@"打开设置", @"打开备忘录", @"打开地图", @"打开通讯录"] containsObject:task];
 }
@@ -166,18 +161,15 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
 
 static NSDictionary *BBStart(NSDictionary *request) {
     NSString *task = request[@"task"];
-    NSString *model = request[@"model"] ?: @"mock";
+    NSString *model = request[@"model"] ?: @"claude";
     if (![task isKindOfClass:NSString.class] || ![model isKindOfClass:NSString.class] || task.length > 220)
         return @{@"ok": @NO, @"error": @"无效的文字任务"};
     task = BBNormalizeTask(task);
     NSString *app = BBAllowedTarget(task);
-    if (!app || ![@[@"mock", @"claude"] containsObject:model])
+    if (!app || ![model isEqualToString:@"claude"])
         return @{@"ok": @NO, @"error": @"首版只接受打开指定 App、地图搜索或新建备忘录"};
     BOOL noteTask = BBIsNoteTask(task);
-    BOOL mapTask = [task hasPrefix:@"在地图搜索"];
     NSString *completionMessage = BBCompletionMessage(task);
-    if (!BBTaskModelAllowed(task, model))
-        return @{@"ok": @NO, @"error": @"打开通讯录请使用模拟模型"};
     @synchronized (BBState) {
         if (BBState.child > 0) return @{@"ok": @NO, @"error": @"已有任务正在执行"};
         int outputPipe[2];
@@ -196,14 +188,12 @@ static NSDictionary *BBStart(NSDictionary *request) {
             return @{@"ok": @NO, @"error": @"无法定位任务程序"};
         }
         const char *argvMap[] = {executable, "--harness-map", task.UTF8String, NULL};
-        const char *argvMapMock[] = {executable, "--harness-map-mock", task.UTF8String, NULL};
         const char *argvNote[] = {executable, "--harness-note", task.UTF8String, NULL};
-        const char *argvMock[] = {executable, "--harness-mock", task.UTF8String, NULL};
+        const char *argvText[] = {executable, "--harness-text", task.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
                                      (char *const *)(noteTask ? argvNote :
-                                         (BBUsesTextHarness(task) ? argvMock :
-                                          (mapTask && [model isEqualToString:@"mock"] ? argvMapMock : argvMap))), environ);
+                                         (BBUsesTextHarness(task) ? argvText : argvMap)), environ);
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,

@@ -71,7 +71,6 @@ def main() -> int:
         else:
             raise RuntimeError("BeanBao did not become foreground")
 
-        tap_label("模拟模型")
         tap_label("清空输入")
         tap_label("例如：打开地图")
         source = observe()
@@ -85,8 +84,10 @@ def main() -> int:
                   if e.get("text") == "开始" and isinstance(e.get("tap"), dict)]
         if len(starts) < 2:
             raise RuntimeError("Keyboard accessory Start button is missing")
+        # The page button can sit slightly above the keyboard toolbar after
+        # layout changes; the toolbar's Start is the rightmost visible one.
         if bridge.act(source["observation_id"],
-                      {"action": "tap", **min(starts, key=lambda p: p["y"])}).get("ok") is not True:
+                      {"action": "tap", **max(starts, key=lambda p: p["x"])}).get("ok") is not True:
             raise RuntimeError("Keyboard accessory Start tap failed")
 
         deadline = time.monotonic() + (8 if forbidden else 50)

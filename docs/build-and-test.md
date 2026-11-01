@@ -4,7 +4,11 @@
 
 ## 最新状态（2026-10-31）
 
-当前已安装 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12。重新建立该设备的 USB SSH 转发后，`scripts/verify_device.py --expect-bundle` 核对三包、服务身份、Bridge socket；观察显示手机解锁亮屏、Agent 空闲。`scripts/accept_text_device.py` 在当前组合上通过五条打开 App 指令：设置、通讯录、备忘录、地图及礼貌说法的地图；每条均有独立任务 ID、`done` 和两次实际前台核对。带“发消息”的组合指令被拒绝，任务 ID 未变化。App 0.3.12 的键盘上方“开始”按钮已在真机点击，生成新任务并打开地图，独立前台核对通过。
+Agent 0.3.50 / App 0.3.13 已安装；不再显示模拟模型选择器，App 文字任务统一提交 `claude`。固定打开 App 与新建备忘录仍由本地有界流程执行；地图搜索在本地固定动作无匹配时调用 Claude。构建前原生策略测试、8 项 Python 测试、18 项 Swift Harness 测试通过，三包内容和签名审计通过。装机后 `scripts/verify_device.py --expect-bundle` 核对三包、Agent 服务和 Bridge，设备解锁亮屏。`scripts/accept_text_device.py` 五条打开 App 指令全部返回 `done`、前台正确；禁止组合被拒。`scripts/accept_app_text_device.py` 从新版可见界面完成打开通讯录、新建唯一测试备忘录、Claude 地图搜索金门大桥、禁止组合拒绝；备忘录标题、地图标记与地点卡片由独立观察核对。首次运行 App 脚本时旧 App 进程仍在，且旧脚本因按钮布局变化点错“开始”；关闭旧进程并将脚本改为选择键盘工具栏右侧按钮后全项通过。此版尚未物理拔线或重启复测。
+
+持机者物理拔下 USB 后，在 BeanBao 以当时的模拟入口执行“打开设置”，并报告设置确实打开。接回 USB 后，Agent `service_id` 未变，`task_id` 从测试前的 `C5E0E504…` 变为 `6B20A8AF…`，状态为 `done`；审计新增该任务的 `start` 与 `done`，独立 Bridge 观察确认前台 `com.apple.Preferences`、设备解锁亮屏。这是已安装的 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12 的一次物理拔线独立任务样本；Agent 0.3.50 / App 0.3.13 移除模拟入口，待新包安装后回归。
+
+上一安装版 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12 的验收记录如下。重新建立该设备的 USB SSH 转发后，`scripts/verify_device.py --expect-bundle` 核对三包、服务身份、Bridge socket；观察显示手机解锁亮屏、Agent 空闲。`scripts/accept_text_device.py` 在当前组合上通过五条打开 App 指令：设置、通讯录、备忘录、地图及礼貌说法的地图；每条均有独立任务 ID、`done` 和两次实际前台核对。带“发消息”的组合指令被拒绝，任务 ID 未变化。App 0.3.12 的键盘上方“开始”按钮已在真机点击，生成新任务并打开地图，独立前台核对通过。
 
 `scripts/accept_app_text_device.py` 从 BeanBao 可见文字框和键盘上方的“开始”提交当前组合的四组 App 用例：打开通讯录；新建唯一测试备忘录 `BeanBao 验收 c83bb8d4`，列表可见完整标题；在地图搜索金门大桥，独立 AX 见 Golden Gate Bridge 标记与地点卡片；提交“请帮我打开地图并发消息”，App 显示“未开始”且服务任务 ID 不变。脚本不采集通讯录 UI，也不输出个人备忘录内容。该脚本每次运行生成新的测试标题，避免重复创建同名笔记。
 

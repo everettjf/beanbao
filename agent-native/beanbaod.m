@@ -106,10 +106,9 @@ char *BBBridgeRequestJSON(const char *requestJSON) {
 }
 
 void BBBridgeFreeJSON(char *response) { free(response); }
-extern int32_t BBRunHarnessMock(const char *task);
+extern int32_t BBRunHarnessText(const char *task);
 extern int32_t BBRunHarnessNote(const char *task);
 extern int32_t BBRunHarnessMap(const char *task);
-extern int32_t BBRunHarnessMapMock(const char *task);
 
 void BBReleaseWakeLease(void) {
     BBBridge(@{@"op": @"wake_lease", @"mode": @"release"});
@@ -195,18 +194,6 @@ static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, N
         if ([part[@"type"] isEqualToString:@"text"] && [part[@"text"] isKindOfClass:NSString.class]) [text appendString:part[@"text"]];
     NSDictionary *action = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     return [action isKindOfClass:NSDictionary.class] ? action : BBError(@"Claude returned invalid action JSON");
-}
-
-static NSDictionary *BBMockAction(NSString *task, NSDictionary *observation, NSUInteger steps) {
-    NSDictionary *targets = @{@"设置": @"com.apple.Preferences", @"备忘录": @"com.apple.mobilenotes",
-                              @"地图": @"com.apple.Maps", @"通讯录": @"com.apple.MobileAddressBook"};
-    NSMutableArray *matches = [NSMutableArray array];
-    for (NSString *name in targets) if ([task containsString:name]) [matches addObject:targets[name]];
-    if (matches.count != 1 || ![task hasPrefix:@"打开"]) return BBError(@"Mock model only supports explicit open-app tasks");
-    NSString *target = matches[0];
-    if ([observation[@"frontmost_app"][@"bundleId"] isEqualToString:target]) return @{@"action": @"done", @"summary": @"目标 App 已在前台"};
-    if (steps) return BBError(@"App launch did not reach target");
-    return @{@"action": @"launch_app", @"bundle_id": target};
 }
 
 static NSString *BBRequestedApp(NSString *task) {
@@ -1089,7 +1076,7 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
     return @{@"ok": @YES, @"done": @NO, @"action": action};
 }
 
-static char *BBMapStepEncoded(const char *taskText, const char *historyJSON, BOOL useClaude) {
+static char *BBMapStepEncoded(const char *taskText, const char *historyJSON) {
     @autoreleasepool {
         if (!taskText || !historyJSON) return NULL;
         NSString *task = [NSString stringWithUTF8String:taskText];
@@ -1098,16 +1085,14 @@ static char *BBMapStepEncoded(const char *taskText, const char *historyJSON, BOO
         id history = [NSJSONSerialization JSONObjectWithData:historyData options:0 error:nil];
         if (![history isKindOfClass:NSArray.class]) return NULL;
         for (id item in history) if (![item isKindOfClass:NSDictionary.class]) return NULL;
-        NSString *key = useClaude ? (BBReadSecret(BBClaudeKey, 0) ?:
-            BBReadSecret(BBLegacyClaudeKey, 0)) : nil;
-        NSDictionary *result = (useClaude && (![key hasPrefix:@"sk-ant-"] || key.length < 24)) ?
+        NSString *key = BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0);
+        NSDictionary *result = (![key hasPrefix:@"sk-ant-"] || key.length < 24) ?
             @{@"ok": @NO, @"error": @"key"} :
             BBMapStep(task, history,
                 ^NSDictionary *(NSDictionary *request) { return BBBridge(request); },
                 ^NSDictionary *(NSString *command, NSDictionary *observation, NSArray *prior) {
-                    return useClaude ? BBClaudeAction(command, observation, prior, key) :
-                        BBFixedMapAction(command, observation, prior);
-                }, useClaude);
+                    return BBClaudeAction(command, observation, prior, key);
+                }, YES);
         NSData *encoded = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
         if (!encoded || encoded.length > 8192) return NULL;
         char *copy = malloc(encoded.length + 1);
@@ -1119,16 +1104,12 @@ static char *BBMapStepEncoded(const char *taskText, const char *historyJSON, BOO
 }
 
 char *BBMapStepJSON(const char *taskText, const char *historyJSON) {
-    return BBMapStepEncoded(taskText, historyJSON, YES);
-}
-
-char *BBMapMockStepJSON(const char *taskText, const char *historyJSON) {
-    return BBMapStepEncoded(taskText, historyJSON, NO);
+    return BBMapStepEncoded(taskText, historyJSON);
 }
 
 static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
-    if (claude && [task isEqualToString:@"打开通讯录"]) {
-        fprintf(stderr, "打开通讯录请使用模拟模型\n");
+    if ([task isEqualToString:@"打开通讯录"]) {
+        fprintf(stderr, "打开通讯录请通过 BeanBao 任务服务执行\n");
         return 1;
     }
     NSString *auditApp = BBRequestedApp(task);
@@ -1213,7 +1194,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             }
         }
         NSDictionary *action = autoNote ? fixedNoteAction :
-            (fixedMapAction ?: (claude ? BBClaudeAction(task, observation, history, key) : BBMockAction(task, observation, history.count)));
+            (fixedMapAction ?: BBClaudeAction(task, observation, history, key));
         if (action[@"error"]) {
             fprintf(stderr, autoNote ? "备忘录界面状态不符合安全条件\n" : "模型请求或输出失败\n");
             return 1;
@@ -1305,12 +1286,11 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc == 2 && !strcmp(argv[1], "--serve")) return BBServe();
-        if (argc == 3 && !strcmp(argv[1], "--harness-mock")) return BBRunHarnessMock(argv[2]);
+        if (argc == 3 && !strcmp(argv[1], "--harness-text")) return BBRunHarnessText(argv[2]);
         if (argc == 3 && !strcmp(argv[1], "--harness-note")) return BBRunHarnessNote(argv[2]);
         if (argc == 3 && !strcmp(argv[1], "--harness-map")) return BBRunHarnessMap(argv[2]);
-        if (argc == 3 && !strcmp(argv[1], "--harness-map-mock")) return BBRunHarnessMapMock(argv[2]);
         if (argc < 2) { fprintf(stderr, "用法：beanbaod [--claude] [--approve-ui] '任务文字'\n"); return 2; }
-        BOOL claude = NO, allowUI = NO, autoMap = NO, autoNote = NO;
+        BOOL claude = YES, allowUI = NO, autoMap = NO, autoNote = NO;
         NSString *task = nil;
         for (int i = 1; i < argc; i++) {
             NSString *arg = [NSString stringWithUTF8String:argv[i]];

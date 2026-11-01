@@ -46,7 +46,6 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 
 @interface BBRootViewController : UIViewController <UITextFieldDelegate>
 @property(nonatomic, strong) UITextField *taskField;
-@property(nonatomic, strong) UISegmentedControl *modelControl;
 @property(nonatomic, strong) UILabel *stateLabel;
 @property(nonatomic, strong) UILabel *detailLabel;
 @property(nonatomic, strong) UILabel *feedbackLabel;
@@ -101,7 +100,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.title = @"BeanBao";
     UILabel *heading = [self label:@"手机端文字指令" size:28];
     heading.font = [UIFont boldSystemFontOfSize:28];
-    UILabel *hint = [self label:@"可用：打开设置/备忘录/地图/通讯录；新建备忘录：测试内容；在地图搜索金门大桥。模拟模型无需 Key；Claude 地图搜索需配置 Key。操作前请解锁。" size:15];
+    UILabel *hint = [self label:@"可用：打开设置/备忘录/地图/通讯录；新建备忘录：测试内容；在地图搜索金门大桥。地图搜索需要配置 Claude Key；固定任务在本机完成。操作前请解锁。" size:15];
     hint.textColor = UIColor.secondaryLabelColor;
     self.taskField = [UITextField new];
     self.taskField.borderStyle = UITextBorderStyleRoundedRect;
@@ -121,8 +120,6 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     inputBar.items = @[dismissItem, space, self.keyboardStartItem];
     self.taskField.inputAccessoryView = inputBar;
     self.clearButton = [self button:@"清空输入" color:UIColor.systemGrayColor action:@selector(clearTapped)];
-    self.modelControl = [[UISegmentedControl alloc] initWithItems:@[@"模拟模型", @"Claude"]];
-    self.modelControl.selectedSegmentIndex = 0;
     UIButton *keyButton = [self button:@"配置 Claude Key" color:UIColor.systemIndigoColor action:@selector(configureKeyTapped)];
     self.voiceButton = [self button:@"🎙️ 语音输入" color:UIColor.systemTealColor action:@selector(voiceTapped)];
     UILabel *hotkeyHint = [self label:@"在其他 App 三连按音量下键打开 BeanBao 并录音（音量仍照常变化）" size:14];
@@ -151,7 +148,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.feedbackLabel = [self label:@"" size:15];
     self.feedbackLabel.textColor = UIColor.systemTealColor;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
-        heading, hint, self.taskField, self.clearButton, self.voiceButton, self.modelControl, keyButton, self.startButton,
+        heading, hint, self.taskField, self.clearButton, self.voiceButton, keyButton, self.startButton,
         self.stopButton, hotkeyRow, self.stateLabel, self.detailLabel, self.feedbackLabel]];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 16;
@@ -346,8 +343,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.detailLabel.text = @"";
     self.startButton.enabled = NO;
     self.keyboardStartItem.enabled = NO;
-    [self request:@{@"op": @"start", @"task": task,
-                    @"model": self.modelControl.selectedSegmentIndex == 1 ? @"claude" : @"mock"}];
+    [self request:@{@"op": @"start", @"task": task, @"model": @"claude"}];
 }
 
 - (void)stopTapped {
