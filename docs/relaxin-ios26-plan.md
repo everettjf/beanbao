@@ -1,6 +1,6 @@
 # BeanBao：Relaxin / iOS 26 真机落地方案
 
-更新：2026-10-31。本方案以当前 iPhone 为首发目标。Bridge 0.2.4、Agent 0.3.50、App 0.3.13 已安装并完成单一 Claude 入口的文字主线验收；上一安装版完成一次物理拔线真机任务。新版已移除模拟模型入口。逐项证据与未完成关卡见 [build-and-test.md](build-and-test.md)。安装与配置见 [install-and-configure.md](install-and-configure.md)。
+更新：2026-10-31。本方案以当前 iPhone 为首发目标。当前多模型候选版为 Bridge 0.2.4、Agent 0.3.52、App 0.3.15；上一安装版已完成文字主线和一次物理拔线真机任务。新版没有模拟模型入口，支持 Claude、OpenAI 和 OpenAI 兼容 HTTPS API。逐项证据与未完成关卡见 [build-and-test.md](build-and-test.md)。安装与配置见 [install-and-configure.md](install-and-configure.md)。
 
 通过 copyapp 的 USB iCTRL 通道重新启用 Relaxin 后，SSH 已恢复。手机端 Claude 服务已完成地图搜索和新建备忘录；App Claude 地图任务从旧结果卡片出发完成渔人码头、旧金山市政厅和金门大桥搜索。Agent 0.3.12 增加精确匹配搜索建议点击后，手机端又从旧结果卡片连续完成旧金山市政厅和加州科学院；0.3.13 再由 App 文字入口完成加州科学院。仍不能宣称任意地点可靠。电脑播报和持机者真人发声的“打开地图”均经手机录音、本机转写、确认后完成任务；实体音量键三连按仍需验收。
 
@@ -60,7 +60,7 @@
 ## 4. 端侧系统设计
 
 - **Bridge（上游 ios-mcp 深改）**：注入 SpringBoard，负责观察与低级输入。它不接收自然语言、不持有模型 Key、不决定是否点击。
-- **beanbaod**：mobile 权限原生 CLI 和 launchd 本地服务支持单一 Claude 模型入口、精确任务白名单、状态与停止。固定打开 App 和新建备忘录使用本地确定性流程；通讯录和备忘录界面不发给模型。受限地图搜索已完成手机端 Claude 真机任务。仍需扩大任务样本并做当前版本重启后的完整任务验收。
+- **beanbaod**：mobile 权限原生 CLI 和 launchd 本地服务支持 Claude、OpenAI、OpenAI 兼容 HTTPS API、精确任务白名单、状态与停止。固定打开 App 和新建备忘录使用本地确定性流程；通讯录和备忘录界面不发给模型。受限地图搜索已完成手机端 Claude 真机任务；其他服务需要各自 Key 才能做真实调用验收。仍需扩大任务样本并做当前版本重启后的完整任务验收。
 - **BeanBao App**：UIKit 文字、语音、状态、停止及 Claude Key 配置入口；模拟模型选择器已移除。iOS 26 使用 Apple `DictationTranscriber` 在录音后本机转写。真人语音“打开地图”已复测完成；实体按键自动录音仍待复测。
 - **模型适配器**：已接入 Claude Messages API，输入任务、当前 App、精简 UI 树/OCR 和截图；输出单个受限动作。后续可接 OpenAI 兼容的多模态服务或 AutoGLM-Phone，但不是首版验收前提。官方 [AutoGLM iOS 配置](https://github.com/zai-org/Open-AutoGLM/blob/main/docs/ios_setup/ios_setup.md)基于 Mac + WebDriverAgent，其执行代码不能直接放上手机，需做自己的动作适配。
 

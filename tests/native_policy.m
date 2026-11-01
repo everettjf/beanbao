@@ -79,6 +79,33 @@ int main(void) {
         NSDictionary *invalidMap = BBMapStep(@"打开地图", @[], nil, nil, YES);
         if (!Check([invalidMap[@"error"] isEqualToString:@"invalid_task"],
                    "map step rejects an unsupported task before Bridge access")) return 1;
+        NSDictionary *vision = @{ @"frontmost_app": @{ @"bundleId": @"com.apple.Maps" },
+            @"screenshot": @{ @"data": @"YWJj" }, @"ui": @{ @"elements": @[] } };
+        NSDictionary *openaiBody = BBOpenAIChatRequestBody(@"在地图搜索金门大桥", vision,
+            @[], @"vision-test", NO);
+        NSArray *openaiContent = openaiBody[@"messages"][1][@"content"];
+        NSString *promptText = openaiContent[0][@"text"];
+        if (!Check([openaiBody[@"model"] isEqualToString:@"vision-test"] &&
+                   [openaiBody[@"max_completion_tokens"] integerValue] == 2048 &&
+                   !openaiBody[@"max_tokens"], "OpenAI uses Chat Completions token field") ||
+            !Check([openaiContent[1][@"image_url"][@"url"] isEqualToString:@"data:image/jpeg;base64,YWJj"] &&
+                   ![promptText containsString:@"YWJj"],
+                   "image bytes stay outside text prompt") ||
+            !Check([BBOpenAIChatRequestBody(@"在地图搜索金门大桥", vision,
+                @[], @"vision-test", YES)[@"max_tokens"] integerValue] == 2048,
+                   "compatible API uses broad Chat Completions token field")) return 1;
+        NSData *goodChat = [@"{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"{\\\"action\\\":\\\"done\\\"}\"}}]}"
+            dataUsingEncoding:NSUTF8StringEncoding];
+        NSData *truncatedChat = [@"{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"{\\\"action\\\":\\\"done\\\"}\"}}]}"
+            dataUsingEncoding:NSUTF8StringEncoding];
+        if (!Check([BBParseOpenAIChatAction(goodChat)[@"action"] isEqualToString:@"done"],
+                   "Chat Completions action parses") ||
+            !Check(BBParseOpenAIChatAction(truncatedChat)[@"error"] != nil,
+                   "truncated model output cannot become an action")) return 1;
+        NSString *invalidEndpoint = nil;
+        if (!Check(!BBModelSave(@"compatible", @"vision-test", @"http://example.invalid/v1",
+                                nil, &invalidEndpoint) && invalidEndpoint.length,
+                   "compatible API rejects plaintext HTTP before writing")) return 1;
         NSDictionary *rejectedModel = BBStart(@{@"task": @"打开设置", @"model": @"mock"});
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||

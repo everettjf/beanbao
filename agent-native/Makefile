@@ -7,7 +7,7 @@ include $(THEOS)/makefiles/common.mk
 
 TOOL_NAME = beanbaod
 TOOL_NAME += beanbaoagentctl
-beanbaod_FILES = beanbaod.m AgentService.m BBAudit.m $(wildcard ../harness/*.swift) \
+beanbaod_FILES = beanbaod.m AgentService.m BBAudit.m ModelConfig.m $(wildcard ../harness/*.swift) \
 	$(wildcard ../vendor/palmino-harness-runtime/Sources/AgentRuntime/*.swift) \
 	$(wildcard ../vendor/palmino-harness-runtime/Sources/AgentTools/*.swift)
 beanbaod_SWIFT_VERSION = 6

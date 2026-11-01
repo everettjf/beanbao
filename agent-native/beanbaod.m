@@ -10,15 +10,25 @@
 #import <stdlib.h>
 #import <string.h>
 #import "BBAudit.h"
+#import "ModelConfig.h"
 
 static const char *BBSocket = "/var/mobile/Library/Caches/BeanBao/bridge.sock";
 static const char *BBToken = "/var/mobile/Library/Caches/BeanBao/bridge.token";
-static const char *BBClaudeKey = "/var/mobile/Library/Application Support/BeanBao/claude.key";
-static const char *BBLegacyClaudeKey = "/var/mobile/Library/Caches/BeanBao/claude.key";
-static NSString *const BBClaudeModel = @"claude-sonnet-5-5";
+static NSString *BBExpectedProvider;
 extern int BBServe(void);
 
 static NSDictionary *BBError(NSString *message) { return @{@"ok": @NO, @"error": message ?: @"Unknown error"}; }
+
+@interface BBNoRedirectDelegate : NSObject <NSURLSessionTaskDelegate>
+@end
+@implementation BBNoRedirectDelegate
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
+    willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request
+    completionHandler:(void (^)(NSURLRequest *))completionHandler {
+    (void)session; (void)task; (void)response; (void)request;
+    completionHandler(nil);
+}
+@end
 static BOOL BBWriteAll(int fd, NSData *data) {
     const uint8_t *cursor = data.bytes;
     NSUInteger left = data.length;
@@ -140,7 +150,8 @@ static BOOL BBHasSecret(id value) {
     return NO;
 }
 
-static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, NSArray *history, NSString *key) {
+static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, NSArray *history,
+                                     NSString *model, NSString *key) {
     NSMutableDictionary *state = [observation mutableCopy];
     NSDictionary *screenshot = state[@"screenshot"];
     [state removeObjectForKey:@"screenshot"];
@@ -159,7 +170,7 @@ static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, N
         @"x2": @{@"type": @"number"}, @"y2": @{@"type": @"number"},
         @"text": @{@"type": @"string"}, @"key": @{@"type": @"string"}, @"summary": @{@"type": @"string"}},
         @"required": @[@"action"], @"additionalProperties": @NO};
-    NSDictionary *body = @{@"model": BBClaudeModel, @"max_tokens": @4096,
+    NSDictionary *body = @{@"model": model, @"max_tokens": @4096,
         @"system": @"Return one JSON action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. For a Maps search, if the requested result is already visible return done. Otherwise open Maps; if an old place card covers search, tap its Close button first. Then tap the search field if needed and input the exact requested place only when the field is empty. If a search suggestion names the exact requested place (including a known localized name), tap that suggestion before using Enter. Return done only after the matching map pin and place card appear; never start navigation. For a new Note, open Notes, tap the new note button, input the exact requested content, tap Done, then return done only when the new content is visible. Never edit an existing note. Never install, run shell, read files, purchase, send messages, delete, or act on locked screen. If uncertain, return done with a short reason.",
         @"output_config": @{@"effort": @"low", @"format": @{@"type": @"json_schema", @"schema": schema}},
         @"messages": @[@{@"role": @"user", @"content": content}]};
@@ -174,7 +185,8 @@ static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, N
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.URLCache = nil;
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration
+        delegate:[BBNoRedirectDelegate new] delegateQueue:nil];
     dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
     __block NSData *replyData = nil;
     __block NSHTTPURLResponse *http = nil;
@@ -194,6 +206,99 @@ static NSDictionary *BBClaudeAction(NSString *task, NSDictionary *observation, N
         if ([part[@"type"] isEqualToString:@"text"] && [part[@"text"] isKindOfClass:NSString.class]) [text appendString:part[@"text"]];
     NSDictionary *action = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     return [action isKindOfClass:NSDictionary.class] ? action : BBError(@"Claude returned invalid action JSON");
+}
+
+static NSDictionary *BBOpenAIChatRequestBody(NSString *task, NSDictionary *observation,
+                                              NSArray *history, NSString *model, BOOL compatible) {
+    NSMutableDictionary *state = [observation mutableCopy];
+    NSDictionary *screenshot = state[@"screenshot"];
+    [state removeObjectForKey:@"screenshot"];
+    NSDictionary *prompt = @{@"task": task, @"observation": state,
+        @"recent_actions": history.count > 4 ?
+            [history subarrayWithRange:NSMakeRange(history.count - 4, 4)] : history};
+    NSData *promptJSON = [NSJSONSerialization dataWithJSONObject:prompt options:0 error:nil];
+    if (!promptJSON) return nil;
+    NSMutableArray *content = [NSMutableArray arrayWithObject:@{@"type": @"text",
+        @"text": [[NSString alloc] initWithData:promptJSON encoding:NSUTF8StringEncoding]}];
+    if ([screenshot[@"data"] isKindOfClass:NSString.class])
+        [content addObject:@{@"type": @"image_url", @"image_url": @{
+            @"url": [@"data:image/jpeg;base64," stringByAppendingString:screenshot[@"data"]]}}];
+    NSString *system = @"Return exactly one JSON object with an action: launch_app, tap, swipe, input_text, press_key or done. Use screen point coordinates. Search only the exact requested Maps place. If a matching pin and place card are visible, return done. Never start navigation, install apps, read files, pay, send messages, delete, edit existing notes or act on a locked screen. If uncertain, return {\"action\":\"done\",\"summary\":\"uncertain\"}. The device validates every action and rejects unsupported operations.";
+    return @{@"model": model,
+        compatible ? @"max_tokens" : @"max_completion_tokens": @2048,
+        @"messages": @[@{@"role": @"system", @"content": system},
+                         @{@"role": @"user", @"content": content}]};
+}
+
+static NSDictionary *BBParseOpenAIChatAction(NSData *data) {
+    if (!data || data.length > 65536) return BBError(@"Model response too large");
+    NSDictionary *reply = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![reply isKindOfClass:NSDictionary.class]) return BBError(@"Invalid model response");
+    NSArray *choices = reply[@"choices"];
+    NSDictionary *choice = [choices isKindOfClass:NSArray.class] ? choices.firstObject : nil;
+    if (![choice isKindOfClass:NSDictionary.class] ||
+        ![choice[@"finish_reason"] isEqualToString:@"stop"])
+        return BBError(@"Model did not finish one action");
+    NSString *content = choice[@"message"][@"content"];
+    if (![content isKindOfClass:NSString.class] || content.length > 8192)
+        return BBError(@"Model action is missing");
+    NSDictionary *action = [NSJSONSerialization JSONObjectWithData:
+        [content dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    return [action isKindOfClass:NSDictionary.class] ? action : BBError(@"Invalid model action JSON");
+}
+
+static NSDictionary *BBOpenAIAction(NSString *task, NSDictionary *observation, NSArray *history,
+                                    NSString *model, NSString *key, NSString *endpoint,
+                                    BOOL compatible) {
+    NSURLComponents *base = [NSURLComponents componentsWithString:endpoint];
+    if (![base.scheme.lowercaseString isEqualToString:@"https"] || !base.host.length ||
+        base.user || base.password || base.query || base.fragment)
+        return BBError(@"Invalid model endpoint");
+    NSString *path = [base.path stringByTrimmingCharactersInSet:
+        [NSCharacterSet characterSetWithCharactersInString:@"/"]];
+    if (![path hasSuffix:@"chat/completions"])
+        path = path.length ? [path stringByAppendingString:@"/chat/completions"] : @"chat/completions";
+    base.path = [@"/" stringByAppendingString:path];
+    NSDictionary *body = BBOpenAIChatRequestBody(task, observation, history, model, compatible);
+    NSData *encoded = body ? [NSJSONSerialization dataWithJSONObject:body options:0 error:nil] : nil;
+    if (!encoded) return BBError(@"Cannot encode model request");
+    if (!base.URL) return BBError(@"Invalid model endpoint");
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:base.URL];
+    request.HTTPMethod = @"POST";
+    request.HTTPBody = encoded;
+    request.timeoutInterval = 30;
+    [request setValue:[@"Bearer " stringByAppendingString:key] forHTTPHeaderField:@"Authorization"];
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+    configuration.URLCache = nil;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration
+        delegate:[BBNoRedirectDelegate new] delegateQueue:nil];
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    __block NSData *replyData = nil;
+    __block NSHTTPURLResponse *http = nil;
+    __block NSError *networkError = nil;
+    [[session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        replyData = data; http = (NSHTTPURLResponse *)response; networkError = error;
+        dispatch_semaphore_signal(semaphore);
+    }] resume];
+    long waited = dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 35 * NSEC_PER_SEC));
+    [session finishTasksAndInvalidate];
+    if (waited || networkError || http.statusCode != 200) return BBError(@"Model request failed");
+    return BBParseOpenAIChatAction(replyData);
+}
+
+static NSDictionary *BBModelAction(NSString *task, NSDictionary *observation, NSArray *history,
+                                   NSDictionary *config, NSString *key) {
+    NSString *provider = config[@"provider"];
+    NSDictionary *profile = BBModelProfile(config, provider);
+    NSString *model = profile[@"model"];
+    if (!model.length || !key.length) return BBError(@"Model is not configured");
+    if ([provider isEqualToString:@"claude"])
+        return BBClaudeAction(task, observation, history, model, key);
+    NSString *endpoint = [provider isEqualToString:@"openai"] ?
+        @"https://api.openai.com/v1" : profile[@"endpoint"];
+    return BBOpenAIAction(task, observation, history, model, key, endpoint,
+                          [provider isEqualToString:@"compatible"]);
 }
 
 static NSString *BBRequestedApp(NSString *task) {
@@ -1085,13 +1190,21 @@ static char *BBMapStepEncoded(const char *taskText, const char *historyJSON) {
         id history = [NSJSONSerialization JSONObjectWithData:historyData options:0 error:nil];
         if (![history isKindOfClass:NSArray.class]) return NULL;
         for (id item in history) if (![item isKindOfClass:NSDictionary.class]) return NULL;
-        NSString *key = BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0);
-        NSDictionary *result = (![key hasPrefix:@"sk-ant-"] || key.length < 24) ?
+        static NSDictionary *modelConfig;
+        static NSString *modelKey;
+        static dispatch_once_t modelOnce;
+        dispatch_once(&modelOnce, ^{
+            modelConfig = BBModelLoad();
+            modelKey = BBModelReadKey(modelConfig[@"provider"]);
+        });
+        NSDictionary *result = BBExpectedProvider &&
+            ![BBExpectedProvider isEqualToString:modelConfig[@"provider"]] ?
+            @{@"ok": @NO, @"error": @"model"} : !modelKey ?
             @{@"ok": @NO, @"error": @"key"} :
             BBMapStep(task, history,
                 ^NSDictionary *(NSDictionary *request) { return BBBridge(request); },
                 ^NSDictionary *(NSString *command, NSDictionary *observation, NSArray *prior) {
-                    return BBClaudeAction(command, observation, prior, key);
+                    return BBModelAction(command, observation, prior, modelConfig, modelKey);
                 }, YES);
         NSData *encoded = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
         if (!encoded || encoded.length > 8192) return NULL;
@@ -1113,8 +1226,9 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         return 1;
     }
     NSString *auditApp = BBRequestedApp(task);
-    NSString *key = claude && !autoNote ? (BBReadSecret(BBClaudeKey, 0) ?: BBReadSecret(BBLegacyClaudeKey, 0)) : nil;
-    if (claude && !autoNote && (![key hasPrefix:@"sk-ant-"] || key.length < 24)) { fprintf(stderr, "Claude Key 未配置或权限不安全\n"); return 1; }
+    NSDictionary *modelConfig = BBModelLoad();
+    NSString *key = claude && !autoNote ? BBModelReadKey(modelConfig[@"provider"]) : nil;
+    if (claude && !autoNote && !key) { fprintf(stderr, "模型 Key 未配置或权限不安全\n"); return 1; }
     if ((claude || autoNote) && BBHasSecret(task)) { fprintf(stderr, "任务文字包含疑似密钥，已停止模型请求\n"); return 1; }
     @try {
     NSMutableArray *history = [NSMutableArray array];
@@ -1194,7 +1308,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             }
         }
         NSDictionary *action = autoNote ? fixedNoteAction :
-            (fixedMapAction ?: BBClaudeAction(task, observation, history, key));
+            (fixedMapAction ?: BBModelAction(task, observation, history, modelConfig, key));
         if (action[@"error"]) {
             fprintf(stderr, autoNote ? "备忘录界面状态不符合安全条件\n" : "模型请求或输出失败\n");
             return 1;
@@ -1288,14 +1402,16 @@ int main(int argc, const char *argv[]) {
         if (argc == 2 && !strcmp(argv[1], "--serve")) return BBServe();
         if (argc == 3 && !strcmp(argv[1], "--harness-text")) return BBRunHarnessText(argv[2]);
         if (argc == 3 && !strcmp(argv[1], "--harness-note")) return BBRunHarnessNote(argv[2]);
-        if (argc == 3 && !strcmp(argv[1], "--harness-map")) return BBRunHarnessMap(argv[2]);
-        if (argc < 2) { fprintf(stderr, "用法：beanbaod [--claude] [--approve-ui] '任务文字'\n"); return 2; }
+        if (argc == 4 && !strcmp(argv[1], "--harness-map")) {
+            BBExpectedProvider = [NSString stringWithUTF8String:argv[3]];
+            return BBRunHarnessMap(argv[2]);
+        }
+        if (argc < 2) { fprintf(stderr, "用法：beanbaod [--approve-ui] '任务文字'\n"); return 2; }
         BOOL claude = YES, allowUI = NO, autoMap = NO, autoNote = NO;
         NSString *task = nil;
         for (int i = 1; i < argc; i++) {
             NSString *arg = [NSString stringWithUTF8String:argv[i]];
-            if ([arg isEqualToString:@"--claude"]) claude = YES;
-            else if ([arg isEqualToString:@"--approve-ui"]) allowUI = YES;
+            if ([arg isEqualToString:@"--approve-ui"]) allowUI = YES;
             else if ([arg isEqualToString:@"--auto-map"]) { autoMap = YES; allowUI = YES; }
             else if ([arg isEqualToString:@"--auto-note"]) { autoNote = YES; allowUI = YES; }
             else if (!task) task = arg;

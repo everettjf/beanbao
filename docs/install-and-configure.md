@@ -7,10 +7,10 @@
 三个 RootHide `iphoneos-arm64e` 包按顺序安装：
 
 1. `dev.beanbao.bridge` 0.2.4：SpringBoard 中的受限观察与点击/输入桥接；固定启动白名单包含通讯录，观察过期判断使用单调时间。
-2. `dev.beanbao.agent` 0.3.50：手机端任务服务、固定任务流程和 Claude 适配器，依赖 Bridge 0.2.4 以上。
-3. `dev.beanbao.app` 0.3.13：文字、语音、状态与 Claude Key 配置界面，依赖 Agent 0.3.41 以上。
+2. `dev.beanbao.agent` 0.3.52：手机端任务服务、固定任务流程，以及 Claude、OpenAI、兼容 API 适配器，依赖 Bridge 0.2.4 以上。
+3. `dev.beanbao.app` 0.3.15：文字、语音、状态与模型服务设置界面，依赖 Agent 0.3.52 以上。
 
-本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前设备已安装 Bridge 0.2.4 / Agent 0.3.50 / App 0.3.13，并通过新版文字主线验收。上一安装版还通过一次物理拔线任务。新版移除模拟模型入口；固定打开 App 和新建备忘录仍在本机执行，地图搜索改为单一 Claude 入口，需要在手机上配置 Anthropic Key，也需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装或更新 Bridge 后需要让 SpringBoard 重新加载，才能启用新的注入；该操作可能让手机锁定，需自行解锁。只更新 Agent 或 App 不需重载 SpringBoard。
+本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前候选版为 Bridge 0.2.4 / Agent 0.3.52 / App 0.3.15；真机结果以 [build-and-test.md](build-and-test.md) 的最新记录为准。上一安装版还通过一次物理拔线任务。新版没有模拟模型入口；固定打开 App 和新建备忘录仍在本机执行，地图搜索可使用 Claude、OpenAI 或 OpenAI 兼容 HTTPS API，需要在手机上配置所选服务的 Key，也需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装或更新 Bridge 后需要让 SpringBoard 重新加载，才能启用新的注入；该操作可能让手机锁定，需自行解锁。只更新 Agent 或 App 不需重载 SpringBoard。
 
 从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容及 Agent/App 文件清单、依赖链、启动身份、图标、包内 arm64e Mach-O 架构和嵌入式签名结构、安装脚本，并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
 
@@ -20,8 +20,8 @@
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.4_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.50_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.13_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.52_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.15_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
 
@@ -31,8 +31,8 @@ dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 
 ## 安装后如何配置
 
-1. 保持手机解锁、亮屏，打开 BeanBao，点“配置 Claude Key”保存自己的 Anthropic Key。Key 保存在手机本地、由 mobile 用户持有的 0600 文件中，不写进包或仓库。固定打开 App 和新建备忘录在本机执行，即使没有 Key 也能运行；地图搜索需要 Key。OpenAI API Key 不能填入此入口。
-2. 输入“打开地图”；键盘弹出时可点键盘上方的“开始”，或收起键盘后点页面中的“开始”。界面应显示完成，地图应在前台。再输入“新建备忘录：测试内容”：Agent 会新建、写入原文、点完成、返回列表并核对完整新标题；同名标题已存在时拒绝再次创建。地图搜索输入“在地图搜索金门大桥”，本地固定动作无匹配时交给 Claude 判断。备忘录界面不发送给模型。
+1. 保持手机解锁、亮屏，打开 BeanBao，点首页“模型服务”卡片的“管理”。选择 **Claude**、**OpenAI** 或 **兼容 API**，填写模型名称；兼容 API 还需填写 HTTPS 服务根地址，例如 `https://example.com/v1`。首次使用时在此输入该服务的 API Key 并保存。各服务 Key 分开保存在手机本地、由 mobile 用户持有的 0600 文件中，不写进包或仓库；切换服务不会把一个 Key 发给另一家。Claude 可沿用旧版已保存的 Key。固定打开 App 和新建备忘录在本机执行，即使没有 Key 也能运行；地图搜索需要当前所选服务的 Key。
+2. 输入“打开地图”；键盘弹出时可点键盘上方的“开始”，或收起键盘后点页面中的“开始”。界面应显示完成，地图应在前台。再输入“新建备忘录：测试内容”：Agent 会新建、写入原文、点完成、返回列表并核对完整新标题；同名标题已存在时拒绝再次创建。地图搜索输入“在地图搜索金门大桥”，本地固定动作无匹配时才交给所选模型判断。备忘录界面不发送给模型。
 3. 点“🎙️ 语音输入”，按系统提示允许语音识别和麦克风。iOS 26 在这台设备上使用 Apple 本机中文听写；首次使用可能下载中文资源。说完点“结束录音”，先检查并编辑转写文字，再点“开始”。单次录音最长 30 秒，转写后临时音频文件会删除。
 4. 音量减键三连按开关默认关闭。实现会先调用系统原有音量处理，再尝试打开 BeanBao 录音。持机者已确认三连按能打开 App，但自动开始录音曾间歇失败；App 0.3.7 改为等前台可见后再消费唤醒标记；App 0.3.11 起在确实收到标记时显示“已收到按键唤醒，正在准备录音”，以便区分信号丢失与录音启动失败，仍待实体按键复测。其他用户暂不应把它当作可靠入口。
 5. 运行中可在 BeanBao 查看状态或点“停止任务”。地图搜索只允许查看结果，不启动导航；备忘录任务只用于新建，不编辑旧内容。从其他 App 发起地图任务时，Agent 可先在本地打开地图，原界面不发给模型；目标界面若仍含疑似凭据，或遇到锁屏、不确定状态，任务会停止。任务运行时 Bridge 会尝试阻止系统自动锁屏，结束或停止后恢复先前设置；用户仍可手动锁屏。目前已验证锁屏拒绝和释放，尚待解锁后跨越系统自动锁屏时长的真机实测。
@@ -41,7 +41,7 @@ Agent 的本地审计文件在进程视图中位于 `/var/mobile/Library/Applica
 
 ## 当前能力边界
 
-- 已验证：当前三包组合的文字打开设置、通讯录、备忘录、地图；App 键盘上方的“开始”按钮；App 文字入口新建指定内容测试备忘录和搜索金门大桥；受限 Claude 地图搜索在此前版本完成；电脑中文播报和持机者真人语音均经手机录音、转写、用户确认后执行“打开地图”。
+- 已验证：先前组合的文字打开设置、通讯录、备忘录、地图；App 键盘上方的“开始”按钮；App 文字入口新建指定内容测试备忘录和搜索金门大桥；受限 Claude 地图搜索；电脑中文播报和持机者真人语音均经手机录音、转写、用户确认后执行“打开地图”。当前组合的证据见 [build-and-test.md](build-and-test.md)。OpenAI 与兼容 API 已通过本地请求/响应策略测试，但尚需用户在手机上提供各自 Key 后做真实服务调用验收。
 - 地图动态界面仍可能使任务安全停止。除金门大桥、渔人码头、旧金山市政厅和加州科学院外，新增 Alcatraz Island、Coit Tower、Ferry Building、Exploratorium、Palace of Fine Arts、Pier 39、Japanese Tea Garden 等真机样本；结果需由地图标记或 3D 地图标签与地点卡片共同核对，不能推断任意地点可靠。
 - 物理拔线后“打开设置”已由持机者执行成功，接回后 Agent 新任务 ID、审计开始/完成与设置前台均核对；这是已安装旧版的一次独立运行样本。新版已完成文字任务回归；实体音量键自动录音、重启后完整任务恢复及其他设备兼容性仍待验收。
 - 运行不依赖 Mac、iCTRL 或 Frida；Mac/iCTRL 用于安装和测试。

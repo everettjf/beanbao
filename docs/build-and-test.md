@@ -4,7 +4,9 @@
 
 ## 最新状态（2026-10-31）
 
-Agent 0.3.50 / App 0.3.13 已安装；不再显示模拟模型选择器，App 文字任务统一提交 `claude`。固定打开 App 与新建备忘录仍由本地有界流程执行；地图搜索在本地固定动作无匹配时调用 Claude。构建前原生策略测试、8 项 Python 测试、18 项 Swift Harness 测试通过，三包内容和签名审计通过。装机后 `scripts/verify_device.py --expect-bundle` 核对三包、Agent 服务和 Bridge，设备解锁亮屏。`scripts/accept_text_device.py` 五条打开 App 指令全部返回 `done`、前台正确；禁止组合被拒。`scripts/accept_app_text_device.py` 从新版可见界面完成打开通讯录、新建唯一测试备忘录、Claude 地图搜索金门大桥、禁止组合拒绝；备忘录标题、地图标记与地点卡片由独立观察核对。首次运行 App 脚本时旧 App 进程仍在，且旧脚本因按钮布局变化点错“开始”；关闭旧进程并将脚本改为选择键盘工具栏右侧按钮后全项通过。此版尚未物理拔线或重启复测。
+当前候选版 Bridge 0.2.4 / Agent 0.3.52 / App 0.3.15 已构建并装机。首页改为任务卡片、常用快捷指令和模型状态卡；“模型服务”页可选择 Claude、OpenAI 或 OpenAI 兼容 HTTPS API，保存各自模型、服务地址和独立 Key。无模拟模型入口；本地固定任务仍不需要模型。原生策略测试、8 项 Python 测试、18 项 Swift Harness 测试、三包审计通过。OpenAI Chat Completions 请求体、截图图像字段、响应完整性和 HTTPS 地址拒绝均有本地回归。真机设置页已切换并保存三种服务，确认配置属主 mobile、权限 0600；测试用兼容地址随后已清除，当前选择恢复 Claude。`scripts/verify_device.py --expect-bundle` 核对三包、服务和 Bridge；设备解锁亮屏。`scripts/accept_text_device.py` 五条打开 App 指令均为 `done`、真实前台正确，禁止组合指令被拒。`scripts/accept_app_text_device.py` 从可见 App 界面完成通讯录、新建唯一测试备忘录 `BeanBao 验收 cce7cc91`、Claude 地图搜索金门大桥，独立观察到列表标题及地图标记与地点卡片；禁止组合指令被拒。离线发布归档已生成并通过包审计，SHA-256 为 `aa19fa48a28217d04037a5ed466b3db290600a34ec9f299801aa05504f2aa2a3`。OpenAI 与兼容 API 尚未获得各自 Key，因此不能宣称真实模型服务调用通过；当前组合也未做物理拔线或重启验收。
+
+上一安装版 Agent 0.3.50 / App 0.3.13 不再显示模拟模型选择器，App 文字任务统一提交 `claude`。固定打开 App 与新建备忘录仍由本地有界流程执行；地图搜索在本地固定动作无匹配时调用 Claude。构建前原生策略测试、8 项 Python 测试、18 项 Swift Harness 测试通过，三包内容和签名审计通过。装机后 `scripts/verify_device.py --expect-bundle` 核对三包、Agent 服务和 Bridge，设备解锁亮屏。`scripts/accept_text_device.py` 五条打开 App 指令全部返回 `done`、前台正确；禁止组合被拒。`scripts/accept_app_text_device.py` 从新版可见界面完成打开通讯录、新建唯一测试备忘录、Claude 地图搜索金门大桥、禁止组合拒绝；备忘录标题、地图标记与地点卡片由独立观察核对。首次运行 App 脚本时旧 App 进程仍在，且旧脚本因按钮布局变化点错“开始”；关闭旧进程并将脚本改为选择键盘工具栏右侧按钮后全项通过。此版尚未物理拔线或重启复测。
 
 持机者物理拔下 USB 后，在 BeanBao 以当时的模拟入口执行“打开设置”，并报告设置确实打开。接回 USB 后，Agent `service_id` 未变，`task_id` 从测试前的 `C5E0E504…` 变为 `6B20A8AF…`，状态为 `done`；审计新增该任务的 `start` 与 `done`，独立 Bridge 观察确认前台 `com.apple.Preferences`、设备解锁亮屏。这是已安装的 Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12 的一次物理拔线独立任务样本；Agent 0.3.50 / App 0.3.13 移除模拟入口，待新包安装后回归。
 

@@ -11,6 +11,7 @@
 #import <limits.h>
 #import <mach-o/dyld.h>
 #import "BBAudit.h"
+#import "ModelConfig.h"
 
 extern char **environ;
 extern void BBReleaseWakeLease(void);
@@ -101,8 +102,8 @@ static NSDictionary *BBStatus(void) {
 static NSString *BBFailureMessage(NSString *output) {
     if ([output containsString:@"设备已锁定或屏幕关闭"])
         return @"设备已锁定或屏幕关闭，请解锁后重试";
-    if ([output containsString:@"Claude Key 未配置"])
-        return @"Claude Key 未配置或权限不安全";
+    if ([output containsString:@"模型 Key 未配置"])
+        return @"模型 Key 未配置或权限不安全，请打开模型设置";
     if ([output containsString:@"防自动锁屏不可用"])
         return @"防自动锁屏不可用，已停止任务";
     if ([output containsString:@"疑似密钥"])
@@ -161,13 +162,17 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
 
 static NSDictionary *BBStart(NSDictionary *request) {
     NSString *task = request[@"task"];
-    NSString *model = request[@"model"] ?: @"claude";
-    if (![task isKindOfClass:NSString.class] || ![model isKindOfClass:NSString.class] || task.length > 220)
+    NSString *model = request[@"model"];
+    if (![task isKindOfClass:NSString.class] ||
+        (model && ![model isKindOfClass:NSString.class]) || task.length > 220)
         return @{@"ok": @NO, @"error": @"无效的文字任务"};
     task = BBNormalizeTask(task);
     NSString *app = BBAllowedTarget(task);
-    if (!app || ![model isEqualToString:@"claude"])
+    if (!app)
         return @{@"ok": @NO, @"error": @"首版只接受打开指定 App、地图搜索或新建备忘录"};
+    NSString *selectedProvider = BBModelLoad()[@"provider"];
+    if (model && ![model isEqualToString:selectedProvider])
+        return @{@"ok": @NO, @"error": @"模型设置已变化，请重新提交任务"};
     BOOL noteTask = BBIsNoteTask(task);
     NSString *completionMessage = BBCompletionMessage(task);
     @synchronized (BBState) {
@@ -187,7 +192,8 @@ static NSDictionary *BBStart(NSDictionary *request) {
             posix_spawn_file_actions_destroy(&actions); close(outputPipe[0]); close(outputPipe[1]);
             return @{@"ok": @NO, @"error": @"无法定位任务程序"};
         }
-        const char *argvMap[] = {executable, "--harness-map", task.UTF8String, NULL};
+        const char *argvMap[] = {executable, "--harness-map", task.UTF8String,
+                                 selectedProvider.UTF8String, NULL};
         const char *argvNote[] = {executable, "--harness-note", task.UTF8String, NULL};
         const char *argvText[] = {executable, "--harness-text", task.UTF8String, NULL};
         pid_t child = 0;

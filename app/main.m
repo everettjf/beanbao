@@ -6,6 +6,8 @@
 #import <time.h>
 #import <unistd.h>
 #import "AgentClient.h"
+#import "ModelConfig.h"
+#import "ModelSettingsViewController.h"
 
 @interface BBLocalDictation : NSObject
 + (void)transcribeFile:(NSString *)path completion:(void (^)(NSString *text, NSString *error))completion;
@@ -13,42 +15,12 @@
 
 static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.enabled";
 static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotkey.voice";
-static const char *BBKeyFile = "/var/mobile/Library/Application Support/BeanBao/claude.key";
-
-static BOOL BBSaveClaudeKey(NSString *key) {
-    if (![key hasPrefix:@"sk-ant-"] || key.length < 24 || key.length > 4000 ||
-        [key rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location != NSNotFound) return NO;
-    NSString *directory = @"/var/mobile/Library/Application Support/BeanBao";
-    if (![[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES
-                                                   attributes:@{NSFilePosixPermissions: @0700} error:nil]) return NO;
-    struct stat directoryInfo = {0};
-    if (lstat(directory.fileSystemRepresentation, &directoryInfo) || !S_ISDIR(directoryInfo.st_mode) ||
-        directoryInfo.st_uid != getuid() || chmod(directory.fileSystemRepresentation, 0700)) return NO;
-    NSData *bytes = [key dataUsingEncoding:NSUTF8StringEncoding];
-    if (!bytes || bytes.length > 4096) return NO;
-    NSString *temporary = [NSString stringWithFormat:@"%s.tmp.%@", BBKeyFile, NSUUID.UUID.UUIDString];
-    int fd = open(temporary.fileSystemRepresentation, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-    if (fd < 0) return NO;
-    const uint8_t *cursor = bytes.bytes;
-    NSUInteger remaining = bytes.length;
-    while (remaining) {
-        ssize_t written = write(fd, cursor, remaining);
-        if (written <= 0) { close(fd); unlink(temporary.fileSystemRepresentation); return NO; }
-        cursor += written; remaining -= (NSUInteger)written;
-    }
-    BOOL saved = !fchmod(fd, 0600) && !fsync(fd);
-    close(fd);
-    if (!saved || rename(temporary.fileSystemRepresentation, BBKeyFile)) {
-        unlink(temporary.fileSystemRepresentation); return NO;
-    }
-    return YES;
-}
-
 @interface BBRootViewController : UIViewController <UITextFieldDelegate>
 @property(nonatomic, strong) UITextField *taskField;
 @property(nonatomic, strong) UILabel *stateLabel;
 @property(nonatomic, strong) UILabel *detailLabel;
 @property(nonatomic, strong) UILabel *feedbackLabel;
+@property(nonatomic, strong) UILabel *modelLabel;
 @property(nonatomic, strong) UIButton *startButton;
 @property(nonatomic, strong) UIBarButtonItem *keyboardStartItem;
 @property(nonatomic, strong) UIButton *stopButton;
@@ -94,18 +66,70 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     return button;
 }
 
+- (UIView *)card:(NSArray<UIView *> *)items spacing:(CGFloat)spacing {
+    UIView *card = [UIView new];
+    card.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
+    card.layer.cornerRadius = 20;
+    UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:items];
+    content.axis = UILayoutConstraintAxisVertical;
+    content.spacing = spacing;
+    content.translatesAutoresizingMaskIntoConstraints = NO;
+    [card addSubview:content];
+    [NSLayoutConstraint activateConstraints:@[
+        [content.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:18],
+        [content.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-18],
+        [content.topAnchor constraintEqualToAnchor:card.topAnchor constant:18],
+        [content.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-18]
+    ]];
+    return card;
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = UIColor.systemBackgroundColor;
+    self.view.backgroundColor = UIColor.systemGroupedBackgroundColor;
     self.title = @"BeanBao";
-    UILabel *heading = [self label:@"手机端文字指令" size:28];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
+        initWithImage:[UIImage systemImageNamed:@"slider.horizontal.3"]
+        style:UIBarButtonItemStylePlain target:self action:@selector(settingsTapped)];
+    self.navigationItem.rightBarButtonItem.accessibilityLabel = @"模型设置";
+    UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"BeanBaoIcon60"]];
+    icon.contentMode = UIViewContentModeScaleAspectFit;
+    icon.layer.cornerRadius = 16;
+    icon.clipsToBounds = YES;
+    [icon.widthAnchor constraintEqualToConstant:64].active = YES;
+    [icon.heightAnchor constraintEqualToConstant:64].active = YES;
+    UILabel *heading = [self label:@"嗨，我是豆包" size:28];
     heading.font = [UIFont boldSystemFontOfSize:28];
-    UILabel *hint = [self label:@"可用：打开设置/备忘录/地图/通讯录；新建备忘录：测试内容；在地图搜索金门大桥。地图搜索需要配置 Claude Key；固定任务在本机完成。操作前请解锁。" size:15];
-    hint.textColor = UIColor.secondaryLabelColor;
+    UILabel *subtitle = [self label:@"一句话，帮你把手机上的小事做好。" size:15];
+    subtitle.textColor = UIColor.secondaryLabelColor;
+    UIStackView *titles = [[UIStackView alloc] initWithArrangedSubviews:@[heading, subtitle]];
+    titles.axis = UILayoutConstraintAxisVertical;
+    titles.spacing = 5;
+    UIStackView *hero = [[UIStackView alloc] initWithArrangedSubviews:@[icon, titles]];
+    hero.axis = UILayoutConstraintAxisHorizontal;
+    hero.alignment = UIStackViewAlignmentCenter;
+    hero.spacing = 14;
+
+    UILabel *modelTitle = [self label:@"当前模型服务" size:13];
+    modelTitle.textColor = UIColor.secondaryLabelColor;
+    self.modelLabel = [self label:@"" size:16];
+    self.modelLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    UIStackView *modelInfo = [[UIStackView alloc] initWithArrangedSubviews:@[modelTitle, self.modelLabel]];
+    modelInfo.axis = UILayoutConstraintAxisVertical;
+    modelInfo.spacing = 5;
+    UIButton *modelEdit = [UIButton buttonWithType:UIButtonTypeSystem];
+    [modelEdit setTitle:@"管理  ›" forState:UIControlStateNormal];
+    [modelEdit addTarget:self action:@selector(settingsTapped) forControlEvents:UIControlEventTouchUpInside];
+    UIStackView *modelRow = [[UIStackView alloc] initWithArrangedSubviews:@[modelInfo, modelEdit]];
+    modelRow.axis = UILayoutConstraintAxisHorizontal;
+    modelRow.alignment = UIStackViewAlignmentCenter;
+    [modelInfo setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+
     self.taskField = [UITextField new];
     self.taskField.borderStyle = UITextBorderStyleRoundedRect;
     self.taskField.placeholder = @"例如：打开地图";
     self.taskField.text = @"打开地图";
+    self.taskField.font = [UIFont systemFontOfSize:18];
     self.taskField.clearButtonMode = UITextFieldViewModeWhileEditing;
     self.taskField.returnKeyType = UIReturnKeyDone;
     self.taskField.delegate = self;
@@ -119,9 +143,34 @@ static BOOL BBSaveClaudeKey(NSString *key) {
         initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
     inputBar.items = @[dismissItem, space, self.keyboardStartItem];
     self.taskField.inputAccessoryView = inputBar;
-    self.clearButton = [self button:@"清空输入" color:UIColor.systemGrayColor action:@selector(clearTapped)];
-    UIButton *keyButton = [self button:@"配置 Claude Key" color:UIColor.systemIndigoColor action:@selector(configureKeyTapped)];
+    self.clearButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.clearButton setTitle:@"清空输入" forState:UIControlStateNormal];
+    [self.clearButton addTarget:self action:@selector(clearTapped) forControlEvents:UIControlEventTouchUpInside];
     self.voiceButton = [self button:@"🎙️ 语音输入" color:UIColor.systemTealColor action:@selector(voiceTapped)];
+    self.startButton = [self button:@"开始" color:UIColor.systemIndigoColor action:@selector(startTapped)];
+    UILabel *composerTitle = [self label:@"想让我做什么？" size:20];
+    composerTitle.font = [UIFont boldSystemFontOfSize:20];
+    NSArray *quickNames = @[@"设置", @"地图", @"通讯录", @"备忘录"];
+    NSMutableArray<UIView *> *quickButtons = [NSMutableArray array];
+    for (NSInteger i = 0; i < (NSInteger)quickNames.count; i++) {
+        UIButton *quick = [UIButton buttonWithType:UIButtonTypeSystem];
+        [quick setTitle:quickNames[i] forState:UIControlStateNormal];
+        quick.tag = i;
+        quick.backgroundColor = UIColor.tertiarySystemFillColor;
+        quick.layer.cornerRadius = 11;
+        [quick.heightAnchor constraintEqualToConstant:36].active = YES;
+        [quick addTarget:self action:@selector(quickTaskTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [quickButtons addObject:quick];
+    }
+    UIStackView *quickRow = [[UIStackView alloc] initWithArrangedSubviews:quickButtons];
+    quickRow.axis = UILayoutConstraintAxisHorizontal;
+    quickRow.distribution = UIStackViewDistributionFillEqually;
+    quickRow.spacing = 8;
+    UIStackView *composerActions = [[UIStackView alloc] initWithArrangedSubviews:@[self.voiceButton, self.startButton]];
+    composerActions.axis = UILayoutConstraintAxisHorizontal;
+    composerActions.distribution = UIStackViewDistributionFillEqually;
+    composerActions.spacing = 10;
+
     UILabel *hotkeyHint = [self label:@"在其他 App 三连按音量下键打开 BeanBao 并录音（音量仍照常变化）" size:14];
     hotkeyHint.textColor = UIColor.secondaryLabelColor;
     self.hotkeySwitch = [UISwitch new];
@@ -137,35 +186,51 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     hotkeyRow.spacing = 12;
     [hotkeyHint setContentCompressionResistancePriority:UILayoutPriorityDefaultLow
                                                 forAxis:UILayoutConstraintAxisHorizontal];
-    self.startButton = [self button:@"开始" color:UIColor.systemBlueColor action:@selector(startTapped)];
-    self.stopButton = [self button:@"停止任务" color:UIColor.systemRedColor action:@selector(stopTapped)];
+    self.stopButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.stopButton setTitle:@"停止任务" forState:UIControlStateNormal];
+    [self.stopButton addTarget:self action:@selector(stopTapped) forControlEvents:UIControlEventTouchUpInside];
     self.stopButton.enabled = NO;
     self.stopButton.alpha = 0.5;
-    self.stateLabel = [self label:@"连接中…" size:18];
-    self.stateLabel.font = [UIFont boldSystemFontOfSize:18];
+    self.stateLabel = [self label:@"连接中…" size:19];
+    self.stateLabel.font = [UIFont boldSystemFontOfSize:19];
     self.detailLabel = [self label:@"" size:15];
     self.detailLabel.textColor = UIColor.secondaryLabelColor;
     self.feedbackLabel = [self label:@"" size:15];
     self.feedbackLabel.textColor = UIColor.systemTealColor;
+    UILabel *statusTitle = [self label:@"任务状态" size:13];
+    statusTitle.textColor = UIColor.secondaryLabelColor;
+    UILabel *hotkeyTitle = [self label:@"快捷唤醒" size:17];
+    hotkeyTitle.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
+    UILabel *footer = [self label:@"只执行可核对的任务；遇锁屏或界面变化会停下。" size:13];
+    footer.textColor = UIColor.tertiaryLabelColor;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
-        heading, hint, self.taskField, self.clearButton, self.voiceButton, keyButton, self.startButton,
-        self.stopButton, hotkeyRow, self.stateLabel, self.detailLabel, self.feedbackLabel]];
+        hero, [self card:@[modelRow] spacing:0],
+        [self card:@[composerTitle, self.taskField, quickRow, composerActions, self.clearButton] spacing:15],
+        [self card:@[statusTitle, self.stateLabel, self.detailLabel, self.stopButton] spacing:9],
+        [self card:@[hotkeyTitle, hotkeyRow] spacing:12], self.feedbackLabel, footer]];
     stack.axis = UILayoutConstraintAxisVertical;
-    stack.spacing = 16;
+    stack.spacing = 18;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:stack];
-    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    UIScrollView *scroll = [UIScrollView new];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.keyboardDismissMode = UIScrollViewKeyboardDismissModeInteractive;
+    [self.view addSubview:scroll];
+    [scroll addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[
-        [stack.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:24],
-        [stack.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-24],
-        [stack.topAnchor constraintEqualToAnchor:safe.topAnchor constant:32],
-        [self.taskField.heightAnchor constraintEqualToConstant:48],
-        [self.clearButton.heightAnchor constraintEqualToConstant:42],
-        [self.voiceButton.heightAnchor constraintEqualToConstant:48],
-        [keyButton.heightAnchor constraintEqualToConstant:42],
-        [self.startButton.heightAnchor constraintEqualToConstant:48],
-        [self.stopButton.heightAnchor constraintEqualToConstant:48],
+        [scroll.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+        [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:20],
+        [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-20],
+        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:24],
+        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-28],
+        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-40],
+        [self.taskField.heightAnchor constraintEqualToConstant:52],
+        [self.voiceButton.heightAnchor constraintEqualToConstant:52],
+        [self.startButton.heightAnchor constraintEqualToConstant:52]
     ]];
+    [self refreshModelLabel];
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.8 target:self selector:@selector(refreshStatus)
                                                userInfo:nil repeats:YES];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationBecameActive:)
@@ -175,6 +240,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self refreshModelLabel];
     [self refreshStatus];
 }
 
@@ -343,7 +409,7 @@ static BOOL BBSaveClaudeKey(NSString *key) {
     self.detailLabel.text = @"";
     self.startButton.enabled = NO;
     self.keyboardStartItem.enabled = NO;
-    [self request:@{@"op": @"start", @"task": task, @"model": @"claude"}];
+    [self request:@{@"op": @"start", @"task": task}];
 }
 
 - (void)stopTapped {
@@ -355,24 +421,27 @@ static BOOL BBSaveClaudeKey(NSString *key) {
 
 - (void)clearTapped { self.taskField.text = @""; [self.taskField resignFirstResponder]; }
 
-- (void)configureKeyTapped {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"配置 Claude Key"
-        message:@"Key 保存在本机，调用 Claude 时用于请求 Anthropic。请勿把 Key 写进任务文字。" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.placeholder = @"sk-ant-…";
-        field.secureTextEntry = YES;
-        field.autocorrectionType = UITextAutocorrectionTypeNo;
-        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+- (void)refreshModelLabel {
+    NSDictionary *config = BBModelLoad();
+    NSString *provider = config[@"provider"];
+    NSString *model = BBModelProfile(config, provider)[@"model"] ?: @"";
+    self.modelLabel.text = [NSString stringWithFormat:@"%@ · %@%@", BBModelProviderName(provider), model,
+        BBModelReadKey(provider) ? @"" : @" · 待配置 Key"];
+}
+
+- (void)settingsTapped {
+    [self.taskField resignFirstResponder];
+    BBModelSettingsViewController *settings = [BBModelSettingsViewController new];
     __weak typeof(self) weakSelf = self;
-    [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        NSString *key = [alert.textFields.firstObject.text
-            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        weakSelf.feedbackLabel.text = BBSaveClaudeKey(key) ? @"Claude Key 已保存在本机" : @"Key 格式或保存失败";
-        alert.textFields.firstObject.text = @"";
-    }]];
-    [self presentViewController:alert animated:YES completion:nil];
+    settings.onSave = ^{ [weakSelf refreshModelLabel]; };
+    [self.navigationController pushViewController:settings animated:YES];
+}
+
+- (void)quickTaskTapped:(UIButton *)sender {
+    NSArray *tasks = @[@"打开设置", @"打开地图", @"打开通讯录", @"打开备忘录"];
+    if (sender.tag < 0 || sender.tag >= (NSInteger)tasks.count) return;
+    self.taskField.text = tasks[sender.tag];
+    self.feedbackLabel.text = @"已填入指令，点开始后执行";
 }
 
 - (void)hotkeyChanged {
