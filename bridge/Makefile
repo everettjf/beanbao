@@ -7,14 +7,14 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = BeanBaoBridge
 TOOL_NAME = beanbaoctl
-BeanBaoBridge_FILES = Tweak.x BeanBaoBridge.m BeanBaoApp.m MCPLogger.m \
+BeanBaoBridge_FILES = Tweak.x BeanBaoBridge.m BeanBaoApp.m BBQuickOverlay.m ../agent-native/AgentClient.m MCPLogger.m \
   ../vendor/ios-mcp/HIDManager.m ../vendor/ios-mcp/ScreenManager.m \
   ../vendor/ios-mcp/AccessibilityManager.m ../vendor/ios-mcp/TextInputManager.m \
   ../vendor/ios-mcp/VisionOCREngine.m ../vendor/ios-mcp/MCPAXQueryContext.m \
   ../vendor/ios-mcp/MCPAXRemoteContextResolver.m ../vendor/ios-mcp/MCPUIElementSerializer.m \
   ../vendor/ios-mcp/MCPUIElementsFacade.m ../vendor/ios-mcp/MCPAXAttributeBridge.m \
   ../vendor/ios-mcp/MCPAXNodeSource.m
-BeanBaoBridge_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-function -I../vendor/ios-mcp
+BeanBaoBridge_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-function -I../vendor/ios-mcp -I../agent-native
 BeanBaoBridge_FRAMEWORKS = UIKit CoreGraphics QuartzCore IOKit Vision Security
 BeanBaoBridge_LIBRARIES = roothide
 BeanBaoBridge_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries

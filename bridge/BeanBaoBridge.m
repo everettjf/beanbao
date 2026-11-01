@@ -1,6 +1,7 @@
 #import "BeanBaoBridge.h"
 #import "BBObservationClock.h"
 #import "BeanBaoApp.h"
+#import "BBQuickOverlay.h"
 #import "ScreenManager.h"
 #import "AccessibilityManager.h"
 #import "VisionOCREngine.h"
@@ -195,6 +196,23 @@ static NSString *BBTokenFromFile(void) {
     return result;
 }
 
+- (NSDictionary *)quickOverlay:(NSDictionary *)request {
+    NSString *mode = request[@"mode"];
+    if (![mode isKindOfClass:NSString.class] || ![@[@"show", @"show_voice", @"hide"] containsObject:mode])
+        return BBError(@"Invalid quick overlay mode");
+    if (![mode isEqualToString:@"hide"] && ![self unlocked])
+        return BBError(@"Device is locked, screen is off, or state is unknown");
+    __block BOOL shown = YES;
+    void (^update)(void) = ^{
+        if ([mode isEqualToString:@"show"]) shown = [[BBQuickOverlay shared] show];
+        else if ([mode isEqualToString:@"show_voice"]) shown = [[BBQuickOverlay shared] showAndStartDictation];
+        else [[BBQuickOverlay shared] hide];
+    };
+    if (NSThread.isMainThread) update();
+    else dispatch_sync(dispatch_get_main_queue(), update);
+    return shown ? @{@"ok": @YES} : BBError(@"Quick overlay could not open");
+}
+
 - (NSDictionary *)observe:(NSDictionary *)request {
     NSDictionary *state = [[ScreenManager sharedInstance] deviceInteractionState] ?: @{};
     NSDictionary *frontmost = BBFrontmostApp();
@@ -320,6 +338,7 @@ static NSString *BBTokenFromFile(void) {
         else if ([request[@"op"] isEqualToString:@"observe"]) response = [self observe:request];
         else if ([request[@"op"] isEqualToString:@"act"]) response = [self perform:request];
         else if ([request[@"op"] isEqualToString:@"wake_lease"]) response = [self wakeLease:request];
+        else if ([request[@"op"] isEqualToString:@"quick_overlay"]) response = [self quickOverlay:request];
         else response = BBError(@"Unknown operation");
     } @catch (NSException *exception) {
         response = BBError([NSString stringWithFormat:@"Bridge operation failed: %@", exception.name]);
