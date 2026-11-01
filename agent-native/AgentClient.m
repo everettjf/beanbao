@@ -5,9 +5,9 @@
 #import <errno.h>
 
 NSDictionary *BBAgentRequest(NSDictionary *request) {
-    if (![NSJSONSerialization isValidJSONObject:request]) return @{@"ok": @NO, @"error": @"请求格式无效"};
+    if (![NSJSONSerialization isValidJSONObject:request]) return @{@"ok": @NO, @"error": @"Invalid request format"};
     NSData *json = [NSJSONSerialization dataWithJSONObject:request options:0 error:nil];
-    if (json.length >= 4096) return @{@"ok": @NO, @"error": @"请求过长"};
+    if (json.length >= 4096) return @{@"ok": @NO, @"error": @"Request is too long"};
     // RootHide's SSH shell has a different /var/mobile view from launchd and
     // SpringBoard. The app can use the first path; its CLI can use /rootfs.
     const char *paths[] = {"/var/mobile/Library/Caches/BeanBao/agent.sock",
@@ -15,7 +15,7 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     int fd = -1;
     for (NSUInteger i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
         fd = socket(AF_UNIX, SOCK_STREAM, 0);
-        if (fd < 0) return @{@"ok": @NO, @"error": @"无法创建连接"};
+        if (fd < 0) return @{@"ok": @NO, @"error": @"Could not create a connection"};
         int noSigpipe = 1;
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
         struct timeval timeout = {.tv_sec = 3};
@@ -28,7 +28,7 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
         close(fd);
         fd = -1;
     }
-    if (fd < 0) return @{@"ok": @NO, @"error": @"BeanBao 服务未运行"};
+    if (fd < 0) return @{@"ok": @NO, @"error": @"BeanBao service is not running"};
     NSMutableData *line = [json mutableCopy];
     [line appendBytes:"\n" length:1];
     const uint8_t *cursor = line.bytes;
@@ -36,7 +36,7 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     while (remaining) {
         ssize_t wrote = write(fd, cursor, remaining);
         if (wrote < 0 && errno == EINTR) continue;
-        if (wrote <= 0) { close(fd); return @{@"ok": @NO, @"error": @"请求发送失败"}; }
+        if (wrote <= 0) { close(fd); return @{@"ok": @NO, @"error": @"Could not send the request"}; }
         cursor += wrote; remaining -= (NSUInteger)wrote;
     }
     NSMutableData *reply = [NSMutableData data];
@@ -49,5 +49,5 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     }
     close(fd);
     id parsed = [NSJSONSerialization JSONObjectWithData:reply options:0 error:nil];
-    return [parsed isKindOfClass:NSDictionary.class] ? parsed : @{@"ok": @NO, @"error": @"服务响应无效"};
+    return [parsed isKindOfClass:NSDictionary.class] ? parsed : @{@"ok": @NO, @"error": @"Invalid service response"};
 }

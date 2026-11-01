@@ -11,11 +11,11 @@ from pathlib import Path
 
 
 CASES = (
-    ("打开设置", "com.apple.Preferences"),
-    ("打开通讯录", "com.apple.MobileAddressBook"),
-    ("打开备忘录", "com.apple.mobilenotes"),
-    ("打开地图", "com.apple.Maps"),
-    ("请帮我打开一下地图", "com.apple.Maps"),
+    ("Open Settings", "com.apple.Preferences"),
+    ("Open Contacts", "com.apple.MobileAddressBook"),
+    ("Open Notes", "com.apple.mobilenotes"),
+    ("Open Maps", "com.apple.Maps"),
+    ("Please open Maps.", "com.apple.Maps"),
 )
 
 
@@ -99,10 +99,10 @@ def main() -> int:
                          ensure_ascii=False), flush=True)
         previous = current
 
-    rejected = json.loads(remote("beanbaoagentctl start " + shlex.quote("请帮我打开地图并发消息"),
+    rejected = json.loads(remote("beanbaoagentctl start " + shlex.quote("Open Maps and send a message"),
                                  allowed_exit=(0, 1)))
     after = status()
-    if rejected.get("ok") is not False or "首版只接受" not in rejected.get("error", "") or \
+    if rejected.get("ok") is not False or "Supported requests" not in rejected.get("error", "") or \
             after.get("task_id") != previous.get("task_id") or \
             after.get("service_id") != previous.get("service_id") or after.get("running"):
         raise RuntimeError("Forbidden compound instruction was accepted or changed task identity.")

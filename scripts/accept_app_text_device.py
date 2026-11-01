@@ -71,8 +71,8 @@ def main() -> int:
         else:
             raise RuntimeError("BeanBao did not become foreground")
 
-        tap_label("清空输入")
-        tap_label("例如：打开地图")
+        tap_label("Clear")
+        tap_label("e.g. Open Maps")
         source = observe()
         if bridge.act(source["observation_id"], {"action": "input_text", "text": task}).get("ok") is not True:
             raise RuntimeError("Could not enter text")
@@ -81,7 +81,7 @@ def main() -> int:
         if task not in visible:
             raise RuntimeError("Entered instruction is not visible")
         starts = [e["tap"] for e in source.get("ui", {}).get("elements", [])
-                  if e.get("text") == "开始" and isinstance(e.get("tap"), dict)]
+                  if e.get("text") == "Start" and isinstance(e.get("tap"), dict)]
         if len(starts) < 2:
             raise RuntimeError("Keyboard accessory Start button is missing")
         # The page button can sit slightly above the keyboard toolbar after
@@ -101,7 +101,7 @@ def main() -> int:
                 if app.get("frontmost_app", {}).get("bundleId") != "dev.beanbao.app":
                     raise RuntimeError("Forbidden instruction changed foreground")
                 texts = [str(e.get("text", "")) for e in app.get("ui", {}).get("elements", [])]
-                if "未开始" in texts:
+                if "Not started" in texts:
                     return current
             elif current.get("task_id") and current.get("task_id") != before.get("task_id") and \
                     not current.get("running"):
@@ -119,12 +119,12 @@ def main() -> int:
             time.sleep(.2)
         return result
 
-    submit("打开通讯录")
+    submit("Open Contacts")
     confirm_frontmost("com.apple.MobileAddressBook")
     print(json.dumps({"app_case": "open_contacts", "result": "passed"}), flush=True)
 
-    marker = "BeanBao 验收 " + uuid.uuid4().hex[:8]
-    submit("新建备忘录：" + marker)
+    marker = "BeanBao test " + uuid.uuid4().hex[:8]
+    submit("Create note: " + marker)
     note = confirm_frontmost("com.apple.mobilenotes", ui=True)
     note_texts = [str(e.get("text", "")) for e in note.get("ui", {}).get("elements", [])]
     if not any(marker in text for text in note_texts):
@@ -132,17 +132,16 @@ def main() -> int:
     print(json.dumps({"app_case": "create_test_note", "result": "passed", "marker": marker},
                      ensure_ascii=False), flush=True)
 
-    submit("在地图搜索金门大桥")
+    submit("Search Maps for Golden Gate Bridge")
     map_view = confirm_frontmost("com.apple.Maps", ui=True)
     map_matches = [e for e in map_view.get("ui", {}).get("elements", [])
-                   if "Golden Gate Bridge" in str(e.get("text", "")) or
-                   "金门大桥" in str(e.get("text", ""))]
+                   if "Golden Gate Bridge" in str(e.get("text", ""))]
     positions = [e["tap"]["y"] for e in map_matches if isinstance(e.get("tap"), dict)]
     if len(positions) < 2 or max(positions) - min(positions) < 100:
         raise RuntimeError("Map marker and place card were not both visible")
     print(json.dumps({"app_case": "map_search", "result": "passed"}), flush=True)
 
-    submit("请帮我打开地图并发消息", forbidden=True)
+    submit("Open Maps and send a message", forbidden=True)
     print(json.dumps({"app_case": "forbidden_compound", "result": "rejected"}), flush=True)
     return 0
 

@@ -1,49 +1,49 @@
-# 安装、配置与支持范围
+# Install and configure BeanBao
 
-更新：2026-10-31。当前只在一台 iPhone 11、iOS 26.0.1、Relaxin 0.5.5 / RootHide 上完成真机验证。以下是开发者安装流程，不是面向普通用户的一键安装。其他型号、系统版本和越狱环境尚未验证。
+Updated October 31, 2026. This is a developer installation procedure for a compatible Relaxin / RootHide jailbreak. The tested device is an iPhone 11 running iOS 26.0.1 and Relaxin 0.5.5. Other devices require their own validation.
 
-## 现在能安装什么
+## Packages
 
-三个 RootHide `iphoneos-arm64e` 包按顺序安装：
+Install these RootHide `iphoneos-arm64e` packages in order:
 
-1. `dev.beanbao.bridge` 0.2.4：SpringBoard 中的受限观察与点击/输入桥接；固定启动白名单包含通讯录，观察过期判断使用单调时间。
-2. `dev.beanbao.agent` 0.3.52：手机端任务服务、固定任务流程，以及 Claude、OpenAI、兼容 API 适配器，依赖 Bridge 0.2.4 以上。
-3. `dev.beanbao.app` 0.3.15：文字、语音、状态与模型服务设置界面，依赖 Agent 0.3.52 以上。
+1. `dev.beanbao.bridge` 0.2.4: restricted SpringBoard observation and UI actions.
+2. `dev.beanbao.agent` 0.3.56: on-device task service and model adapters.
+3. `dev.beanbao.app` 0.3.19: native text, voice, status, shortcut, and model settings UI.
 
-本机已构建的包位于仓库的 `bridge/packages/`、`agent-native/packages/`、`app/packages/`。当前候选版为 Bridge 0.2.4 / Agent 0.3.52 / App 0.3.15；真机结果以 [build-and-test.md](build-and-test.md) 的最新记录为准。上一安装版还通过一次物理拔线任务。新版没有模拟模型入口；固定打开 App 和新建备忘录仍在本机执行，地图搜索可使用 Claude、OpenAI 或 OpenAI 兼容 HTTPS API，需要在手机上配置所选服务的 Key，也需要网络。需要先有可用的 Relaxin / RootHide 越狱与对应包管理环境；BeanBao 自身不提供安装任意第三方 App 的接口。当前设备通过已配对的 USB SSH 以 root 执行 `dpkg -i` 安装，其他用户可以使用其越狱环境中支持 RootHide 包的管理方式。首次安装或更新 Bridge 后需要让 SpringBoard 重新加载，才能启用新的注入；该操作可能让手机锁定，需自行解锁。只更新 Agent 或 App 不需重载 SpringBoard。
+The packages are under `bridge/packages/`, `agent-native/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
 
-从源码构建时，在 Mac 上准备支持 RootHide 的 Theos 工具链，并设置 `THEOS` 为其绝对路径；仓库根目录运行 `THEOS=/你的/roothide-theos ./scripts/build_packages.sh`。该脚本运行原生策略与 Python 测试、构建三个包、审计 Bridge 内容及 Agent/App 文件清单、依赖链、启动身份、图标、包内 arm64e Mach-O 架构和嵌入式签名结构、安装脚本，并输出 SHA-256。它只在电脑构建，不连接或修改手机；生成的 `.deb` 默认不进入 Git。
+```sh
+THEOS=/absolute/path/to/roothide-theos ./scripts/build_packages.sh
+python3 scripts/prepare_release_bundle.py
+```
 
-构建后运行 `python3 scripts/prepare_release_bundle.py`，可在 `dist/` 生成只含三包、`SHA256SUMS` 和 `INSTALL.md` 的离线传输归档。脚本会再次审计每个包，并打印归档的 SHA-256；不连接设备，也不加入模型 Key 或 SSH 凭据。归档是开发者候选包；这台手机已安装同版本并通过文字任务验收，其他设备仍需单独验证。
+The build script runs native policy, Python, and Swift Harness tests and audits package contents, dependencies, architectures, signatures, and launch identity. The bundle script creates a portable archive with the three `.deb` files, `SHA256SUMS`, and an English `INSTALL.md`. It contains no model keys, SSH credentials, or device data.
 
-有 root shell 的开发者可从归档中取出三个 `.deb` 复制到手机临时目录，依次执行：
+With a root shell on the jailbroken phone, copy over the packages and install them in this order:
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.4_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.52_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.15_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.56_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.19_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
 
-包名和依赖请以当前构建产物的 `control` 为准。当前仓库还没有软件源、自动兼容性检查、图形安装器或面向普通用户的发布包；不能把这台手机上的成功直接推广到其他设备。
+After installing or updating Bridge, reload SpringBoard to enable its injection, then unlock the phone. Updating only Agent or App does not require a SpringBoard reload. BeanBao does not provide an installer for other apps. A public software source and one-tap installer are not available yet.
 
-装机后可在已配对的电脑上运行 `python3 scripts/verify_device.py --host 127.0.0.1 --port <转发端口> --identity <专用私钥路径> --known-hosts <主机密钥文件> --expect-bundle`。该只读检查会要求设备上的三包版本与本仓库一致、Agent 返回带服务和任务 ID 的状态，并确认 Bridge 可观察；它不能代替下面的实际文字任务验收。
+To check the connected development device, run `python3 scripts/verify_device.py --host 127.0.0.1 --port <forwarded-port> --identity <private-key-path> --known-hosts <known-hosts-path> --expect-bundle`. This checks versions, the Agent service, and Bridge observation; it does not replace a real task test.
 
-## 安装后如何配置
+## First use
 
-1. 保持手机解锁、亮屏，打开 BeanBao，点首页“模型服务”卡片的“管理”。选择 **Claude**、**OpenAI** 或 **兼容 API**，填写模型名称；兼容 API 还需填写 HTTPS 服务根地址，例如 `https://example.com/v1`。首次使用时在此输入该服务的 API Key 并保存。各服务 Key 分开保存在手机本地、由 mobile 用户持有的 0600 文件中，不写进包或仓库；切换服务不会把一个 Key 发给另一家。Claude 可沿用旧版已保存的 Key。固定打开 App 和新建备忘录在本机执行，即使没有 Key 也能运行；地图搜索需要当前所选服务的 Key。
-2. 输入“打开地图”；键盘弹出时可点键盘上方的“开始”，或收起键盘后点页面中的“开始”。界面应显示完成，地图应在前台。再输入“新建备忘录：测试内容”：Agent 会新建、写入原文、点完成、返回列表并核对完整新标题；同名标题已存在时拒绝再次创建。地图搜索输入“在地图搜索金门大桥”，本地固定动作无匹配时才交给所选模型判断。备忘录界面不发送给模型。
-3. 点“🎙️ 语音输入”，按系统提示允许语音识别和麦克风。iOS 26 在这台设备上使用 Apple 本机中文听写；首次使用可能下载中文资源。说完点“结束录音”，先检查并编辑转写文字，再点“开始”。单次录音最长 30 秒，转写后临时音频文件会删除。
-4. 音量减键三连按开关默认关闭。实现会先调用系统原有音量处理，再尝试打开 BeanBao 录音。持机者已确认三连按能打开 App，但自动开始录音曾间歇失败；App 0.3.7 改为等前台可见后再消费唤醒标记；App 0.3.11 起在确实收到标记时显示“已收到按键唤醒，正在准备录音”，以便区分信号丢失与录音启动失败，仍待实体按键复测。其他用户暂不应把它当作可靠入口。
-5. 运行中可在 BeanBao 查看状态或点“停止任务”。地图搜索只允许查看结果，不启动导航；备忘录任务只用于新建，不编辑旧内容。从其他 App 发起地图任务时，Agent 可先在本地打开地图，原界面不发给模型；目标界面若仍含疑似凭据，或遇到锁屏、不确定状态，任务会停止。任务运行时 Bridge 会尝试阻止系统自动锁屏，结束或停止后恢复先前设置；用户仍可手动锁屏。目前已验证锁屏拒绝和释放，尚待解锁后跨越系统自动锁屏时长的真机实测。
+1. Unlock the phone and open BeanBao. Tap **Manage** on the **Current model** card. Choose **Claude**, **OpenAI**, or **Compatible API**. Enter a model name and your own key. For a compatible service, also enter its HTTPS base URL, such as `https://example.com/v1`, and choose a model that accepts images. Each service has a separate key file owned by the mobile user with mode `0600`. The existing Claude key from previous BeanBao versions remains usable. A key is needed for model-assisted Maps search, while opening apps and creating notes work locally.
+2. Tap a quick action or enter **Open Maps**, **Open Settings**, **Open Contacts**, or **Open Notes**, then tap **Start**. The app reports completion only after checking the actual foreground app. Chinese commands from earlier versions remain accepted.
+3. Try **Create note: BeanBao test note**. BeanBao creates a new note, returns to the list, and checks for its complete title. It will not edit an existing note. Avoid reusing the same test title.
+4. Try **Search Maps for Golden Gate Bridge**. BeanBao may send a Maps screenshot to the selected model when local actions are insufficient. It searches and checks the place marker and card; it does not start navigation. It stops if the phone locks, the UI changes unexpectedly, or possible credentials appear on screen.
+5. Tap **Voice input**, speak an English request, then tap **Stop recording**. Check or edit the transcript before tapping **Start**. iOS 26 uses on-device English dictation where available and may download a language asset on first use. Audio is removed after transcription. Recording stops automatically after 30 seconds.
 
-Agent 的本地审计文件在进程视图中位于 `/var/mobile/Library/Application Support/BeanBao/audit.jsonl`；从这台 RootHide 设备的 SSH shell 查看时，实际路径为 `/rootfs/private/var/mobile/Library/Application Support/BeanBao/audit.jsonl`。文件仅 mobile 可读写。它记录时间、事件类别、目标 App、动作类型和结果，不记录指令正文、地点、备忘录内容、坐标、截图、模型回复或 Key；文件超过 512 KiB 时从头重新记录。App 状态只显示固定的完成或错误类别。
+The **Quick launch** Volume Down triple-press switch is off by default. A normal press still changes volume. Opening BeanBao by triple press has been observed, but automatic recording has not yet passed a reliable physical-button acceptance test.
 
-## 当前能力边界
+## Data and limits
 
-- 已验证：先前组合的文字打开设置、通讯录、备忘录、地图；App 键盘上方的“开始”按钮；App 文字入口新建指定内容测试备忘录和搜索金门大桥；受限 Claude 地图搜索；电脑中文播报和持机者真人语音均经手机录音、转写、用户确认后执行“打开地图”。当前组合的证据见 [build-and-test.md](build-and-test.md)。OpenAI 与兼容 API 已通过本地请求/响应策略测试，但尚需用户在手机上提供各自 Key 后做真实服务调用验收。
-- 地图动态界面仍可能使任务安全停止。除金门大桥、渔人码头、旧金山市政厅和加州科学院外，新增 Alcatraz Island、Coit Tower、Ferry Building、Exploratorium、Palace of Fine Arts、Pier 39、Japanese Tea Garden 等真机样本；结果需由地图标记或 3D 地图标签与地点卡片共同核对，不能推断任意地点可靠。
-- 物理拔线后“打开设置”已由持机者执行成功，接回后 Agent 新任务 ID、审计开始/完成与设置前台均核对；这是已安装旧版的一次独立运行样本。新版已完成文字任务回归；实体音量键自动录音、重启后完整任务恢复及其他设备兼容性仍待验收。
-- 运行不依赖 Mac、iCTRL 或 Frida；Mac/iCTRL 用于安装和测试。
+Keys and settings stay on the phone. The Agent audit file records a limited set of task events and results, without request text, note content, screenshots, model replies, or keys. On the tested RootHide device, the SSH view of this file is `/rootfs/private/var/mobile/Library/Application Support/BeanBao/audit.jsonl`.
 
-故障恢复与已配对设备的复测命令见 [device-recovery.md](device-recovery.md)，逐项测试证据见 [build-and-test.md](build-and-test.md)，需要真人参与的最后验收见 [human-acceptance.md](human-acceptance.md)。
+BeanBao cannot install apps, send messages, make payments, or delete content. It runs on the phone without a Mac, iCTRL, or Frida; those tools are used for development and verification. One previous version passed a physical USB-disconnect test. The current version still needs that test, a reboot recovery test, and broader Maps and voice acceptance. See [device tests](build-and-test.md) and [human acceptance](human-acceptance.md).

@@ -13,7 +13,8 @@ NSDictionary *BBAuditRecord(NSString *event, NSString *app, NSString *action, NS
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         events = [NSSet setWithArray:@[@"task", @"step"]];
-        apps = [NSSet setWithArray:@[@"设置", @"备忘录", @"地图", @"通讯录",
+        apps = [NSSet setWithArray:@[@"Settings", @"Notes", @"Maps", @"Contacts",
+                                     @"设置", @"备忘录", @"地图", @"通讯录",
                                      @"com.apple.Preferences", @"com.apple.mobilenotes",
                                      @"com.apple.Maps", @"com.apple.MobileAddressBook"]];
         actions = [NSSet setWithArray:@[@"start", @"done", @"error", @"stopped",

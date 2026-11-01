@@ -43,7 +43,7 @@ final class MapHarnessTests: XCTestCase {
         let fake = FakeMapStepper(failAt: 2, failureCode: "policy")
         let result = await BeanBaoMapHarness.run("在地图搜索金门大桥", step: fake.step)
         XCTAssertFalse(result.succeeded)
-        XCTAssertEqual(result.message, "模型动作被策略拒绝")
+        XCTAssertEqual(result.message, "Model action was rejected by policy")
         XCTAssertEqual(fake.calls, 2)
     }
 
@@ -51,14 +51,14 @@ final class MapHarnessTests: XCTestCase {
         let fake = FakeMapStepper(failAt: 1, failureCode: "key")
         let result = await BeanBaoMapHarness.run("在地图搜索金门大桥", step: fake.step)
         XCTAssertFalse(result.succeeded)
-        XCTAssertEqual(result.message, "Claude Key 未配置或权限不安全")
+        XCTAssertEqual(result.message, "Model key is not configured or has unsafe permissions")
     }
 
     func testUnverifiedMapInputHasFixedMessage() async {
         let fake = FakeMapStepper(failAt: 1, failureCode: "input_unverified")
         let result = await BeanBaoMapHarness.run("在地图搜索金门大桥", step: fake.step)
         XCTAssertFalse(result.succeeded)
-        XCTAssertEqual(result.message, "未能确认地图已显示输入地点")
+        XCTAssertEqual(result.message, "Could not verify the requested place in Maps")
     }
 
     func testUnsupportedMapTaskNeverCallsDeviceStep() async {

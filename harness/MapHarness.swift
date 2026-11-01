@@ -14,22 +14,22 @@ public enum BeanBaoMapHarness {
     public static func run(_ task: String, step: @escaping BeanBaoMapStep) async -> BeanBaoTextResult {
         guard task.hasPrefix("在地图搜索"), task.utf16.count > 5, task.utf16.count <= 55,
               task.rangeOfCharacter(from: .newlines) == nil else {
-            return .init(succeeded: false, message: "无效的地图搜索指令")
+            return .init(succeeded: false, message: "Invalid Maps search request")
         }
         return await BeanBaoStepHarness.run(
             task, toolName: "map_step", maximumToolCalls: 20,
-            maximumDuration: .seconds(300), successMessage: "地图搜索已完成",
-            failureMessage: "地图搜索未完成，请检查界面",
+            maximumDuration: .seconds(300), successMessage: "Maps search completed",
+            failureMessage: "Maps search incomplete. Check the screen.",
             failureMessages: [
-                "key": "Claude Key 未配置或权限不安全",
-                "locked": "设备已锁定或屏幕关闭",
-                "wake_lease": "防自动锁屏不可用",
-                "sensitive": "界面或任务疑似包含敏感信息",
-                "model": "模型请求或输出失败",
-                "local_state": "当前地图界面无法安全执行",
-                "input_unverified": "未能确认地图已显示输入地点",
-                "policy": "模型动作被策略拒绝",
-                "fresh_state": "界面复核未通过"
+                "key": "Model key is not configured or has unsafe permissions",
+                "locked": "Device is locked or screen is off",
+                "wake_lease": "Could not keep the screen awake",
+                "sensitive": "The screen or request may contain sensitive information",
+                "model": "Model request or response failed",
+                "local_state": "Cannot safely use the current Maps screen",
+                "input_unverified": "Could not verify the requested place in Maps",
+                "policy": "Model action was rejected by policy",
+                "fresh_state": "Screen verification failed"
             ], step: step)
     }
 }
@@ -42,7 +42,7 @@ public enum BeanBaoMapHarness {
 
 private final class MapResultBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var result = BeanBaoTextResult(succeeded: false, message: "地图搜索未完成，请检查界面")
+    private var result = BeanBaoTextResult(succeeded: false, message: "Maps search incomplete. Check the screen.")
     func set(_ value: BeanBaoTextResult) { lock.lock(); result = value; lock.unlock() }
     func get() -> BeanBaoTextResult { lock.lock(); defer { lock.unlock() }; return result }
 }
@@ -76,7 +76,7 @@ private func runDeviceMap(_ taskPointer: UnsafePointer<CChar>?) -> Int32 {
     }
     guard semaphore.wait(timeout: .now() + .seconds(330)) == .success else {
         BBReleaseWakeLeaseForMap()
-        fputs("任务超过时间或步数上限\n", stderr)
+        fputs("Task exceeded its time or step limit\n", stderr)
         return 1
     }
     BBReleaseWakeLeaseForMap()

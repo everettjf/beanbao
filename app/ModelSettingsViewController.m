@@ -51,7 +51,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"模型服务";
+    self.title = @"Model services";
     self.view.backgroundColor = UIColor.systemGroupedBackgroundColor;
     self.config = BBModelLoad();
     self.drafts = [NSMutableDictionary dictionary];
@@ -65,29 +65,29 @@
         [scroll.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
         [scroll.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor]
     ]];
-    UILabel *intro = [self label:@"选择你自己的模型服务。BeanBao 只在需要理解地图界面时请求模型；打开 App 和新建备忘录仍在手机上完成。"
+    UILabel *intro = [self label:@"Choose a model service. BeanBao calls it only when it needs to understand Maps. Opening apps and creating notes happen on your phone."
                             size:15 color:UIColor.secondaryLabelColor];
-    self.providerControl = [[UISegmentedControl alloc] initWithItems:@[@"Claude", @"OpenAI", @"兼容 API"]];
+    self.providerControl = [[UISegmentedControl alloc] initWithItems:@[@"Claude", @"OpenAI", @"Compatible API"]];
     [self.providerControl addTarget:self action:@selector(providerChanged) forControlEvents:UIControlEventValueChanged];
-    self.modelField = [self field:@"例如 claude-sonnet-5-5" secure:NO];
+    self.modelField = [self field:@"e.g. claude-sonnet-5-5" secure:NO];
     self.endpointField = [self field:@"https://example.com/v1" secure:NO];
     self.endpointField.keyboardType = UIKeyboardTypeURL;
-    self.endpointGroup = [self fieldGroup:@"接口地址（HTTPS）" field:self.endpointField];
-    self.keyField = [self field:@"输入新 Key；留空则保留原 Key" secure:YES];
+    self.endpointGroup = [self fieldGroup:@"API endpoint (HTTPS)" field:self.endpointField];
+    self.keyField = [self field:@"New API key (optional)" secure:YES];
     self.keyStatus = [self label:@"" size:13 color:UIColor.secondaryLabelColor];
     self.message = [self label:@"" size:14 color:UIColor.systemRedColor];
     UIButton *save = [UIButton buttonWithType:UIButtonTypeSystem];
-    [save setTitle:@"保存模型设置" forState:UIControlStateNormal];
+    [save setTitle:@"Save model settings" forState:UIControlStateNormal];
     [save setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     save.backgroundColor = UIColor.systemIndigoColor;
     save.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     save.layer.cornerRadius = 14;
     [save.heightAnchor constraintEqualToConstant:52].active = YES;
     [save addTarget:self action:@selector(saveTapped) forControlEvents:UIControlEventTouchUpInside];
-    UILabel *privacy = [self label:@"Key 只保存在这台手机。兼容 API 使用 OpenAI Chat Completions 格式，请选择支持图片输入的模型。界面含疑似凭据时，任务会停止。"
-                              size:13 color:UIColor.tertiaryLabelColor];
+    UILabel *privacy = [self label:@"Keys stay on this phone. Compatible APIs use the OpenAI Chat Completions format and require a model that accepts images. Tasks stop when credentials may be visible."
+                              size:13 color:UIColor.secondaryLabelColor];
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
-        intro, self.providerControl, [self fieldGroup:@"模型名称" field:self.modelField],
+        intro, self.providerControl, [self fieldGroup:@"Model name" field:self.modelField],
         self.endpointGroup, [self fieldGroup:@"API Key" field:self.keyField],
         self.keyStatus, save, self.message, privacy]];
     stack.axis = UILayoutConstraintAxisVertical;
@@ -119,7 +119,7 @@
     self.endpointField.text = profile[@"endpoint"];
     self.endpointGroup.hidden = ![provider isEqualToString:@"compatible"];
     self.keyField.text = @"";
-    self.keyStatus.text = BBModelReadKey(provider) ? @"这项服务的 Key 已保存在手机上" : @"尚未配置这项服务的 Key";
+    self.keyStatus.text = BBModelReadKey(provider) ? @"A key is saved for this service" : @"No key saved for this service";
     self.message.text = @"";
 }
 
@@ -134,7 +134,7 @@
     NSDictionary *status = BBAgentRequest(@{@"op": @"status"});
     if ([status[@"running"] boolValue]) {
         self.message.textColor = UIColor.systemRedColor;
-        self.message.text = @"任务运行中，请完成或停止后再切换模型";
+        self.message.text = @"Finish or stop the current task before changing models";
         return;
     }
     NSString *error = nil;
@@ -143,14 +143,14 @@
     self.keyField.text = @"";
     if (!okay) {
         self.message.textColor = UIColor.systemRedColor;
-        self.message.text = error ?: @"保存失败";
+        self.message.text = error ?: @"Could not save settings";
         return;
     }
     self.config = BBModelLoad();
     [self.drafts removeObjectForKey:[self selectedProvider]];
     self.message.textColor = UIColor.systemGreenColor;
     [self showSelectedProfile];
-    self.message.text = @"已保存。新任务将使用此模型服务。";
+    self.message.text = @"Saved. New tasks will use this service.";
     if (self.onSave) self.onSave();
 }
 

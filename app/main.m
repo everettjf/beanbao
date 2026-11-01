@@ -91,16 +91,16 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
         initWithImage:[UIImage systemImageNamed:@"slider.horizontal.3"]
         style:UIBarButtonItemStylePlain target:self action:@selector(settingsTapped)];
-    self.navigationItem.rightBarButtonItem.accessibilityLabel = @"模型设置";
+    self.navigationItem.rightBarButtonItem.accessibilityLabel = @"Model settings";
     UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"BeanBaoIcon60"]];
     icon.contentMode = UIViewContentModeScaleAspectFit;
     icon.layer.cornerRadius = 16;
     icon.clipsToBounds = YES;
     [icon.widthAnchor constraintEqualToConstant:64].active = YES;
     [icon.heightAnchor constraintEqualToConstant:64].active = YES;
-    UILabel *heading = [self label:@"嗨，我是豆包" size:28];
+    UILabel *heading = [self label:@"Hi, I’m BeanBao" size:28];
     heading.font = [UIFont boldSystemFontOfSize:28];
-    UILabel *subtitle = [self label:@"一句话，帮你把手机上的小事做好。" size:15];
+    UILabel *subtitle = [self label:@"Small tasks on your phone, handled with one request." size:15];
     subtitle.textColor = UIColor.secondaryLabelColor;
     UIStackView *titles = [[UIStackView alloc] initWithArrangedSubviews:@[heading, subtitle]];
     titles.axis = UILayoutConstraintAxisVertical;
@@ -110,7 +110,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     hero.alignment = UIStackViewAlignmentCenter;
     hero.spacing = 14;
 
-    UILabel *modelTitle = [self label:@"当前模型服务" size:13];
+    UILabel *modelTitle = [self label:@"Current model" size:13];
     modelTitle.textColor = UIColor.secondaryLabelColor;
     self.modelLabel = [self label:@"" size:16];
     self.modelLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
@@ -118,7 +118,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     modelInfo.axis = UILayoutConstraintAxisVertical;
     modelInfo.spacing = 5;
     UIButton *modelEdit = [UIButton buttonWithType:UIButtonTypeSystem];
-    [modelEdit setTitle:@"管理  ›" forState:UIControlStateNormal];
+    [modelEdit setTitle:@"Manage  ›" forState:UIControlStateNormal];
     [modelEdit addTarget:self action:@selector(settingsTapped) forControlEvents:UIControlEventTouchUpInside];
     UIStackView *modelRow = [[UIStackView alloc] initWithArrangedSubviews:@[modelInfo, modelEdit]];
     modelRow.axis = UILayoutConstraintAxisHorizontal;
@@ -127,30 +127,30 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 
     self.taskField = [UITextField new];
     self.taskField.borderStyle = UITextBorderStyleRoundedRect;
-    self.taskField.placeholder = @"例如：打开地图";
-    self.taskField.text = @"打开地图";
+    self.taskField.placeholder = @"e.g. Open Maps";
+    self.taskField.text = @"Open Maps";
     self.taskField.font = [UIFont systemFontOfSize:18];
     self.taskField.clearButtonMode = UITextFieldViewModeWhileEditing;
     self.taskField.returnKeyType = UIReturnKeyDone;
     self.taskField.delegate = self;
     UIToolbar *inputBar = [UIToolbar new];
     [inputBar sizeToFit];
-    UIBarButtonItem *dismissItem = [[UIBarButtonItem alloc] initWithTitle:@"完成"
+    UIBarButtonItem *dismissItem = [[UIBarButtonItem alloc] initWithTitle:@"Done"
         style:UIBarButtonItemStylePlain target:self action:@selector(dismissKeyboardTapped)];
-    self.keyboardStartItem = [[UIBarButtonItem alloc] initWithTitle:@"开始"
+    self.keyboardStartItem = [[UIBarButtonItem alloc] initWithTitle:@"Start"
         style:UIBarButtonItemStyleDone target:self action:@selector(startTapped)];
     UIBarButtonItem *space = [[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
     inputBar.items = @[dismissItem, space, self.keyboardStartItem];
     self.taskField.inputAccessoryView = inputBar;
     self.clearButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.clearButton setTitle:@"清空输入" forState:UIControlStateNormal];
+    [self.clearButton setTitle:@"Clear" forState:UIControlStateNormal];
     [self.clearButton addTarget:self action:@selector(clearTapped) forControlEvents:UIControlEventTouchUpInside];
-    self.voiceButton = [self button:@"🎙️ 语音输入" color:UIColor.systemTealColor action:@selector(voiceTapped)];
-    self.startButton = [self button:@"开始" color:UIColor.systemIndigoColor action:@selector(startTapped)];
-    UILabel *composerTitle = [self label:@"想让我做什么？" size:20];
+    self.voiceButton = [self button:@"🎙️ Voice input" color:UIColor.systemTealColor action:@selector(voiceTapped)];
+    self.startButton = [self button:@"Start" color:UIColor.systemIndigoColor action:@selector(startTapped)];
+    UILabel *composerTitle = [self label:@"What can I do for you?" size:20];
     composerTitle.font = [UIFont boldSystemFontOfSize:20];
-    NSArray *quickNames = @[@"设置", @"地图", @"通讯录", @"备忘录"];
+    NSArray *quickNames = @[@"Settings", @"Maps", @"Contacts", @"Notes"];
     NSMutableArray<UIView *> *quickButtons = [NSMutableArray array];
     for (NSInteger i = 0; i < (NSInteger)quickNames.count; i++) {
         UIButton *quick = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -171,7 +171,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     composerActions.distribution = UIStackViewDistributionFillEqually;
     composerActions.spacing = 10;
 
-    UILabel *hotkeyHint = [self label:@"在其他 App 三连按音量下键打开 BeanBao 并录音（音量仍照常变化）" size:14];
+    UILabel *hotkeyHint = [self label:@"Triple press Volume Down in another app to open BeanBao and record. Volume still changes normally." size:14];
     hotkeyHint.textColor = UIColor.secondaryLabelColor;
     self.hotkeySwitch = [UISwitch new];
     int hotkeyFD = open(BBHotkeyFile, O_RDONLY | O_NOFOLLOW);
@@ -187,21 +187,21 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     [hotkeyHint setContentCompressionResistancePriority:UILayoutPriorityDefaultLow
                                                 forAxis:UILayoutConstraintAxisHorizontal];
     self.stopButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.stopButton setTitle:@"停止任务" forState:UIControlStateNormal];
+    [self.stopButton setTitle:@"Stop task" forState:UIControlStateNormal];
     [self.stopButton addTarget:self action:@selector(stopTapped) forControlEvents:UIControlEventTouchUpInside];
     self.stopButton.enabled = NO;
     self.stopButton.alpha = 0.5;
-    self.stateLabel = [self label:@"连接中…" size:19];
+    self.stateLabel = [self label:@"Connecting…" size:19];
     self.stateLabel.font = [UIFont boldSystemFontOfSize:19];
     self.detailLabel = [self label:@"" size:15];
     self.detailLabel.textColor = UIColor.secondaryLabelColor;
     self.feedbackLabel = [self label:@"" size:15];
     self.feedbackLabel.textColor = UIColor.systemTealColor;
-    UILabel *statusTitle = [self label:@"任务状态" size:13];
+    UILabel *statusTitle = [self label:@"Task status" size:13];
     statusTitle.textColor = UIColor.secondaryLabelColor;
-    UILabel *hotkeyTitle = [self label:@"快捷唤醒" size:17];
+    UILabel *hotkeyTitle = [self label:@"Quick launch" size:17];
     hotkeyTitle.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
-    UILabel *footer = [self label:@"只执行可核对的任务；遇锁屏或界面变化会停下。" size:13];
+    UILabel *footer = [self label:@"Tasks stop if the phone locks or the screen changes unexpectedly." size:13];
     footer.textColor = UIColor.tertiaryLabelColor;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
         hero, [self card:@[modelRow] spacing:0],
@@ -276,7 +276,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
             dispatch_get_main_queue(), ^{ [self checkHotkeyVoice]; });
         return;
     }
-    self.feedbackLabel.text = @"已收到按键唤醒，正在准备录音";
+    self.feedbackLabel.text = @"Shortcut received. Preparing to record…";
     unlink(BBHotkeyVoiceFile);
     [self voiceTapped];
 }
@@ -305,9 +305,9 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     BOOL ok = [reply[@"ok"] boolValue];
     NSString *phase = reply[@"phase"];
     BOOL running = [reply[@"running"] boolValue];
-    self.stateLabel.text = ok ? (@{@"idle": @"待命", @"running": @"执行中", @"stopping": @"正在停止",
-                                   @"stopped": @"已停止", @"done": @"已完成", @"error": @"未完成"}[phase] ?: @"连接中") : @"服务不可用";
-    self.detailLabel.text = ok ? (reply[@"message"] ?: @"") : (reply[@"error"] ?: @"无法连接本机服务");
+    self.stateLabel.text = ok ? (@{@"idle": @"Ready", @"running": @"Running", @"stopping": @"Stopping",
+                                   @"stopped": @"Stopped", @"done": @"Completed", @"error": @"Incomplete"}[phase] ?: @"Connecting") : @"Service unavailable";
+    self.detailLabel.text = ok ? (reply[@"message"] ?: @"") : (reply[@"error"] ?: @"Could not connect to the on-device service");
     self.startButton.enabled = !running;
     self.keyboardStartItem.enabled = !running;
     self.startButton.alpha = running ? 0.5 : 1.0;
@@ -328,8 +328,8 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
                 NSString *serviceID = [reply[@"service_id"] isKindOfClass:NSString.class] ? reply[@"service_id"] : nil;
                 if (![reply[@"ok"] boolValue] || !taskID.length || !serviceID.length) {
                     self.startRejection = ![reply[@"ok"] boolValue] && [reply[@"error"] isKindOfClass:NSString.class] ?
-                        reply[@"error"] : @"任务状态协议不兼容，请更新 BeanBao Agent";
-                    self.stateLabel.text = @"未开始";
+                        reply[@"error"] : @"Task status protocol is incompatible. Update BeanBao Agent.";
+                    self.stateLabel.text = @"Not started";
                     self.detailLabel.text = self.startRejection;
                     self.startButton.enabled = YES;
                     self.keyboardStartItem.enabled = YES;
@@ -341,9 +341,9 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
                 self.activeTaskID = taskID;
                 self.activeServiceID = serviceID;
             } else if (![reply[@"ok"] boolValue]) {
-                self.stateLabel.text = @"未停止";
+                self.stateLabel.text = @"Not stopped";
                 self.detailLabel.text = [reply[@"error"] isKindOfClass:NSString.class] ?
-                    reply[@"error"] : @"停止请求未成功";
+                    reply[@"error"] : @"Could not stop the task";
                 return;
             }
             [self showReply:reply];
@@ -361,8 +361,8 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
             self.polling = NO;
             if (self.startRequestPending || epoch != self.statusEpoch || self.startRejection.length) return;
             if (![reply[@"ok"] boolValue] && self.activeTaskID.length) {
-                self.stateLabel.text = @"服务连接中";
-                self.detailLabel.text = @"暂时无法确认任务结果，连接恢复后会重新核对";
+                self.stateLabel.text = @"Reconnecting to service";
+                self.detailLabel.text = @"Task result is temporarily unavailable. It will be checked after reconnection.";
                 self.startButton.enabled = NO;
                 self.keyboardStartItem.enabled = NO;
                 self.startButton.alpha = 0.5;
@@ -377,9 +377,9 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
                     self.statusEpoch++;
                     self.activeTaskID = nil;
                     self.activeServiceID = nil;
-                    self.startRejection = sameService ? @"任务已变化，请核对目标 App 后重试" :
-                        @"服务已重启，上一任务结果未知；请核对目标 App";
-                    self.stateLabel.text = @"状态未知";
+                    self.startRejection = sameService ? @"The task changed. Check the target app and try again." :
+                        @"The service restarted. Check the target app before retrying.";
+                    self.stateLabel.text = @"Status unknown";
                     self.detailLabel.text = self.startRejection;
                     self.startButton.enabled = YES;
                     self.keyboardStartItem.enabled = YES;
@@ -398,14 +398,14 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     if (self.startRequestPending || !self.startButton.enabled) return;
     [self.taskField resignFirstResponder];
     NSString *task = [self.taskField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!task.length) { self.feedbackLabel.text = @"请输入文字指令"; return; }
+    if (!task.length) { self.feedbackLabel.text = @"Enter a request"; return; }
     self.feedbackLabel.text = @"";
     self.statusEpoch++;
     self.startRejection = nil;
     self.activeTaskID = nil;
     self.activeServiceID = nil;
     self.startRequestPending = YES;
-    self.stateLabel.text = @"提交中";
+    self.stateLabel.text = @"Submitting…";
     self.detailLabel.text = @"";
     self.startButton.enabled = NO;
     self.keyboardStartItem.enabled = NO;
@@ -426,7 +426,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     NSString *provider = config[@"provider"];
     NSString *model = BBModelProfile(config, provider)[@"model"] ?: @"";
     self.modelLabel.text = [NSString stringWithFormat:@"%@ · %@%@", BBModelProviderName(provider), model,
-        BBModelReadKey(provider) ? @"" : @" · 待配置 Key"];
+        BBModelReadKey(provider) ? @"" : @" · API key needed"];
 }
 
 - (void)settingsTapped {
@@ -438,10 +438,10 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 }
 
 - (void)quickTaskTapped:(UIButton *)sender {
-    NSArray *tasks = @[@"打开设置", @"打开地图", @"打开通讯录", @"打开备忘录"];
+    NSArray *tasks = @[@"Open Settings", @"Open Maps", @"Open Contacts", @"Open Notes"];
     if (sender.tag < 0 || sender.tag >= (NSInteger)tasks.count) return;
     self.taskField.text = tasks[sender.tag];
-    self.feedbackLabel.text = @"已填入指令，点开始后执行";
+    self.feedbackLabel.text = @"Request added. Tap Start to run it.";
 }
 
 - (void)hotkeyChanged {
@@ -449,11 +449,11 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     if (fd < 0 || fchmod(fd, 0600) || write(fd, self.hotkeySwitch.on ? "1" : "0", 1) != 1) {
         if (fd >= 0) close(fd);
         self.hotkeySwitch.on = !self.hotkeySwitch.on;
-        self.feedbackLabel.text = @"按键设置保存失败";
+        self.feedbackLabel.text = @"Could not save the shortcut setting";
         return;
     }
     close(fd);
-    self.feedbackLabel.text = self.hotkeySwitch.on ? @"音量下键三连按已启用" : @"按键唤醒已关闭";
+    self.feedbackLabel.text = self.hotkeySwitch.on ? @"Volume Down shortcut enabled" : @"Volume Down shortcut disabled";
 }
 
 - (void)voiceTapped {
@@ -461,13 +461,13 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus status) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (status != SFSpeechRecognizerAuthorizationStatusAuthorized) {
-                self.feedbackLabel.text = @"语音识别未获授权，仍可输入文字";
+                self.feedbackLabel.text = @"Speech recognition is not allowed. You can still type.";
                 return;
             }
             [[AVAudioSession sharedInstance] requestRecordPermission:^(BOOL granted) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (granted) [self startRecording];
-                    else self.feedbackLabel.text = @"麦克风未获授权，仍可输入文字";
+                    else self.feedbackLabel.text = @"Microphone access is not allowed. You can still type.";
                 });
             }];
         });
@@ -484,9 +484,9 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     self.speechTask = nil;
     self.speechGeneration++;
     NSUInteger generation = self.speechGeneration;
-    self.speechRecognizer = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:@"zh-CN"]];
+    self.speechRecognizer = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:@"en-US"]];
     if (!self.speechRecognizer || !self.speechRecognizer.isAvailable) {
-        self.feedbackLabel.text = @"当前中文语音识别不可用";
+        self.feedbackLabel.text = @"English speech recognition is unavailable";
         return;
     }
     self.speechRequest = [SFSpeechAudioBufferRecognitionRequest new];
@@ -497,7 +497,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     AVAudioSession *session = [AVAudioSession sharedInstance];
     [session setCategory:AVAudioSessionCategoryRecord mode:AVAudioSessionModeMeasurement options:0 error:&error];
     if (!error) [session setActive:YES error:&error];
-    if (error) { self.feedbackLabel.text = @"无法启动麦克风"; self.speechRequest = nil; return; }
+    if (error) { self.feedbackLabel.text = @"Could not start the microphone"; self.speechRequest = nil; return; }
     self.audioEngine = [AVAudioEngine new];
     AVAudioInputNode *input = self.audioEngine.inputNode;
     AVAudioFormat *format = [input outputFormatForBus:0];
@@ -511,12 +511,12 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         [input removeTapOnBus:0];
         self.audioEngine = nil;
         self.speechRequest = nil;
-        self.feedbackLabel.text = @"录音启动失败";
+        self.feedbackLabel.text = @"Could not start recording";
         return;
     }
     self.recording = YES;
-    [self.voiceButton setTitle:@"结束录音" forState:UIControlStateNormal];
-    self.feedbackLabel.text = onDevice ? @"正在本机识别，结束后可修改文字" : @"正在通过 Apple 语音服务识别，结束后可修改文字";
+    [self.voiceButton setTitle:@"Stop recording" forState:UIControlStateNormal];
+    self.feedbackLabel.text = onDevice ? @"Recognizing on device. You can edit the result." : @"Recognizing with Apple Speech. You can edit the result.";
     self.speechTask = [self.speechRecognizer recognitionTaskWithRequest:self.speechRequest resultHandler:^(SFSpeechRecognitionResult *result, NSError *failure) {
         dispatch_async(dispatch_get_main_queue(), ^{
             typeof(self) strongSelf = weakSelf;
@@ -528,7 +528,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
                 strongSelf.speechTask = nil;
                 if (failure && !result.bestTranscription.formattedString.length)
                     strongSelf.feedbackLabel.text = [NSString stringWithFormat:
-                        @"语音识别未完成（%@:%ld），请改用文字输入",
+                        @"Speech recognition failed (%@:%ld). Please type your request.",
                         failure.domain ?: @"unknown", (long)failure.code];
             }
         });
@@ -541,7 +541,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     AVAudioSession *session = [AVAudioSession sharedInstance];
     [session setCategory:AVAudioSessionCategoryRecord mode:AVAudioSessionModeDefault options:0 error:&error];
     if (!error) [session setActive:YES error:&error];
-    if (error) { self.feedbackLabel.text = @"无法启动麦克风"; return; }
+    if (error) { self.feedbackLabel.text = @"Could not start the microphone"; return; }
     self.localRecordingURL = [NSURL fileURLWithPath:
         [NSTemporaryDirectory() stringByAppendingPathComponent:
             [NSString stringWithFormat:@"beanbao-voice-%@.caf", NSUUID.UUID.UUIDString]]];
@@ -555,12 +555,12 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         [[NSFileManager defaultManager] removeItemAtURL:self.localRecordingURL error:nil];
         self.localRecordingURL = nil;
         [session setActive:NO error:nil];
-        self.feedbackLabel.text = @"录音启动失败";
+        self.feedbackLabel.text = @"Could not start recording";
         return;
     }
     self.recording = YES;
-    [self.voiceButton setTitle:@"结束录音" forState:UIControlStateNormal];
-    self.feedbackLabel.text = @"正在录音，结束后在本机转写";
+    [self.voiceButton setTitle:@"Stop recording" forState:UIControlStateNormal];
+    self.feedbackLabel.text = @"Recording. Transcription starts when you stop.";
     NSUInteger generation = self.speechGeneration;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
@@ -574,22 +574,22 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         [self.localRecorder stop];
         self.localRecorder = nil;
         self.recording = NO;
-        [self.voiceButton setTitle:@"🎙️ 语音输入" forState:UIControlStateNormal];
+        [self.voiceButton setTitle:@"🎙️ Voice input" forState:UIControlStateNormal];
         [[AVAudioSession sharedInstance] setActive:NO error:nil];
         NSUInteger generation = self.speechGeneration;
         NSString *path = self.localRecordingURL.path;
         self.localRecordingURL = nil;
-        self.feedbackLabel.text = @"正在本机转写；首次使用可能下载中文资源";
+        self.feedbackLabel.text = @"Transcribing on device. English language assets may download on first use.";
         __weak typeof(self) weakSelf = self;
         [BBLocalDictation transcribeFile:path completion:^(NSString *text, NSString *failure) {
             typeof(self) strongSelf = weakSelf;
             if (!strongSelf || strongSelf.speechGeneration != generation) return;
             if (text.length) {
                 strongSelf.taskField.text = text;
-                strongSelf.feedbackLabel.text = @"转写完成；可修改文字后点开始";
+                strongSelf.feedbackLabel.text = @"Transcription ready. Edit it if needed, then tap Start.";
             } else {
                 strongSelf.feedbackLabel.text = [NSString stringWithFormat:
-                    @"本机转写未完成（%@），请改用文字输入", failure ?: @"unknown"];
+                    @"On-device transcription failed (%@). Please type your request.", failure ?: @"unknown"];
             }
         }];
         return;
@@ -601,9 +601,9 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     [self.speechRequest endAudio];
     self.audioEngine = nil;
     self.speechRequest = nil;
-    [self.voiceButton setTitle:@"🎙️ 语音输入" forState:UIControlStateNormal];
+    [self.voiceButton setTitle:@"🎙️ Voice input" forState:UIControlStateNormal];
     [[AVAudioSession sharedInstance] setActive:NO error:nil];
-    self.feedbackLabel.text = @"转写文字可修改，确认后点开始";
+    self.feedbackLabel.text = @"Check or edit the transcript, then tap Start.";
 }
 
 @end

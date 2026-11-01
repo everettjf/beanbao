@@ -18,8 +18,8 @@ final class BBLocalDictation: NSObject {
             }
             do {
                 guard let locale = await DictationTranscriber.supportedLocale(
-                    equivalentTo: Locale(identifier: "zh-CN")) else {
-                    completion(nil, "zh-CN unsupported")
+                    equivalentTo: Locale(identifier: "en-US")) else {
+                    completion(nil, "en-US unsupported")
                     return
                 }
                 let transcriber = DictationTranscriber(locale: locale, preset: .shortDictation)

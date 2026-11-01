@@ -437,6 +437,20 @@ static BOOL BBMapSearchInputReady(NSDictionary *observation) {
     return searchField && keyboardSubmit;
 }
 
+static BOOL BBMapQueryInSearchField(NSDictionary *observation, NSString *query) {
+    if (!query.length) return NO;
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isEqualToString:@"Search field"]) continue;
+        NSArray *aliases = item[@"aliases"];
+        if (![aliases isKindOfClass:NSArray.class]) continue;
+        for (NSString *alias in aliases)
+            if ([alias isKindOfClass:NSString.class] &&
+                [alias caseInsensitiveCompare:query] == NSOrderedSame) return YES;
+    }
+    return NO;
+}
+
 static BOOL BBMapSearchTapAllowed(NSDictionary *observation, double x, double y) {
     double height = [observation[@"screen"][@"height"] doubleValue];
     for (NSDictionary *item in observation[@"ui"][@"elements"]) {
@@ -760,7 +774,7 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
                 BBMapSuggestionTapAllowed(observation, query, [x doubleValue], [y doubleValue]);
         }
         if ([name isEqualToString:@"input_text"] && BBMapSearchInputReady(observation) &&
-            !BBVisibleContains(observation, query) &&
+            !BBMapQueryInSearchField(observation, query) &&
             (uiSteps == 0 || (uiSteps == 1 && [uiHistory[0] isEqualToString:@"tap"]) ||
              (uiSteps == 2 && [uiHistory[0] isEqualToString:@"tap"] &&
               [uiHistory[1] isEqualToString:@"tap"])))
@@ -774,7 +788,7 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
               [uiHistory[1] isEqualToString:@"tap"] &&
               [uiHistory[2] isEqualToString:@"input_text"])))
             return [action[@"key"] isKindOfClass:NSString.class] && [action[@"key"] isEqualToString:@"enter"] &&
-                BBVisibleContains(observation, [query substringToIndex:MIN((NSUInteger)12, query.length)]);
+                BBMapQueryInSearchField(observation, query);
         return NO;
     }
     if (autoNote) {
@@ -854,7 +868,7 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
 
 static BOOL BBApprove(NSDictionary *action) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:action options:0 error:nil];
-    fprintf(stdout, "待执行：%s\n输入 yes 执行这一步：", [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding].UTF8String);
+    fprintf(stdout, "Pending action: %s\nType yes to run this step: ", [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding].UTF8String);
     fflush(stdout);
     char answer[16] = {0};
     return fgets(answer, sizeof(answer), stdin) && !strncmp(answer, "yes", 3);
@@ -995,7 +1009,7 @@ static NSDictionary *BBFixedMapAction(NSString *task, NSDictionary *observation,
         [history.lastObject[@"action"] isEqualToString:@"press_key"] || submittedSuggestion)
         return @{@"action": @"done"};
     if (BBMapSearchInputReady(observation)) {
-        if (BBVisibleContains(observation, query))
+        if (BBMapQueryInSearchField(observation, query))
             return @{@"action": @"press_key", @"key": @"enter"};
         if ([history.lastObject[@"action"] isEqualToString:@"input_text"])
             return BBError(@"local_state");
@@ -1048,8 +1062,15 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
         return @{@"ok": @NO, @"error": @"sensitive"};
     NSDictionary *fixedAction = fixedLaunch ?: (BBMapResultVisible(observation, query) ?
         @{@"action": @"done"} : BBMapFixedSuggestionAction(observation, query));
+    if (!fixedAction && captureScreenshotForModel) {
+        NSDictionary *local = BBFixedMapAction(task, observation, history);
+        if (([local[@"action"] isEqualToString:@"input_text"] ||
+             [local[@"action"] isEqualToString:@"press_key"]) &&
+            BBValidAction(local, observation, task, history, YES, YES, NO))
+            fixedAction = local;
+    }
     if (!fixedAction && [history.lastObject[@"action"] isEqualToString:@"input_text"] &&
-        !BBVisibleContains(observation, query)) {
+        !BBMapQueryInSearchField(observation, query)) {
         for (NSUInteger retry = 0; retry < 5; retry++) {
             usleep(350000);
             NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
@@ -1064,17 +1085,17 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
                 fixedAction = @{@"action": @"done"};
                 break;
             }
-            if (BBVisibleContains(observation, query)) {
+            if (BBMapQueryInSearchField(observation, query)) {
                 fixedAction = BBMapFixedSuggestionAction(observation, query);
                 break;
             }
         }
-        if (!fixedAction && !BBVisibleContains(observation, query))
+        if (!fixedAction && !BBMapQueryInSearchField(observation, query))
             return @{@"ok": @NO, @"error": @"input_unverified"};
     }
     if (!fixedAction && [history.lastObject[@"action"] isEqualToString:@"input_text"] &&
         [observation[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] &&
-        BBVisibleContains(observation, query)) {
+        BBMapQueryInSearchField(observation, query)) {
         for (NSUInteger retry = 0; retry < 8; retry++) {
             usleep(500000);
             NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
@@ -1097,6 +1118,14 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
         observation = visual;
         fixedAction = BBMapResultVisible(observation, query) ?
             @{@"action": @"done"} : BBMapFixedSuggestionAction(observation, query);
+        if (!fixedAction) {
+            NSDictionary *local = BBFixedMapAction(task, observation, history);
+            if (([local[@"action"] isEqualToString:@"input_text"] ||
+                 [local[@"action"] isEqualToString:@"press_key"] ||
+                 (history.count > 0 && [local[@"action"] isEqualToString:@"tap"])) &&
+                BBValidAction(local, observation, task, history, YES, YES, NO))
+                fixedAction = local;
+        }
     }
     // Opening Maps search can briefly leave AX with no usable controls. Give
     // the local planner a bounded chance to see the focused search field.
@@ -1222,14 +1251,14 @@ char *BBMapStepJSON(const char *taskText, const char *historyJSON) {
 
 static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL autoNote) {
     if ([task isEqualToString:@"打开通讯录"]) {
-        fprintf(stderr, "打开通讯录请通过 BeanBao 任务服务执行\n");
+        fprintf(stderr, "Use the BeanBao task service to open Contacts\n");
         return 1;
     }
     NSString *auditApp = BBRequestedApp(task);
     NSDictionary *modelConfig = BBModelLoad();
     NSString *key = claude && !autoNote ? BBModelReadKey(modelConfig[@"provider"]) : nil;
-    if (claude && !autoNote && !key) { fprintf(stderr, "模型 Key 未配置或权限不安全\n"); return 1; }
-    if ((claude || autoNote) && BBHasSecret(task)) { fprintf(stderr, "任务文字包含疑似密钥，已停止模型请求\n"); return 1; }
+    if (claude && !autoNote && !key) { fprintf(stderr, "Model key is not configured or has unsafe permissions\n"); return 1; }
+    if ((claude || autoNote) && BBHasSecret(task)) { fprintf(stderr, "The request may contain a key. Model request stopped.\n"); return 1; }
     @try {
     NSMutableArray *history = [NSMutableArray array];
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:300];
@@ -1239,14 +1268,14 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             NSString *leaseError = [lease[@"error"] isKindOfClass:NSString.class] ? lease[@"error"] : @"";
             if ([leaseError containsString:@"locked"] ||
                 [leaseError containsString:@"screen is off"])
-                fprintf(stderr, "设备已锁定或屏幕关闭，停止模型请求\n");
-            else fprintf(stderr, "防自动锁屏不可用，已停止任务\n");
+                fprintf(stderr, "Device is locked or screen is off. Model request stopped.\n");
+            else fprintf(stderr, "Could not keep the screen awake. Task stopped.\n");
             return 1;
         }
         NSDictionary *observation = BBBridge(@{@"op": @"observe", @"ui": @YES,
             @"ocr": @(claude || autoNote), @"screenshot": @(claude && !autoNote)});
-        if (![observation[@"ok"] boolValue]) { fprintf(stderr, "观察失败\n"); return 1; }
-        if (!BBUnlockedObservation(observation)) { fprintf(stderr, "设备已锁定或屏幕关闭，停止模型请求\n"); return 1; }
+        if (![observation[@"ok"] boolValue]) { fprintf(stderr, "Screen observation failed\n"); return 1; }
+        if (!BBUnlockedObservation(observation)) { fprintf(stderr, "Device is locked or screen is off. Model request stopped.\n"); return 1; }
         NSDictionary *fixedMapLaunch = autoMap ? BBMapInitialLaunch(observation, history) : nil;
         BOOL priorNoteUIAction = NO;
         if (autoNote) for (NSDictionary *item in history)
@@ -1286,7 +1315,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         BOOL safeNoteListDone = autoNote && [fixedNoteAction[@"action"] isEqualToString:@"done"];
         if ((claude || autoNote) && !safeNewNoteTap && !safeNoteListDone && !fixedMapLaunch &&
             (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"]))) {
-            fprintf(stderr, "界面包含疑似密钥，已停止模型请求\n"); return 1;
+            fprintf(stderr, "The screen may contain a key. Model request stopped.\n"); return 1;
         }
         NSDictionary *fixedMapAction = fixedMapLaunch ?: (autoMap ?
             BBMapFixedSuggestionAction(observation, BBMapQuery(task)) : nil);
@@ -1310,7 +1339,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         NSDictionary *action = autoNote ? fixedNoteAction :
             (fixedMapAction ?: BBModelAction(task, observation, history, modelConfig, key));
         if (action[@"error"]) {
-            fprintf(stderr, autoNote ? "备忘录界面状态不符合安全条件\n" : "模型请求或输出失败\n");
+            fprintf(stderr, autoNote ? "Notes screen is not safe to use\n" : "Model request or response failed\n");
             return 1;
         }
         // Maps may finish expanding its search card after the model has seen
@@ -1345,7 +1374,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         if (!BBValidAction(action, observation, task, history, allowUI, autoMap, autoNote)) {
             BBAudit(@"step", auditApp, @"policy_block", @"blocked");
             NSString *kind = action[@"action"];
-            fprintf(stderr, "模型动作被策略拒绝：步骤 %d，类型 %s\n", step + 1,
+            fprintf(stderr, "Model action was rejected by policy: step %d, type %s\n", step + 1,
                     [kind isKindOfClass:NSString.class] &&
                     [@[@"launch_app", @"tap", @"swipe", @"input_text", @"press_key", @"done"] containsObject:kind]
                         ? kind.UTF8String : "unknown");
@@ -1354,10 +1383,10 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         NSString *name = action[@"action"];
         if ([name isEqualToString:@"done"]) {
             BBAudit(@"step", auditApp, @"done", @"ok");
-            puts([action[@"summary"] isKindOfClass:NSString.class] ? [action[@"summary"] UTF8String] : "完成");
+            puts([action[@"summary"] isKindOfClass:NSString.class] ? [action[@"summary"] UTF8String] : "Done");
             return 0;
         }
-        if (![name isEqualToString:@"launch_app"] && !autoMap && !autoNote && !BBApprove(action)) { fprintf(stderr, "用户未批准动作\n"); return 1; }
+        if (![name isEqualToString:@"launch_app"] && !autoMap && !autoNote && !BBApprove(action)) { fprintf(stderr, "Action was not approved\n"); return 1; }
         BOOL suggestionTap = autoMap && [name isEqualToString:@"tap"] &&
             BBMapSuggestionTapAllowed(observation, BBMapQuery(task),
                                       [action[@"x"] doubleValue], [action[@"y"] doubleValue]);
@@ -1377,7 +1406,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
              (BBHasSecret(fresh[@"ui"]) || BBHasSecret(fresh[@"ocr"]))) ||
             !BBFreshUICompatible(name, sameUI, sameNoteEditor, sameNoteControl, autoMap) ||
             !sameApp || !allowed || !recent) {
-            fprintf(stderr, "界面复核未通过：步骤 %d，UI=%d，App=%d，策略=%d，时效=%d\n",
+            fprintf(stderr, "Screen verification failed: step %d, UI=%d, app=%d, policy=%d, freshness=%d\n",
                     step + 1, sameUI, sameApp, allowed, recent);
             return 1;
         }
@@ -1386,12 +1415,12 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
         NSDictionary *result = BBBridge(request);
         if (![result[@"ok"] boolValue]) {
             BBAudit(@"step", auditApp, name, @"failed");
-            fprintf(stderr, "动作执行失败\n"); return 1;
+            fprintf(stderr, "Action failed\n"); return 1;
         }
         BBAudit(@"step", auditApp, name, @"ok");
         [history addObject:action];
     }
-    fprintf(stderr, "任务超过时间或步数上限\n"); return 1;
+    fprintf(stderr, "Task exceeded its time or step limit\n"); return 1;
     } @finally {
         BBReleaseWakeLease();
     }
@@ -1406,7 +1435,7 @@ int main(int argc, const char *argv[]) {
             BBExpectedProvider = [NSString stringWithUTF8String:argv[3]];
             return BBRunHarnessMap(argv[2]);
         }
-        if (argc < 2) { fprintf(stderr, "用法：beanbaod [--approve-ui] '任务文字'\n"); return 2; }
+        if (argc < 2) { fprintf(stderr, "usage: beanbaod [--approve-ui] 'request'\n"); return 2; }
         BOOL claude = YES, allowUI = NO, autoMap = NO, autoNote = NO;
         NSString *task = nil;
         for (int i = 1; i < argc; i++) {
@@ -1415,9 +1444,9 @@ int main(int argc, const char *argv[]) {
             else if ([arg isEqualToString:@"--auto-map"]) { autoMap = YES; allowUI = YES; }
             else if ([arg isEqualToString:@"--auto-note"]) { autoNote = YES; allowUI = YES; }
             else if (!task) task = arg;
-            else { fprintf(stderr, "参数过多\n"); return 2; }
+            else { fprintf(stderr, "Too many arguments\n"); return 2; }
         }
-        if (!task.length) { fprintf(stderr, "缺少任务\n"); return 2; }
+        if (!task.length) { fprintf(stderr, "Missing request\n"); return 2; }
         if ((autoMap && (!claude || !BBMapQuery(task))) ||
             (autoNote && !BBNoteText(task)) || (autoMap && autoNote)) return 2;
         return BBRun(task, claude, allowUI, autoMap, autoNote);

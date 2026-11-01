@@ -1,30 +1,26 @@
-# 当前候选版真机验收
+# Device acceptance checklist
 
-更新：2026-10-31。iPhone 11 当前候选版为 Bridge 0.2.4 / Agent 0.3.52 / App 0.3.15；实际验收结果见 [build-and-test.md](build-and-test.md)。持机者已允许操作手机；界面任务需设备已解锁。记录 BeanBao 状态和实际前台画面即可，不记录 Key、私钥、联系人或个人备忘录内容。
+Updated October 31, 2026. The tested phone is an iPhone 11 with iOS 26.0.1, Relaxin 0.5.5, and RootHide. The owner has authorized device operation. Keep the phone unlocked and screen on during UI tests. Do not record API keys, private keys, contacts, or personal note contents.
 
-## 先确认新版确实在运行
+## Verify the installed build
 
-1. 三包安装、SpringBoard 重载、Agent 重启和关闭旧 BeanBao 进程已完成；解锁后重新打开 BeanBao。
-2. 从已配对电脑运行 `scripts/verify_device.py --expect-bundle`，核对三包版本、Agent 状态协议和 Bridge 观察。完整 SSH 参数见 [真机恢复说明](device-recovery.md)。若版本或服务身份不匹配，先修复环境，不把旧版任务结果算入本轮验收。
-3. 保持手机解锁、亮屏；确认“自动锁定”已恢复持机者原来的“永不”。本轮不再改自动锁定设置。
+Run `scripts/verify_device.py --expect-bundle` with the paired SSH host, port, identity, and known-hosts options described in [installation](install-and-configure.md). Confirm Bridge, Agent, and App versions, the running Agent service, and Bridge observation. The phone's Auto-Lock setting should remain at the owner's preferred value; this checklist does not change it.
 
-## 文字控制优先
+## English text requests
 
-当前版本的文字主线已由 `scripts/accept_text_device.py` 和 `scripts/accept_app_text_device.py` 在解锁真机上通过；以下步骤保留供重新装机和其他设备复测。App 脚本会生成唯一测试备忘录标题。
+1. Enter **Open Settings** and tap **Start**. Require a completed status and an independently observed foreground bundle ID of `com.apple.Preferences`.
+2. Repeat with **Open Contacts**, **Open Notes**, and **Open Maps**. Require matching foreground bundle IDs and no contact data access.
+3. Enter **Create note: BeanBao test <unique marker>**. Require completion and the full new title in the Notes list. Use a new marker for each run.
+4. With a configured Claude, OpenAI, or compatible model key, enter **Search Maps for Golden Gate Bridge**. Require both the matching marker and place card, without starting navigation. Test each model service separately; a service without a key is not a passed live model test.
+5. Enter **Open Maps and send a message**. Require a clear rejection, no new task ID, and no message sent.
 
-1. 在 BeanBao 输入“打开设置”；键盘仍弹出时点键盘上方的“开始”。要求显示“已完成”，独立观察前台 Bundle ID 为 `com.apple.Preferences`。
-2. 返回 BeanBao，输入“打开通讯录”。要求显示“已完成”，独立观察前台为 `com.apple.MobileAddressBook`；不读取或记录联系人。
-3. 返回 BeanBao，输入“打开备忘录”，确认前台为 `com.apple.mobilenotes`。再从 BeanBao 输入一条唯一的测试内容，例如“新建备忘录：BeanBao 验收 2026-10-31 A”；要求最终返回列表并看到完整新标题。若列表已有同名标题，换一个测试标记，不重复创建。
-4. 在 BeanBao 的“模型服务”中选择并配置自己的 Claude、OpenAI 或兼容 API Key，再输入“在地图搜索金门大桥”。要求服务返回完成，地图上 Golden Gate Bridge 标记与地点卡片一致，且没有启动导航。每个服务单独验收；未配置 Key 的服务不能算通过。
-5. 从设置或地图返回 BeanBao，输入“请帮我打开一下地图”。要求与“打开地图”执行同一受限动作。再输入“请帮我打开地图并发消息”，要求明确拒绝、没有新任务执行，也不显示上一个任务的完成状态。
+The current test scripts are `scripts/accept_text_device.py` and `scripts/accept_app_text_device.py`. Check the app status, Agent task and service IDs, and actual UI together. A package audit or simulated Bridge test does not replace device acceptance.
 
-每一步同时核对 App 显示、Agent 当前 `task_id`/阶段及实际界面；任何一项不符就记为未通过。只读包检查和假 Bridge 测试不能替代这组真机结果。
+## Voice and independent operation
 
-## 后续交互与独立运行
+1. Tap **Voice input**, say **Open Maps**, and tap **Stop recording**. Review the editable transcript before tapping **Start**. Require the correct foreground app and completed Agent task. On-device English language assets may need a first-use download.
+2. Enable **Quick launch**, switch to Maps, and press Volume Down once to confirm normal volume behavior. Then quickly triple press Volume Down. Require BeanBao to open and recording to start automatically. If it opens without recording, note whether the shortcut-received message appears.
+3. Unplug USB physically and run **Open Settings** in BeanBao. Reconnect, then check that the task ID advanced, the audit contains start and completion, and Settings is in the foreground. A prior build passed this test; repeat it for this build.
+4. Reboot, re-enable Relaxin as needed, confirm Agent starts automatically, and run **Open Notes** and a limited Maps search. Do not repeatedly reinstall packages if the jailbreak has not been restored.
 
-1. **真人语音。** 点“🎙️ 语音输入”，说“打开地图”，结束录音；先核对可编辑的转写文字，再点“开始”。要求 Agent 为 `done` 且地图实际在前台。转写不准时先改文字，不执行错误内容。
-2. **实体按键。** 开启三连按开关，切到地图。单按音量下键，确认普通音量变化；再快速连按三次。要求 BeanBao 打开并自动开始录音。若打开但未录音，记录是否出现“已收到按键唤醒，正在准备录音”以及后续提示，以定位唤醒标记或麦克风启动问题。
-3. **拔线，旧版已通过。** 持机者物理拔下 USB，在 BeanBao 执行“打开设置”并确认设置打开。接回后，Agent 任务 ID 较测试前推进，审计有该任务的开始与完成，独立观察前台为 `com.apple.Preferences`。更新后可用同样步骤回归。
-4. **重启恢复。** 前述项目通过后，重启手机，按 [恢复说明](device-recovery.md)重新启用 Relaxin。确认包仍在、Agent 自动运行，再从 App 执行“打开备忘录”与一条受限地图搜索。越狱未恢复时先记录状态，不反复安装 BeanBao 包。
-
-持机者要求暂停的自动锁屏时长实验和锁屏三连按实验不在本轮步骤内。其他型号、iOS 版本和越狱环境仍需分别验证；本机结果不代表它们可用。
+The physical-button recording, current-build USB-disconnect, and current-build reboot tests remain open until their corresponding real-device observations pass. Other devices require separate validation.

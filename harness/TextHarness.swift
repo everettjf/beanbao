@@ -128,7 +128,7 @@ private struct FixedOpenAppModel: PHKModelClient {
     func stream(request: PHKCompletionRequest) -> AsyncThrowingStream<PHKModelEvent, Error> {
         let events: [PHKModelEvent]
         if request.messages.last?.role == .tool {
-            events = [.contentDelta("打开 App 操作已返回"), .completed(.stop)]
+            events = [.contentDelta("Open app action returned"), .completed(.stop)]
         } else {
             let arguments = encode(.object(["bundle_id": .string(bundle)]))
             events = [.toolCallDelta(.init(index: 0, id: UUID().uuidString,
@@ -152,7 +152,7 @@ public enum BeanBaoTextHarness {
 
     public static func run(_ task: String, bridge: @escaping BeanBaoBridgeRequest) async -> BeanBaoTextResult {
         guard let bundle = targets[task] else {
-            return .init(succeeded: false, message: "不支持的文字指令")
+            return .init(succeeded: false, message: "Unsupported text request")
         }
         return await run(task, bridge: bridge, client: FixedOpenAppModel(bundle: bundle))
     }
@@ -160,7 +160,7 @@ public enum BeanBaoTextHarness {
     static func run(_ task: String, bridge: @escaping BeanBaoBridgeRequest,
                     client: any PHKModelClient) async -> BeanBaoTextResult {
         guard let bundle = targets[task] else {
-            return .init(succeeded: false, message: "不支持的文字指令")
+            return .init(succeeded: false, message: "Unsupported text request")
         }
         let agent = PHKAgentRuntime(client: client, model: "fixed-open-app",
                                     toolRegistry: PHKToolRegistry([OpenAppTool(expectedBundle: bundle, bridge: bridge)]),
@@ -173,11 +173,11 @@ public enum BeanBaoTextHarness {
                   let result = try? JSONDecoder().decode(PHKJSONValue.self, from: Data(content.utf8)),
                   result.object?["ok"]?.bool == true,
                   result.object?["result"]?.object?["ok"]?.bool == true else {
-                return .init(succeeded: false, message: "打开 App 未完成")
+                return .init(succeeded: false, message: "Could not open the app")
             }
-            return .init(succeeded: true, message: "目标 App 已在前台")
+            return .init(succeeded: true, message: "Target app is in the foreground")
         } catch {
-            return .init(succeeded: false, message: "文字任务执行失败")
+            return .init(succeeded: false, message: "Text task failed")
         }
     }
 }
@@ -189,7 +189,7 @@ public enum BeanBaoTextHarness {
 
 private final class TextResultBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var result = BeanBaoTextResult(succeeded: false, message: "文字任务执行失败")
+    private var result = BeanBaoTextResult(succeeded: false, message: "Text task failed")
     func set(_ value: BeanBaoTextResult) { lock.lock(); result = value; lock.unlock() }
     func get() -> BeanBaoTextResult { lock.lock(); defer { lock.unlock() }; return result }
 }
@@ -215,7 +215,7 @@ public func BBRunHarnessText(_ taskPointer: UnsafePointer<CChar>?) -> Int32 {
     }
     guard semaphore.wait(timeout: .now() + .seconds(45)) == .success else {
         BBReleaseWakeLeaseForText()
-        fputs("文字任务超时\n", stderr)
+        fputs("Text task timed out\n", stderr)
         return 1
     }
     BBReleaseWakeLeaseForText()

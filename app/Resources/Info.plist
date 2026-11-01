@@ -11,11 +11,11 @@
 <key>CFBundleIconFiles</key><array><string>BeanBaoIcon29</string><string>BeanBaoIcon60</string></array>
 </dict>
 </dict>
-<key>CFBundleShortVersionString</key><string>0.3.15</string>
-<key>CFBundleVersion</key><string>15</string>
+<key>CFBundleShortVersionString</key><string>0.3.19</string>
+<key>CFBundleVersion</key><string>19</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>UIDeviceFamily</key><array><integer>1</integer></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
-<key>NSMicrophoneUsageDescription</key><string>BeanBao 在你点击语音按钮或启用按键唤醒后使用麦克风，将指令转成可编辑的文字。</string>
-<key>NSSpeechRecognitionUsageDescription</key><string>BeanBao 在你点击语音按钮或启用按键唤醒后识别中文指令；设备不支持离线识别时可能由 Apple 在线处理。</string>
+<key>NSMicrophoneUsageDescription</key><string>BeanBao uses the microphone when you tap Voice input or use the Volume Down shortcut to turn your request into editable text.</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>BeanBao recognizes spoken English after you tap Voice input or use the Volume Down shortcut. Apple may process speech online if on-device recognition is unavailable.</string>
 </dict></plist>

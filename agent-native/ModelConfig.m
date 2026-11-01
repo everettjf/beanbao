@@ -13,7 +13,7 @@ static BOOL BBProviderValid(NSString *provider) {
 
 NSString *BBModelProviderName(NSString *provider) {
     return @{@"claude": @"Claude", @"openai": @"OpenAI",
-             @"compatible": @"兼容 API"}[provider] ?: @"Claude";
+             @"compatible": @"Compatible API"}[provider] ?: @"Claude";
 }
 
 static NSDictionary *BBDefaults(void) {
@@ -109,44 +109,44 @@ static BOOL BBWritePrivateFile(NSString *path, NSData *data) {
 
 BOOL BBModelSave(NSString *provider, NSString *model, NSString *endpoint,
                  NSString *newKey, NSString **error) {
-    if (!BBProviderValid(provider)) { if (error) *error = @"请选择模型服务"; return NO; }
+    if (!BBProviderValid(provider)) { if (error) *error = @"Choose a model service"; return NO; }
     model = [model stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!model.length || model.length > 120 ||
         [model rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].location != NSNotFound) {
-        if (error) *error = @"请输入有效的模型名称"; return NO;
+        if (error) *error = @"Enter a valid model name"; return NO;
     }
     endpoint = [endpoint stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if ([provider isEqualToString:@"compatible"]) {
         NSURLComponents *parts = [NSURLComponents componentsWithString:endpoint];
         if (endpoint.length > 500 || ![parts.scheme.lowercaseString isEqualToString:@"https"] ||
             !parts.host.length || parts.user || parts.password || parts.query || parts.fragment) {
-            if (error) *error = @"兼容接口需要 HTTPS 地址，不含账号或查询参数"; return NO;
+            if (error) *error = @"Compatible APIs require an HTTPS endpoint without credentials or query parameters"; return NO;
         }
     }
     if (newKey.length && (newKey.length < 8 || newKey.length > 4000 ||
         [newKey rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].location != NSNotFound)) {
-        if (error) *error = @"API Key 格式无效"; return NO;
+        if (error) *error = @"Invalid API key"; return NO;
     }
     if (![[NSFileManager defaultManager] createDirectoryAtPath:BBSettingsDirectory
                              withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0700} error:nil]) {
-        if (error) *error = @"无法创建本机配置目录"; return NO;
+        if (error) *error = @"Could not create the local settings directory"; return NO;
     }
     struct stat info = {0};
     if (lstat(BBSettingsDirectory.fileSystemRepresentation, &info) || !S_ISDIR(info.st_mode) ||
         info.st_uid != getuid() || chmod(BBSettingsDirectory.fileSystemRepresentation, 0700)) {
-        if (error) *error = @"配置目录权限不安全"; return NO;
+        if (error) *error = @"Settings directory permissions are unsafe"; return NO;
     }
     NSMutableDictionary *profiles = [BBModelLoad()[@"profiles"] mutableCopy];
     profiles[provider] = [provider isEqualToString:@"compatible"] ?
         @{@"model": model, @"endpoint": endpoint} : @{@"model": model};
     NSDictionary *config = @{@"provider": provider, @"profiles": profiles};
     NSData *encoded = [NSJSONSerialization dataWithJSONObject:config options:0 error:nil];
-    if (!encoded || encoded.length > 8192) { if (error) *error = @"配置内容无效"; return NO; }
+    if (!encoded || encoded.length > 8192) { if (error) *error = @"Invalid model settings"; return NO; }
     if (newKey.length && !BBWritePrivateFile(BBKeyPath(provider), [newKey dataUsingEncoding:NSUTF8StringEncoding])) {
-        if (error) *error = @"API Key 保存失败"; return NO;
+        if (error) *error = @"Could not save the API key"; return NO;
     }
     if (!BBWritePrivateFile(BBSettingsPath, encoded)) {
-        if (error) *error = @"模型配置保存失败"; return NO;
+        if (error) *error = @"Could not save model settings"; return NO;
     }
     return YES;
 }

@@ -39,13 +39,16 @@ static BOOL BBIsNoteTask(NSString *task) {
 }
 
 static NSString *BBCompletionMessage(NSString *task) {
-    if ([task hasPrefix:@"在地图搜索"]) return @"地图搜索已完成";
-    if (BBIsNoteTask(task)) return @"备忘录已创建";
-    return @"目标 App 已在前台";
+    if ([task hasPrefix:@"在地图搜索"]) return @"Maps search completed";
+    if (BBIsNoteTask(task)) return @"Note created";
+    return @"Target app is in the foreground";
 }
 
 static NSString *BBNormalizeTask(NSString *task) {
     task = [task stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *lower = task.lowercaseString;
+    if ([lower hasPrefix:@"please "])
+        task = [[task substringFromIndex:7] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     for (NSString *prefix in @[@"请帮我", @"帮我", @"请"]) {
         if ([task hasPrefix:prefix]) {
             task = [[task substringFromIndex:prefix.length]
@@ -54,7 +57,10 @@ static NSString *BBNormalizeTask(NSString *task) {
         }
     }
     NSCharacterSet *speechPunctuation = [NSCharacterSet characterSetWithCharactersInString:@"。.!！？?，,"];
-    while (![task hasPrefix:@"新建备忘录："] && task.length &&
+    lower = task.lowercaseString;
+    BOOL noteTask = [task hasPrefix:@"新建备忘录："] ||
+        [lower hasPrefix:@"create note:"] || [lower hasPrefix:@"create a note:"];
+    while (!noteTask && task.length &&
            [speechPunctuation characterIsMember:[task characterAtIndex:task.length - 1]])
         task = [[task substringToIndex:task.length - 1]
             stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -70,18 +76,38 @@ static NSString *BBNormalizeTask(NSString *task) {
             break;
         }
     }
+    lower = task.lowercaseString;
+    NSDictionary *englishOpen = @{@"open settings": @"打开设置", @"open maps": @"打开地图",
+        @"open contacts": @"打开通讯录", @"open notes": @"打开备忘录",
+        @"open the settings": @"打开设置", @"open the maps": @"打开地图",
+        @"open the contacts": @"打开通讯录", @"open the notes": @"打开备忘录"};
+    if (englishOpen[lower]) return englishOpen[lower];
+    for (NSString *prefix in @[@"search maps for ", @"find in maps "]) {
+        if ([lower hasPrefix:prefix]) {
+            NSString *place = [[task substringFromIndex:prefix.length]
+                stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            return [@"在地图搜索" stringByAppendingString:place];
+        }
+    }
+    for (NSString *prefix in @[@"create note:", @"create a note:"]) {
+        if ([lower hasPrefix:prefix]) {
+            NSString *content = [[task substringFromIndex:prefix.length]
+                stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            return [@"新建备忘录：" stringByAppendingString:content];
+        }
+    }
     return task;
 }
 
 static NSString *BBAllowedTarget(NSString *task) {
-    if ([task isEqualToString:@"打开设置"]) return @"设置";
-    if ([task isEqualToString:@"打开备忘录"]) return @"备忘录";
-    if ([task isEqualToString:@"打开地图"]) return @"地图";
-    if ([task isEqualToString:@"打开通讯录"]) return @"通讯录";
+    if ([task isEqualToString:@"打开设置"]) return @"Settings";
+    if ([task isEqualToString:@"打开备忘录"]) return @"Notes";
+    if ([task isEqualToString:@"打开地图"]) return @"Maps";
+    if ([task isEqualToString:@"打开通讯录"]) return @"Contacts";
     if ([task hasPrefix:@"在地图搜索"] && task.length > 5 && task.length <= 55 &&
         [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location == NSNotFound)
-        return @"地图";
-    if (BBIsNoteTask(task)) return @"备忘录";
+        return @"Maps";
+    if (BBIsNoteTask(task)) return @"Notes";
     return nil;
 }
 
@@ -100,29 +126,30 @@ static NSDictionary *BBStatus(void) {
 }
 
 static NSString *BBFailureMessage(NSString *output) {
-    if ([output containsString:@"设备已锁定或屏幕关闭"])
-        return @"设备已锁定或屏幕关闭，请解锁后重试";
-    if ([output containsString:@"模型 Key 未配置"])
-        return @"模型 Key 未配置或权限不安全，请打开模型设置";
-    if ([output containsString:@"防自动锁屏不可用"])
-        return @"防自动锁屏不可用，已停止任务";
-    if ([output containsString:@"疑似密钥"])
-        return @"界面或任务疑似包含敏感信息，已停止";
-    if ([output containsString:@"模型请求或输出失败"])
-        return @"模型请求或输出失败，请稍后重试";
-    if ([output containsString:@"当前地图界面无法安全执行"])
-        return @"当前地图界面无法安全执行，请检查后重试";
-    if ([output containsString:@"未能确认地图已显示输入地点"])
-        return @"未能确认地图已显示输入地点，已停止";
-    if ([output containsString:@"模型动作被策略拒绝"])
-        return @"界面操作未通过安全校验，已停止";
-    if ([output containsString:@"界面复核未通过"])
-        return @"界面发生变化，已停止任务";
-    if ([output containsString:@"备忘录界面状态不符合安全条件"])
-        return @"备忘录界面状态不符合安全条件，已停止";
-    if ([output containsString:@"任务超过时间或步数上限"])
-        return @"任务超过时间或步数上限";
-    return @"任务未完成，请检查界面后重试";
+    if ([output containsString:@"Device is locked or screen is off"])
+        return @"Unlock the phone and try again";
+    if ([output containsString:@"Model key is not configured"])
+        return @"Model key is missing or has unsafe permissions. Open Model settings.";
+    if ([output containsString:@"Could not keep the screen awake"])
+        return @"Could not keep the screen awake. Task stopped.";
+    if ([output containsString:@"may contain sensitive information"] ||
+        [output containsString:@"may contain a key"])
+        return @"The screen or request may contain sensitive information. Task stopped.";
+    if ([output containsString:@"Model request or response failed"])
+        return @"Model request or response failed. Try again later.";
+    if ([output containsString:@"Cannot safely use the current Maps screen"])
+        return @"Cannot safely use the current Maps screen. Check it and try again.";
+    if ([output containsString:@"Could not verify the requested place in Maps"])
+        return @"Could not verify the requested place in Maps. Task stopped.";
+    if ([output containsString:@"Model action was rejected by policy"])
+        return @"The action failed the safety check. Task stopped.";
+    if ([output containsString:@"Screen verification failed"])
+        return @"The screen changed unexpectedly. Task stopped.";
+    if ([output containsString:@"Notes screen is not safe to use"])
+        return @"The Notes screen is not safe to use. Task stopped.";
+    if ([output containsString:@"Task exceeded its time or step limit"])
+        return @"Task exceeded its time or step limit";
+    return @"Task incomplete. Check the screen and try again.";
 }
 
 static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
@@ -152,7 +179,7 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
         BBState.stopping = NO;
         BBState.phase = stopped ? @"stopped" :
             (waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? @"done" : @"error");
-        BBState.message = stopped ? @"任务已停止" :
+        BBState.message = stopped ? @"Task stopped" :
             ([BBState.phase isEqualToString:@"done"] ? completionMessage : BBFailureMessage(summary));
         auditAction = BBState.phase;
         auditResult = [auditAction isEqualToString:@"done"] ? @"ok" : @"failed";
@@ -165,20 +192,20 @@ static NSDictionary *BBStart(NSDictionary *request) {
     NSString *model = request[@"model"];
     if (![task isKindOfClass:NSString.class] ||
         (model && ![model isKindOfClass:NSString.class]) || task.length > 220)
-        return @{@"ok": @NO, @"error": @"无效的文字任务"};
+        return @{@"ok": @NO, @"error": @"Invalid text request"};
     task = BBNormalizeTask(task);
     NSString *app = BBAllowedTarget(task);
     if (!app)
-        return @{@"ok": @NO, @"error": @"首版只接受打开指定 App、地图搜索或新建备忘录"};
+        return @{@"ok": @NO, @"error": @"Supported requests: open Settings, Maps, Contacts or Notes; search Maps; create a note."};
     NSString *selectedProvider = BBModelLoad()[@"provider"];
     if (model && ![model isEqualToString:selectedProvider])
-        return @{@"ok": @NO, @"error": @"模型设置已变化，请重新提交任务"};
+        return @{@"ok": @NO, @"error": @"Model settings changed. Submit the task again."};
     BOOL noteTask = BBIsNoteTask(task);
     NSString *completionMessage = BBCompletionMessage(task);
     @synchronized (BBState) {
-        if (BBState.child > 0) return @{@"ok": @NO, @"error": @"已有任务正在执行"};
+        if (BBState.child > 0) return @{@"ok": @NO, @"error": @"A task is already running"};
         int outputPipe[2];
-        if (pipe(outputPipe)) return @{@"ok": @NO, @"error": @"无法创建任务管道"};
+        if (pipe(outputPipe)) return @{@"ok": @NO, @"error": @"Could not create the task pipe"};
         posix_spawn_file_actions_t actions;
         posix_spawn_file_actions_init(&actions);
         posix_spawn_file_actions_addclose(&actions, outputPipe[0]);
@@ -190,7 +217,7 @@ static NSDictionary *BBStart(NSDictionary *request) {
         uint32_t executableSize = sizeof(executable);
         if (_NSGetExecutablePath(executable, &executableSize)) {
             posix_spawn_file_actions_destroy(&actions); close(outputPipe[0]); close(outputPipe[1]);
-            return @{@"ok": @NO, @"error": @"无法定位任务程序"};
+            return @{@"ok": @NO, @"error": @"Could not locate the task executable"};
         }
         const char *argvMap[] = {executable, "--harness-map", task.UTF8String,
                                  selectedProvider.UTF8String, NULL};
@@ -203,7 +230,7 @@ static NSDictionary *BBStart(NSDictionary *request) {
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,
-            @"error": [NSString stringWithFormat:@"无法启动任务进程（%d）", spawnResult]}; }
+            @"error": [NSString stringWithFormat:@"Could not start the task process (%d)", spawnResult]}; }
         int readFD = outputPipe[0];
         BBState.generation++;
         NSUInteger generation = BBState.generation;
@@ -211,7 +238,7 @@ static NSDictionary *BBStart(NSDictionary *request) {
         BBState.child = child;
         BBState.stopping = NO;
         BBState.phase = @"running";
-        BBState.message = @"正在执行";
+        BBState.message = @"Running";
         BBState.app = app;
         BBAudit(@"task", app, @"start", @"accepted");
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
@@ -227,14 +254,14 @@ static NSDictionary *BBStop(NSDictionary *request) {
         NSString *requestedService = request[@"service_id"];
         if (requestedService && (![requestedService isKindOfClass:NSString.class] ||
                                  ![requestedService isEqualToString:BBState.serviceID ?: @""]))
-            return @{@"ok": @NO, @"error": @"服务已变化，未停止其他任务"};
+            return @{@"ok": @NO, @"error": @"The service changed. No other task was stopped."};
         if (requestedTask && (![requestedTask isKindOfClass:NSString.class] ||
                               ![requestedTask isEqualToString:BBState.taskID ?: @""]))
-            return @{@"ok": @NO, @"error": @"任务已变化，未停止其他任务"};
+            return @{@"ok": @NO, @"error": @"The task changed. No other task was stopped."};
         if (BBState.child <= 0) return BBStatus();
         BBState.stopping = YES;
         BBState.phase = @"stopping";
-        BBState.message = @"正在停止";
+        BBState.message = @"Stopping";
         kill(BBState.child, SIGTERM);
         return BBStatus();
     }
@@ -245,7 +272,7 @@ static NSDictionary *BBHandle(NSDictionary *request) {
     if ([op isEqualToString:@"status"]) return BBStatus();
     if ([op isEqualToString:@"start"]) return BBStart(request);
     if ([op isEqualToString:@"stop"]) return BBStop(request);
-    return @{@"ok": @NO, @"error": @"未知操作"};
+    return @{@"ok": @NO, @"error": @"Unknown operation"};
 }
 
 static void BBClient(int fd) {
@@ -259,7 +286,7 @@ static void BBClient(int fd) {
     while (data.length < 4096 && read(fd, &byte, 1) == 1 && byte != '\n') [data appendBytes:&byte length:1];
     NSDictionary *request = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     NSDictionary *reply = [request isKindOfClass:NSDictionary.class] ? BBHandle(request) :
-        @{@"ok": @NO, @"error": @"无效请求"};
+        @{@"ok": @NO, @"error": @"Invalid request"};
     NSData *encoded = [NSJSONSerialization dataWithJSONObject:reply options:0 error:nil];
     if (encoded) {
         NSMutableData *line = [encoded mutableCopy];
@@ -281,7 +308,7 @@ int BBServe(void) {
         BBState = [BBServiceState new];
         BBState.serviceID = NSUUID.UUID.UUIDString;
         BBState.phase = @"idle";
-        BBState.message = @"等待任务";
+        BBState.message = @"Waiting for a task";
         signal(SIGPIPE, SIG_IGN);
         umask(077);
         struct stat existing = {0};

@@ -109,6 +109,16 @@ int main(void) {
         NSDictionary *rejectedModel = BBStart(@{@"task": @"打开设置", @"model": @"mock"});
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||
+            !Check([BBNormalizeTask(@"Please open Maps.") isEqualToString:@"打开地图"],
+                   "English open command maps to the allowlist") ||
+            !Check([BBNormalizeTask(@"Search Maps for Golden Gate Bridge.")
+                    isEqualToString:@"在地图搜索Golden Gate Bridge"],
+                   "English Maps search preserves the requested place") ||
+            !Check([BBNormalizeTask(@"Create note: Buy milk.")
+                    isEqualToString:@"新建备忘录：Buy milk."],
+                   "English note creation preserves punctuation") ||
+            !Check(BBAllowedTarget(BBNormalizeTask(@"Open Maps and send a message")) == nil,
+                   "English compound request remains blocked") ||
             !Check([BBNormalizeTask(@"请帮我打开一下地图。") isEqualToString:@"打开地图"],
                    "polite fixed app open maps to the allowlist") ||
             !Check([BBNormalizeTask(@"帮我在地图里搜索金门大桥。") isEqualToString:@"在地图搜索金门大桥"],
@@ -127,38 +137,38 @@ int main(void) {
                    "audit rejects coordinates or free text") ||
             !Check([BBNormalizeTask(@"新建备忘录：测试内容。") isEqualToString:@"新建备忘录：测试内容。"],
                    "note text preserved") ||
-            !Check([BBCompletionMessage(@"在地图搜索加州科学院") isEqualToString:@"地图搜索已完成"],
+            !Check([BBCompletionMessage(@"在地图搜索加州科学院") isEqualToString:@"Maps search completed"],
                    "map completion summary is fixed") ||
-            !Check([BBCompletionMessage(@"新建备忘录：测试内容") isEqualToString:@"备忘录已创建"],
+            !Check([BBCompletionMessage(@"新建备忘录：测试内容") isEqualToString:@"Note created"],
                    "note completion summary is fixed") ||
-            !Check([BBFailureMessage(@"模型请求或输出失败：private model text")
-                    isEqualToString:@"模型请求或输出失败，请稍后重试"],
+            !Check([BBFailureMessage(@"Model request or response failed: private model text")
+                    isEqualToString:@"Model request or response failed. Try again later."],
                    "model error does not expose child output") ||
             !Check([BBFailureMessage(@"unexpected private output")
-                    isEqualToString:@"任务未完成，请检查界面后重试"],
+                    isEqualToString:@"Task incomplete. Check the screen and try again."],
                    "unknown error does not expose child output") ||
-            !Check([BBFailureMessage(@"备忘录界面状态不符合安全条件")
-                    isEqualToString:@"备忘录界面状态不符合安全条件，已停止"],
+            !Check([BBFailureMessage(@"Notes screen is not safe to use")
+                    isEqualToString:@"The Notes screen is not safe to use. Task stopped."],
                    "note state error is specific and fixed") ||
-            !Check([BBFailureMessage(@"防自动锁屏不可用，已停止任务")
-                    isEqualToString:@"防自动锁屏不可用，已停止任务"],
+            !Check([BBFailureMessage(@"Could not keep the screen awake. Task stopped.")
+                    isEqualToString:@"Could not keep the screen awake. Task stopped."],
                    "wake lease failure has a fixed message") ||
-            !Check([BBFailureMessage(@"未能确认地图已显示输入地点")
-                    isEqualToString:@"未能确认地图已显示输入地点，已停止"],
+            !Check([BBFailureMessage(@"Could not verify the requested place in Maps")
+                    isEqualToString:@"Could not verify the requested place in Maps. Task stopped."],
                    "unverified map input has a fixed message") ||
             !Check(BBFreshUICompatible(@"launch_app", NO, NO, NO, NO),
                    "allowlisted app launch tolerates source UI status changes") ||
             !Check(!BBFreshUICompatible(@"tap", NO, NO, NO, NO),
                    "coordinate action still requires matching source UI") ||
-            !Check([BBAllowedTarget(@"新建备忘录：测试内容") isEqualToString:@"备忘录"],
+            !Check([BBAllowedTarget(@"新建备忘录：测试内容") isEqualToString:@"Notes"],
                    "note task accepted") ||
             !Check(![rejectedModel[@"ok"] boolValue],
                    "service rejects removed mock mode") ||
-            !Check([BBAllowedTarget(@"打开通讯录") isEqualToString:@"通讯录"],
+            !Check([BBAllowedTarget(@"打开通讯录") isEqualToString:@"Contacts"],
                    "Contacts opens only through the exact task") ||
             !Check([BBRequestedApp(@"打开通讯录") isEqualToString:@"com.apple.MobileAddressBook"],
                    "Contacts targets the installed bundle") ||
-            !Check([BBAllowedTarget(@"打开通讯录") isEqualToString:@"通讯录"],
+            !Check([BBAllowedTarget(@"打开通讯录") isEqualToString:@"Contacts"],
                    "Contacts remains an allowed fixed-open task") ||
             !Check(BBAllowedTarget(@"新建备忘录：短") == nil, "short note task refused") ||
             !Check(BBAllowedTarget(@"打开设置并删除账户") == nil, "unsafe extra instruction refused")) return 1;
@@ -195,7 +205,25 @@ int main(void) {
             @{@"text": @"search", @"visible_rect":
               @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}}]};
         NSDictionary *focusedMap = Observation(@"com.apple.Maps", NO, focusedUI, @{});
-        NSDictionary *searchedMap = Observation(@"com.apple.Maps", NO, focusedUI, @{@"text": @"金门大桥"});
+        NSDictionary *searchedUI = @{@"elements": @[
+            @{@"text": @"Search field", @"aliases": @[@"金门大桥"], @"visible_rect":
+              @{@"x": @16, @"y": @64, @"width": @327, @"height": @44}},
+            @{@"text": @"search", @"visible_rect":
+              @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}}]};
+        NSDictionary *searchedMap = Observation(@"com.apple.Maps", NO, searchedUI, @{@"text": @"金门大桥"});
+        NSDictionary *recentUI = @{@"elements": @[
+            @{@"text": @"Search field", @"aliases": @[@"Apple Maps"], @"visible_rect":
+              @{@"x": @16, @"y": @64, @"width": @327, @"height": @44}},
+            @{@"text": @"金门大桥", @"visible_rect":
+              @{@"x": @20, @"y": @180, @"width": @300, @"height": @44}},
+            @{@"text": @"search", @"visible_rect":
+              @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}}]};
+        NSDictionary *recentMap = Observation(@"com.apple.Maps", NO, recentUI, @{@"text": @"金门大桥"});
+        if (!Check(!BBMapQueryInSearchField(recentMap, @"金门大桥") &&
+                   [BBFixedMapAction(mapTask, recentMap, @[])[@"action"] isEqualToString:@"input_text"] &&
+                   BBValidAction(inputPlace, recentMap, mapTask, @[], YES, YES, NO) &&
+                   !BBValidAction(enter, recentMap, mapTask, @[], YES, YES, NO),
+                   "Maps Recents cannot be mistaken for text in the search field")) return 1;
         NSDictionary *oldCard = Observation(@"com.apple.Maps", NO,
             @{@"elements": @[@{@"text": @"Close", @"visible_rect":
                 @{@"x": @350, @"y": @513, @"width": @42, @"height": @42}},
@@ -318,6 +346,30 @@ int main(void) {
         if (!Check([verifiedMapStep[@"ok"] boolValue] && [verifiedMapStep[@"done"] boolValue] &&
                    mapLaunchModelCalls == 0 && !resultScreenshotRequested,
                    "verified map pin and place card complete without screenshot or model")) return 1;
+        __block BOOL localTapScreenshot = NO;
+        __block NSUInteger localTapModelCalls = 0;
+        BBNoteBridgeRequest localTapBridge = ^NSDictionary *(NSDictionary *request) {
+            if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                if ([request[@"screenshot"] boolValue]) localTapScreenshot = YES;
+                return StepObservation(map, @"map-after-launch");
+            }
+            if ([request[@"op"] isEqualToString:@"act"] &&
+                [request[@"action"] isEqualToString:@"tap"]) return @{@"ok": @YES};
+            return @{@"ok": @NO};
+        };
+        NSDictionary *localTapAfterLaunch = BBMapStep(mapTask,
+            @[@{@"action": @"launch_app", @"bundle_id": @"com.apple.Maps"}],
+            localTapBridge,
+            ^NSDictionary *(__unused NSString *command, __unused NSDictionary *observation,
+                             __unused NSArray *history) {
+                localTapModelCalls++;
+                return BBError(@"unexpected model call");
+            }, YES);
+        if (!Check([localTapAfterLaunch[@"ok"] boolValue] &&
+                   [localTapAfterLaunch[@"action"][@"action"] isEqualToString:@"tap"] &&
+                   localTapScreenshot && localTapModelCalls == 0,
+                   "verified search tap after Maps launch avoids an unnecessary model action")) return 1;
         NSArray *mapJourneyStates = @[map, focusedMap, searchedMap, placeCard];
         NSArray *mapJourneyActions = @[tapSearch, inputPlace, enter];
         __block NSUInteger mapJourneyStage = 0, mapJourneyReads = 0, mapJourneyModelCalls = 0;
@@ -353,8 +405,8 @@ int main(void) {
         }
         if (!Check([mapJourneyResult[@"ok"] boolValue] && [mapJourneyResult[@"done"] boolValue] &&
                    mapJourneyStage == 3 && mapJourneyHistory.count == 3 &&
-                   mapJourneyModelCalls == 3 && mapJourneyScreenshotRequested,
-                   "map harness completes a full bounded local search journey")) return 1;
+                   mapJourneyModelCalls == 1 && mapJourneyScreenshotRequested,
+                   "map harness uses local exact text and enter after model opens search")) return 1;
         NSDictionary *localClose = BBFixedMapAction(mapTask, oldCard, @[]);
         if (!Check([localClose[@"action"] isEqualToString:@"tap"] &&
                    BBValidAction(localClose, oldCard, mapTask, @[], YES, YES, NO),

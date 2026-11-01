@@ -14,12 +14,12 @@ public enum BeanBaoNoteHarness {
     public static func run(_ task: String, step: @escaping BeanBaoNoteStep) async -> BeanBaoTextResult {
         guard task.hasPrefix("新建备忘录："), task.utf16.count >= 10, task.utf16.count <= 166,
               task.rangeOfCharacter(from: .newlines) == nil else {
-            return .init(succeeded: false, message: "无效的备忘录文字指令")
+            return .init(succeeded: false, message: "Invalid note request")
         }
         return await BeanBaoStepHarness.run(
             task, toolName: "note_step", maximumToolCalls: 10,
-            maximumDuration: .seconds(300), successMessage: "备忘录已创建",
-            failureMessage: "备忘录界面状态不符合安全条件", step: step)
+            maximumDuration: .seconds(300), successMessage: "Note created",
+            failureMessage: "Notes screen is not safe to use", step: step)
     }
 }
 
@@ -31,7 +31,7 @@ public enum BeanBaoNoteHarness {
 
 private final class NoteResultBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var result = BeanBaoTextResult(succeeded: false, message: "备忘录界面状态不符合安全条件")
+    private var result = BeanBaoTextResult(succeeded: false, message: "Notes screen is not safe to use")
     func set(_ value: BeanBaoTextResult) { lock.lock(); result = value; lock.unlock() }
     func get() -> BeanBaoTextResult { lock.lock(); defer { lock.unlock() }; return result }
 }
@@ -61,7 +61,7 @@ public func BBRunHarnessNote(_ taskPointer: UnsafePointer<CChar>?) -> Int32 {
     }
     guard semaphore.wait(timeout: .now() + .seconds(330)) == .success else {
         BBReleaseWakeLease()
-        fputs("备忘录界面状态不符合安全条件\n", stderr)
+        fputs("Notes screen is not safe to use\n", stderr)
         return 1
     }
     BBReleaseWakeLease()
