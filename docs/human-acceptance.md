@@ -1,6 +1,6 @@
 # Device acceptance checklist
 
-Updated October 31, 2026. The tested phone is an iPhone 11 with iOS 26.0.1, Relaxin 0.5.5, and RootHide. The owner has authorized device operation. Keep the phone unlocked and screen on during UI tests. Do not record API keys, private keys, contacts, or personal note contents.
+Updated November 1, 2026. The tested phone is an iPhone 11 with iOS 26.0.1, Relaxin 0.5.5, and RootHide. The owner has authorized device operation. Keep the phone unlocked and screen on during UI tests. Do not record API keys, private keys, contacts, or personal note contents.
 
 ## Verify the installed build
 
@@ -19,7 +19,7 @@ The current test scripts are `scripts/accept_text_device.py` and `scripts/accept
 ## Voice and independent operation
 
 1. Tap **Voice input**, say **Open Maps**, and tap **Stop recording**. Review the editable transcript before tapping **Start**. Require the correct foreground app and completed Agent task. On-device English language assets may need a first-use download.
-2. Enable **Quick launch**, switch to Maps, and press Volume Down once to confirm normal volume behavior. Then quickly triple press Volume Down. Require BeanBao to open and recording to start automatically. If it opens without recording, note whether the shortcut-received message appears.
+2. Enable **Quick launch**, switch to Settings, and press Volume Down once to confirm normal volume behavior. Then quickly triple press Volume Down. Require the **Ask BeanBao** overlay above Settings, a brief **Starting microphone…** state, and then **Listening… Speak now.** without tapping a microphone button. Say **Open Contacts**, tap **Stop recording**, review the transcript, and tap **Run**. Require Contacts to be foreground and the task to complete. If the overlay times out before listening, record the displayed state and the voice-session markers.
 3. Unplug USB physically and run **Open Settings** in BeanBao. Reconnect, then check that the task ID advanced, the audit contains start and completion, and Settings is in the foreground. A prior build passed this test; repeat it for this build.
 4. Reboot, re-enable Relaxin as needed, confirm Agent starts automatically, and run **Open Notes** and a limited Maps search. Do not repeatedly reinstall packages if the jailbreak has not been restored.
 

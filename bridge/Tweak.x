@@ -30,7 +30,10 @@ static void BBVolumeDownReleased(void) {
     lastRelease = now;
     if (count < 3) return;
     count = 0;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    // Let SpringBoard finish the volume-button event and dismiss its HUD before
+    // asking LaunchServices to foreground the microphone owner app.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
         NSDictionary *state = [[ScreenManager sharedInstance] deviceInteractionState];
         if (![state[@"locked_known"] boolValue] || [state[@"locked"] boolValue] ||
             ![state[@"screen_on_known"] boolValue] || ![state[@"screen_on"] boolValue]) return;

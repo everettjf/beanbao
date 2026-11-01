@@ -1,14 +1,14 @@
 # Install and configure BeanBao
 
-Updated October 31, 2026. This is a developer installation procedure for a compatible Relaxin / RootHide jailbreak. The tested device is an iPhone 11 running iOS 26.0.1 and Relaxin 0.5.5. Other devices require their own validation.
+Updated November 1, 2026. This is a developer installation procedure for a compatible Relaxin / RootHide jailbreak. The tested device is an iPhone 11 running iOS 26.0.1 and Relaxin 0.5.5. Other devices require their own validation.
 
 ## Packages
 
 Install these RootHide `iphoneos-arm64e` packages in order:
 
-1. `dev.beanbao.bridge` 0.2.4: restricted SpringBoard observation and UI actions.
-2. `dev.beanbao.agent` 0.3.56: on-device task service and model adapters.
-3. `dev.beanbao.app` 0.3.21: native text, voice, activity, shortcut, and model settings UI.
+1. `dev.beanbao.bridge` 0.2.10: restricted SpringBoard observation, UI actions, and quick voice overlay.
+2. `dev.beanbao.agent` 0.3.59: on-device task service and model interpretation of natural requests.
+3. `dev.beanbao.app` 0.3.27: native text, Apple voice transcription, activity, shortcut, and model settings UI.
 
 The packages are under `bridge/packages/`, `agent-native/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
 
@@ -22,9 +22,9 @@ The build script runs native policy, Python, and Swift Harness tests and audits 
 With a root shell on the jailbroken phone, copy over the packages and install them in this order:
 
 ```sh
-dpkg -i dev.beanbao.bridge_0.2.4_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.56_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.21_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.bridge_0.2.10_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.59_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.27_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
 
@@ -40,7 +40,7 @@ To check the connected development device, run `python3 scripts/verify_device.py
 4. Try **Search Maps for Golden Gate Bridge**. BeanBao may send a Maps screenshot to the selected model when local actions are insufficient. It searches and checks the place marker and card; it does not start navigation. It stops if the phone locks, the UI changes unexpectedly, or possible credentials appear on screen.
 5. Tap **Voice input**, speak an English request, then tap **Stop recording**. Check or edit the transcript before tapping **Start**. iOS 26 uses on-device English dictation where available and may download a language asset on first use. Audio is removed after transcription. Recording stops automatically after 30 seconds.
 
-The **Quick launch** Volume Down triple-press switch is off by default. A normal press still changes volume. Opening BeanBao by triple press has been observed, but automatic recording has not yet passed a reliable physical-button acceptance test.
+The **Quick launch** Volume Down triple-press switch is off by default. A normal press still changes volume. Triple press opens the quick overlay and asks the BeanBao app to start recording. The physical button has opened the overlay on the tested phone, but automatic recording is still under acceptance testing.
 
 ## Data and limits
 
