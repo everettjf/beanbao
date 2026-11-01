@@ -1,23 +1,26 @@
-# Quick overlay prototype
+# Quick overlay and BeanBao speech plan
 
-The SpringBoard Bridge can show a BeanBao input panel above another app through the authenticated `quick_overlay` operation. The panel includes an editable request field and a Run button. Run closes the panel before asking the Agent to execute, so the Agent sees the underlying app.
+## Verified on the target phone
 
-The `show_voice` mode focuses the field and attempts to activate the system keyboard's Dictate control. It selects only a visible, clickable `Dictate` element in the bottom quarter of the screen; if no such control is found, the field remains available for typing. Apple Dictation must be enabled by the user on the device. Dictated speech may be processed by Apple under the consent shown by iOS.
+Bridge 0.2.5 displayed a SpringBoard-owned BeanBao input panel and keyboard over Maps while Maps remained the foreground app. A physical screen capture confirmed the panel. The Bridge resumed normally after installation and SpringBoard reload.
 
-## Current verification
+An experimental `show_voice` mode activated the iOS keyboard's Dictate control. After the user enabled Dictation, the microphone started without opening BeanBao. A spoken “Open Settings” test produced “Two open map” in the panel. This proves that a system keyboard can accept speech there, but it is the wrong transcription backend for BeanBao. The user requested BeanBao's own speech conversion. The keyboard Dictation trigger is removed from Bridge 0.2.6 source; the Volume Down shortcut still uses the existing BeanBao app flow. Bridge 0.2.6 has not been installed on the phone because installation reloads SpringBoard and the user asked us to avoid locking the phone overnight.
 
-- Built the arm64e Bridge package and passed the package audit.
-- Installed Bridge 0.2.5 on the iOS 26 test phone; the Bridge resumed after SpringBoard reload.
-- Confirmed the panel and keyboard appear over Maps while Maps remains the foreground app.
-- Tapping the keyboard microphone brought up the iOS “Enable Dictation?” consent prompt.
-- Automatic Dictation activation and transcription in the SpringBoard panel still require a phone test after Dictation is enabled.
+## Target design
 
-The Volume Down shortcut continues to open the BeanBao app and start its existing voice flow. The prototype does not change that shortcut until automatic Dictation and transcript delivery are verified on the phone.
+1. Triple Volume Down opens the SpringBoard overlay above the current app without switching foreground apps.
+2. A BeanBao-owned microphone process records a bounded utterance after its microphone permission has been granted. SpringBoard must not become the microphone owner: its system bundle does not carry BeanBao's privacy description or permission.
+3. A bundled on-device ASR engine transcribes 16 kHz mono audio. `whisper.cpp` with the multilingual `base` model is the first candidate so English and existing Chinese commands can use one model. Its model is about 142 MiB and must be packaged with version and checksum metadata; it is not a separate app installation. Benchmark latency and memory on the iPhone 11 before selecting it for release. `tiny` is a fallback only if `base` cannot meet the device budget.
+4. The overlay shows an explicit recording indicator, transcript, Stop/Cancel, and Run. The user can edit the transcript before Run. The Agent receives text only after Run, and the overlay closes before the Agent observes the target app.
+5. Audio is kept in a private temporary file or bounded memory buffer and removed after transcription or cancellation. No microphone audio is sent to Claude. Claude remains the action model for tasks that need it.
 
-## Next validation
+The existing app records audio itself but currently uses Apple's `SpeechAnalyzer`/`DictationTranscriber` on iOS 26. That is a separate Apple transcription backend, so it does not fulfill the on-device ASR target above. The Claude Messages API is not an audio transcription endpoint. BeanBao therefore needs the ASR component even when Claude is configured for task planning.
 
-1. Enable Apple Dictation on the phone through its consent prompt.
-2. Unlock the phone and open Maps.
-3. Send `{"op":"quick_overlay","mode":"show_voice"}` through the authenticated Bridge CLI.
-4. Check that Dictation starts automatically, speech populates the BeanBao field, and Run starts an Agent task after the panel closes.
-5. If these pass, route the triple Volume Down shortcut to `showAndStartDictation`, update the app's shortcut copy, rebuild, and test from Maps and Settings.
+## Next implementation gates
+
+1. Build a narrow BeanBao microphone-owner probe in the app or a signed companion process. With the phone unlocked, verify that it can begin recording while Maps stays foreground and the overlay remains visible. Do not start by attempting microphone capture inside SpringBoard.
+2. Integrate `whisper.cpp` into the microphone process, package a checksum-pinned multilingual `base` model, and transcribe a known local audio fixture. Then benchmark a real 3–8 second utterance on the target phone.
+3. Add authenticated local IPC for `start`, `stop`, `cancel`, and transcript/result events. Bind every recording to one overlay session and cap duration at 30 seconds.
+4. Only after those gates pass, route the triple Volume Down shortcut to the overlay and run end-to-end checks from Maps and Settings. Keep single presses changing volume normally.
+
+The current Bridge 0.2.6 source retains the verified text overlay. It does not claim automatic BeanBao speech capture or transcription yet.

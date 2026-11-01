@@ -1,7 +1,5 @@
 #import "BBQuickOverlay.h"
 #import "AgentClient.h"
-#import "AccessibilityManager.h"
-#import "HIDManager.h"
 #import <UIKit/UIKit.h>
 
 @interface BBQuickOverlay () <UITextFieldDelegate>
@@ -9,7 +7,6 @@
 @property(nonatomic, strong) UITextField *field;
 @property(nonatomic, strong) UILabel *message;
 @property(nonatomic, strong) UIButton *runButton;
-@property(nonatomic) NSUInteger dictationGeneration;
 @end
 
 @implementation BBQuickOverlay
@@ -81,7 +78,7 @@
 
     self.field = [UITextField new];
     self.field.translatesAutoresizingMaskIntoConstraints = NO;
-    self.field.placeholder = @"Say or type a request";
+    self.field.placeholder = @"Type a request";
     self.field.font = [UIFont systemFontOfSize:18];
     self.field.backgroundColor = UIColor.tertiarySystemGroupedBackgroundColor;
     self.field.borderStyle = UITextBorderStyleRoundedRect;
@@ -147,58 +144,8 @@
     return YES;
 }
 
-- (BOOL)showAndStartDictation {
-    if (![self show]) return NO;
-    NSUInteger generation = ++self.dictationGeneration;
-    self.message.text = @"Starting voice input…";
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.7 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        if (!self.window || generation != self.dictationGeneration) return;
-        [[AccessibilityManager sharedInstance] getCompactUIElementsWithMaxElements:100
-                                                                    visibleOnly:YES
-                                                                  clickableOnly:NO
-                                                                     completion:^(NSDictionary *payload, NSString *error) {
-            (void)error;
-            NSArray *elements = [payload[@"elements"] isKindOfClass:NSArray.class] ? payload[@"elements"] : @[];
-            CGFloat screenHeight = UIScreen.mainScreen.bounds.size.height;
-            NSDictionary *candidate = nil;
-            CGFloat lowestY = 0;
-            for (NSDictionary *element in elements) {
-                if (![element isKindOfClass:NSDictionary.class] ||
-                    ![element[@"text"] isEqualToString:@"Dictate"] ||
-                    ![element[@"clickable"] boolValue]) continue;
-                NSDictionary *tap = element[@"tap"];
-                CGFloat x = [tap[@"x"] doubleValue], y = [tap[@"y"] doubleValue];
-                if (x <= 0 || x >= UIScreen.mainScreen.bounds.size.width ||
-                    y < screenHeight * 0.75 || y >= screenHeight || y <= lowestY) continue;
-                candidate = tap;
-                lowestY = y;
-            }
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (!self.window || generation != self.dictationGeneration) return;
-                if (!candidate) {
-                    self.message.text = @"Tap the keyboard microphone to dictate, or type your request.";
-                    return;
-                }
-                [[IOSMCPHIDManager sharedInstance] tapAtPoint:CGPointMake([candidate[@"x"] doubleValue],
-                                                                           [candidate[@"y"] doubleValue])
-                    completion:^(BOOL success, NSString *failure) {
-                        (void)failure;
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            if (!self.window || generation != self.dictationGeneration) return;
-                            self.message.text = success ? @"Listening… Tap Done on the keyboard, then Run." :
-                                @"Tap the keyboard microphone to dictate, or type your request.";
-                        });
-                    }];
-            });
-        }];
-    });
-    return YES;
-}
-
 - (void)hide {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self hide]; }); return; }
-    self.dictationGeneration++;
     [self.field resignFirstResponder];
     self.window.hidden = YES;
     self.window.rootViewController = nil;
