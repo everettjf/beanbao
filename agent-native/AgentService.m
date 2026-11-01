@@ -99,7 +99,7 @@ static NSString *BBNormalizeTask(NSString *task) {
     return task;
 }
 
-static NSString *BBAllowedTarget(NSString *task) {
+NSString *BBAllowedTarget(NSString *task) {
     if ([task isEqualToString:@"打开设置"]) return @"Settings";
     if ([task isEqualToString:@"打开备忘录"]) return @"Notes";
     if ([task isEqualToString:@"打开地图"]) return @"Maps";
@@ -126,6 +126,10 @@ static NSDictionary *BBStatus(void) {
 }
 
 static NSString *BBFailureMessage(NSString *output) {
+    if ([output containsString:@"Unsupported request"])
+        return @"I could not identify one supported action. Try a clearer request.";
+    if ([output containsString:@"Model settings changed"])
+        return @"Model settings changed. Submit the task again.";
     if ([output containsString:@"Device is locked or screen is off"])
         return @"Unlock the phone and try again";
     if ([output containsString:@"Model key is not configured"])
@@ -171,11 +175,26 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
     BBReleaseWakeLease();
     NSString *summary = [[NSString alloc] initWithData:output encoding:NSUTF8StringEncoding];
     summary = [summary stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *resolvedApp = nil;
+    for (NSString *line in [summary componentsSeparatedByString:@"\n"])
+        if ([line hasPrefix:@"BB_INTENT="]) {
+            NSString *candidate = [line substringFromIndex:@"BB_INTENT=".length];
+            if ([@[@"Settings", @"Maps", @"Contacts", @"Notes", @"MapsSearch", @"NoteCreate"]
+                    containsObject:candidate]) resolvedApp = candidate;
+            break;
+        }
+    if (resolvedApp) {
+        app = [resolvedApp isEqualToString:@"MapsSearch"] ? @"Maps" :
+            ([resolvedApp isEqualToString:@"NoteCreate"] ? @"Notes" : resolvedApp);
+        completionMessage = [resolvedApp isEqualToString:@"MapsSearch"] ? @"Maps search completed" :
+            ([resolvedApp isEqualToString:@"NoteCreate"] ? @"Note created" : @"Target app is in the foreground");
+    }
     NSString *auditAction = nil, *auditResult = nil;
     @synchronized (BBState) {
         if (BBState.generation != generation || BBState.child != child) return;
         BOOL stopped = BBState.stopping;
         BBState.child = 0;
+        BBState.app = app;
         BBState.stopping = NO;
         BBState.phase = stopped ? @"stopped" :
             (waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? @"done" : @"error");
@@ -195,8 +214,8 @@ static NSDictionary *BBStart(NSDictionary *request) {
         return @{@"ok": @NO, @"error": @"Invalid text request"};
     task = BBNormalizeTask(task);
     NSString *app = BBAllowedTarget(task);
-    if (!app)
-        return @{@"ok": @NO, @"error": @"Supported requests: open Settings, Maps, Contacts or Notes; search Maps; create a note."};
+    BOOL resolveTask = !app;
+    if (resolveTask) app = @"BeanBao";
     NSString *selectedProvider = BBModelLoad()[@"provider"];
     if (model && ![model isEqualToString:selectedProvider])
         return @{@"ok": @NO, @"error": @"Model settings changed. Submit the task again."};
@@ -223,10 +242,13 @@ static NSDictionary *BBStart(NSDictionary *request) {
                                  selectedProvider.UTF8String, NULL};
         const char *argvNote[] = {executable, "--harness-note", task.UTF8String, NULL};
         const char *argvText[] = {executable, "--harness-text", task.UTF8String, NULL};
+        const char *argvResolve[] = {executable, "--resolve-task", task.UTF8String,
+                                     selectedProvider.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
-                                     (char *const *)(noteTask ? argvNote :
-                                         (BBUsesTextHarness(task) ? argvText : argvMap)), environ);
+                                     (char *const *)(resolveTask ? argvResolve :
+                                         (noteTask ? argvNote :
+                                          (BBUsesTextHarness(task) ? argvText : argvMap))), environ);
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,

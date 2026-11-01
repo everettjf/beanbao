@@ -65,7 +65,7 @@
         [scroll.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
         [scroll.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor]
     ]];
-    UILabel *intro = [self label:@"Choose a model service. BeanBao calls it only when it needs to understand Maps. Opening apps and creating notes happen on your phone."
+    UILabel *intro = [self label:@"Choose a model service. BeanBao uses it to understand natural requests and, when needed, Maps screens. Approved app openings and note creation happen on your phone."
                             size:15 color:UIColor.secondaryLabelColor];
     self.providerControl = [[UISegmentedControl alloc] initWithItems:@[@"Claude", @"OpenAI", @"Compatible API"]];
     [self.providerControl addTarget:self action:@selector(providerChanged) forControlEvents:UIControlEventValueChanged];
@@ -84,7 +84,7 @@
     save.layer.cornerRadius = 14;
     [save.heightAnchor constraintEqualToConstant:52].active = YES;
     [save addTarget:self action:@selector(saveTapped) forControlEvents:UIControlEventTouchUpInside];
-    UILabel *privacy = [self label:@"Keys stay on this phone. Compatible APIs use the OpenAI Chat Completions format and require a model that accepts images. Tasks stop when credentials may be visible."
+    UILabel *privacy = [self label:@"Keys stay on this phone. Natural requests, including note text, may be sent to the selected model for interpretation. Maps screenshots may also be sent when needed. Compatible APIs use OpenAI Chat Completions and require image support. Tasks stop when credentials may be visible."
                               size:13 color:UIColor.secondaryLabelColor];
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
         intro, self.providerControl, [self fieldGroup:@"Model name" field:self.modelField],

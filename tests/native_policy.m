@@ -107,8 +107,36 @@ int main(void) {
                                 nil, &invalidEndpoint) && invalidEndpoint.length,
                    "compatible API rejects plaintext HTTP before writing")) return 1;
         NSDictionary *rejectedModel = BBStart(@{@"task": @"打开设置", @"model": @"mock"});
+        NSDictionary *contactsIntent = @{@"action": @"input_text", @"text": @"打开通讯录"};
         if (!Check([BBNormalizeTask(@"  打开地图。 ") isEqualToString:@"打开地图"],
                    "speech punctuation normalization") ||
+            !Check([BBResolvedTask(@"Open contacts open contacts", contactsIntent)
+                    isEqualToString:@"打开通讯录"],
+                   "model-resolved repeated app request remains one safe action") ||
+            !Check(BBResolvedTask(@"Open Contacts and send a message", contactsIntent) == nil,
+                   "model cannot discard an additional operation") ||
+            !Check(BBResolvedTask(@"Open Settings and turn off Wi-Fi",
+                                  @{@"action": @"input_text", @"text": @"打开设置"}) == nil,
+                   "model cannot reduce a settings change to an app opening") ||
+            !Check(BBResolvedTask(@"Do not open Contacts", contactsIntent) == nil,
+                   "model cannot turn a negated request into an app launch") ||
+            !Check(BBResolvedTask(@"Open Contacts", @{@"action": @"input_text",
+                                                    @"text": @"打开短信"}) == nil,
+                   "model cannot select a task outside the allowlist") ||
+            !Check([BBResolvedTask(@"Find Golden Gate Bridge in Maps",
+                                   @{@"action": @"input_text", @"text": @"在地图搜索Golden Gate Bridge"})
+                    isEqualToString:@"在地图搜索Golden Gate Bridge"],
+                   "model can identify a natural Maps search with exact place") ||
+            !Check(BBResolvedTask(@"Find Golden Gate Bridge in Maps",
+                                  @{@"action": @"input_text", @"text": @"在地图搜索Eiffel Tower"}) == nil,
+                   "model cannot invent a Maps place") ||
+            !Check([BBResolvedTask(@"Write a note saying Buy milk",
+                                   @{@"action": @"input_text", @"text": @"新建备忘录：Buy milk"})
+                    isEqualToString:@"新建备忘录：Buy milk"],
+                   "model can identify a natural note request with exact content") ||
+            !Check(BBResolvedTask(@"Write a note saying Buy milk",
+                                  @{@"action": @"input_text", @"text": @"新建备忘录：Call Alice"}) == nil,
+                   "model cannot invent note content") ||
             !Check([BBNormalizeTask(@"Please open Maps.") isEqualToString:@"打开地图"],
                    "English open command maps to the allowlist") ||
             !Check([BBNormalizeTask(@"Search Maps for Golden Gate Bridge.")

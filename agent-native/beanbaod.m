@@ -119,6 +119,9 @@ void BBBridgeFreeJSON(char *response) { free(response); }
 extern int32_t BBRunHarnessText(const char *task);
 extern int32_t BBRunHarnessNote(const char *task);
 extern int32_t BBRunHarnessMap(const char *task);
+extern NSString *BBAllowedTarget(NSString *task);
+static NSString *BBNoteText(NSString *task);
+static NSString *BBMapQuery(NSString *task);
 
 void BBReleaseWakeLease(void) {
     BBBridge(@{@"op": @"wake_lease", @"mode": @"release"});
@@ -299,6 +302,73 @@ static NSDictionary *BBModelAction(NSString *task, NSDictionary *observation, NS
         @"https://api.openai.com/v1" : profile[@"endpoint"];
     return BBOpenAIAction(task, observation, history, model, key, endpoint,
                           [provider isEqualToString:@"compatible"]);
+}
+
+static BOOL BBHasUnsafeIntent(NSString *request) {
+    NSString *lower = request.lowercaseString;
+    if ([lower hasPrefix:@"不要"] || [lower hasPrefix:@"别"] ||
+        [lower hasPrefix:@"删除"] || [lower hasPrefix:@"发消息"] ||
+        [lower hasPrefix:@"付款"] || [lower hasPrefix:@"购买"] ||
+        [lower hasPrefix:@"安装"] || [lower hasPrefix:@"拨打"] ||
+        [lower hasPrefix:@"打电话"] || [lower hasPrefix:@"关闭"] ||
+        [lower hasPrefix:@"开启"] || [lower hasPrefix:@"切换"]) return YES;
+    for (NSString *join in @[@"并", @"并且", @"然后", @"再", @"同时"])
+        for (NSString *verb in @[@"发消息", @"删除", @"付款", @"购买", @"安装", @"拨打", @"打电话", @"修改", @"编辑", @"关闭", @"开启", @"切换", @"打开"])
+            if ([lower containsString:[join stringByAppendingString:verb]]) return YES;
+    static NSRegularExpression *unsafe;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        unsafe = [NSRegularExpression regularExpressionWithPattern:
+            @"^\\s*(?:do not|don't|never|send|message|call|delete|remove|pay|purchase|buy|install|change|edit|share|post|navigate|route|toggle|enable|disable|turn|set|update|rename)\\b|\\b(?:and|then|also)\\s+(?:send|message|call|delete|remove|pay|purchase|buy|install|change|edit|share|post|open|navigate|route|toggle|enable|disable|turn|set|update|rename)\\b"
+            options:NSRegularExpressionCaseInsensitive error:nil];
+    });
+    return [unsafe firstMatchInString:request options:0 range:NSMakeRange(0, request.length)] != nil;
+}
+
+static NSString *BBResolvedTask(NSString *request, NSDictionary *action) {
+    if (![request isKindOfClass:NSString.class] || !request.length || request.length > 220 ||
+        BBHasSecret(request) || BBHasUnsafeIntent(request) ||
+        ![action[@"action"] isEqualToString:@"input_text"]) return nil;
+    NSString *task = action[@"text"];
+    if (![task isKindOfClass:NSString.class] || !BBAllowedTarget(task)) return nil;
+    NSString *query = BBMapQuery(task);
+    if (query && [request rangeOfString:query options:NSCaseInsensitiveSearch].location == NSNotFound)
+        return nil;
+    NSString *note = BBNoteText(task);
+    if (note && [request rangeOfString:note].location == NSNotFound) return nil;
+    return task;
+}
+
+static int BBResolveAndRunTask(NSString *request, NSString *expectedProvider) {
+    if (BBHasSecret(request)) { fputs("The request may contain a key. Model request stopped.\n", stderr); return 1; }
+    if (BBHasUnsafeIntent(request)) { fputs("Unsupported request\n", stderr); return 1; }
+    NSDictionary *config = BBModelLoad();
+    NSString *provider = config[@"provider"];
+    NSString *key = BBModelReadKey(provider);
+    if (![provider isEqualToString:expectedProvider]) { fputs("Model settings changed\n", stderr); return 1; }
+    if (!key) { fputs("Model key is not configured\n", stderr); return 1; }
+    NSDictionary *observation = @{@"device_state": @{@"locked_known": @YES, @"locked": @NO,
+                                                    @"screen_on_known": @YES, @"screen_on": @YES},
+                                  @"frontmost_app": @{@"bundleId": @"com.apple.springboard"},
+                                  @"screen": @{@"width": @414, @"height": @896}};
+    NSString *prompt = [NSString stringWithFormat:
+        @"This is intent classification only; no UI action is being taken. Interpret the user utterance as exactly one task. Repeated mentions of the same task are one request. If the request is negated, ambiguous, or contains an additional operation, return the done action with summary unsupported. Otherwise return the input_text action. Its text must be exactly one canonical task: 打开设置, 打开地图, 打开通讯录, 打开备忘录, 在地图搜索 followed by the exact requested place, or 新建备忘录： followed by the exact requested note content. Preserve place and note text verbatim from the utterance; do not invent or translate it. Do not include explanations in text. User utterance: %@", request];
+    NSDictionary *action = BBModelAction(prompt, observation, @[], config, key);
+    NSString *task = BBResolvedTask(request, action);
+    if (!task) {
+        fputs(action[@"error"] ? "Model request or response failed\n" : "Unsupported request\n", stderr);
+        return 1;
+    }
+    NSString *app = BBMapQuery(task) ? @"MapsSearch" :
+        (BBNoteText(task) ? @"NoteCreate" : BBAllowedTarget(task));
+    printf("BB_INTENT=%s\n", app.UTF8String);
+    fflush(stdout);
+    if (BBNoteText(task)) return BBRunHarnessNote(task.UTF8String);
+    if (BBMapQuery(task)) {
+        BBExpectedProvider = expectedProvider;
+        return BBRunHarnessMap(task.UTF8String);
+    }
+    return BBRunHarnessText(task.UTF8String);
 }
 
 static NSString *BBRequestedApp(NSString *task) {
@@ -1435,6 +1505,9 @@ int main(int argc, const char *argv[]) {
             BBExpectedProvider = [NSString stringWithUTF8String:argv[3]];
             return BBRunHarnessMap(argv[2]);
         }
+        if (argc == 4 && !strcmp(argv[1], "--resolve-task"))
+            return BBResolveAndRunTask([NSString stringWithUTF8String:argv[2]],
+                                       [NSString stringWithUTF8String:argv[3]]);
         if (argc < 2) { fprintf(stderr, "usage: beanbaod [--approve-ui] 'request'\n"); return 2; }
         BOOL claude = YES, allowUI = NO, autoMap = NO, autoNote = NO;
         NSString *task = nil;

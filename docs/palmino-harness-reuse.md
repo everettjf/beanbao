@@ -9,7 +9,7 @@ BeanBao reuses the bounded step-execution design and selected Palmino Harness ru
 The selected runtime and tool registry support three task paths:
 
 - `TextHarness.swift` opens one of four allowed apps and checks the actual foreground bundle ID. It does not require a model or screenshot.
-- `NoteHarness.swift` creates a new note through limited UI steps and checks that its complete title appears in the Notes list. It does not send Notes content to a model.
+- `NoteHarness.swift` creates a new note through limited UI steps and checks that its complete title appears in the Notes list. It does not send the Notes screen to a model; free-form request text may be sent separately for intent interpretation.
 - `MapHarness.swift` runs a bounded Maps search with a maximum of 20 tool calls and a five-minute deadline. The device-side step implementation checks foreground state, fresh observation, exact search text, UI policy, and verified result. It can ask Claude, OpenAI, or a compatible image-capable model for one proposed action when local actions are insufficient.
 
 The Agent service runs each task in a child process, has a stop operation, and uses service and task IDs so an old result is not shown as the result of a new task. A wake lease attempts to prevent automatic screen locking during execution and is released on completion, stop, or service failure. The shortcut and voice flows remain in the app.

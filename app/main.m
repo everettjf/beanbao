@@ -187,7 +187,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     inputRow.spacing = 10;
     [self.clearButton setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
 
-    UILabel *hotkeyHint = [self label:@"Triple press Volume Down in another app to open BeanBao and record. Volume still changes normally." size:14];
+    UILabel *hotkeyHint = [self label:@"Triple press Volume Down in another app to show the BeanBao voice panel. Volume still changes normally." size:14];
     hotkeyHint.textColor = UIColor.secondaryLabelColor;
     self.hotkeySwitch = [UISwitch new];
     int hotkeyFD = open(BBHotkeyFile, O_RDONLY | O_NOFOLLOW);
