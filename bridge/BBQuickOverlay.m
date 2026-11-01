@@ -186,8 +186,8 @@
     self.voiceSession = session;
     self.returnBundle = bundleID;
     self.voiceReady = NO;
-    self.voiceReadyDeadline = NSProcessInfo.processInfo.systemUptime + 8;
-    self.voiceDeadline = NSProcessInfo.processInfo.systemUptime + 40;
+    self.voiceReadyDeadline = NSProcessInfo.processInfo.systemUptime + 25;
+    self.voiceDeadline = NSProcessInfo.processInfo.systemUptime + 90;
     NSUInteger generation = ++self.voiceGeneration;
     self.message.text = @"Starting microphone…";
     [self.runButton setTitle:@"Stop recording" forState:UIControlStateNormal];

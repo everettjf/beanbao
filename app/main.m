@@ -34,6 +34,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 @property(nonatomic, strong) UIButton *clearButton;
 @property(nonatomic, strong) UISwitch *hotkeySwitch;
 @property(nonatomic, strong) NSTimer *timer;
+@property(nonatomic, strong) NSTimer *voiceSignalTimer;
 @property(nonatomic) BOOL polling;
 @property(nonatomic) BOOL recording;
 @property(nonatomic) BOOL startRequestPending;
@@ -261,6 +262,8 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     [self refreshActivityPreview];
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.8 target:self selector:@selector(refreshStatus)
                                                userInfo:nil repeats:YES];
+    self.voiceSignalTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self
+            selector:@selector(checkHotkeyVoice) userInfo:nil repeats:YES];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationBecameActive:)
         name:UIApplicationDidBecomeActiveNotification object:nil];
     [self refreshStatus];
@@ -288,8 +291,9 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     NSDictionary *overlayStart = BBVoiceRead(@"start");
     NSTimeInterval created = [overlayStart[@"created"] doubleValue];
     BOOL overlayPending = BBVoiceValidSession(overlayStart[@"session"]) &&
+        ![BBVoiceRead(@"cancel")[@"session"] isEqualToString:overlayStart[@"session"]] &&
         created > 0 && NSDate.date.timeIntervalSince1970 >= created &&
-        NSDate.date.timeIntervalSince1970 - created <= 10;
+        NSDate.date.timeIntervalSince1970 - created <= 25;
     int fd = open(BBHotkeyVoiceFile, O_RDONLY | O_NOFOLLOW);
     if (fd < 0 && !overlayPending) return;
     struct stat info = {0};
@@ -364,6 +368,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self.timer invalidate];
+    [self.voiceSignalTimer invalidate];
     if (self.localRecorder) {
         [self.localRecorder stop];
         [[NSFileManager defaultManager] removeItemAtURL:self.localRecordingURL error:nil];
@@ -687,7 +692,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         BBVoiceWrite(@"ready", @{@"session": overlaySession});
         [self checkOverlayCancel:overlaySession generation:generation];
     }
-    NSTimeInterval duration = overlaySession ? 8 : 30;
+    NSTimeInterval duration = 30;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(duration * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         if (self.recording && self.localRecorder && self.speechGeneration == generation)
