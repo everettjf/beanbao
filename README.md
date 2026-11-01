@@ -6,9 +6,12 @@ The current release candidate uses a restricted Bridge, an on-device Agent, and 
 
 BeanBao checks the foreground app, screen freshness, sensitive content, and action policy at every step. It cannot install apps, send messages, make payments, or delete content. The connected device has passed text-command and Claude Maps search tests; OpenAI and compatible endpoints still need live tests with their own keys. Other devices and jailbreak environments need separate validation.
 
+The app has an Activity view for recent task outcomes. It derives short summaries from a private on-device audit and does not store request text, note contents, screenshots, or model replies. Tasks are independent; BeanBao does not yet have conversational sessions or multi-turn memory.
+
 - [Installation and configuration](docs/install-and-configure.md)
 - [Device test record](docs/build-and-test.md)
 - [Human acceptance checklist](docs/human-acceptance.md)
+- [UI and Activity design](docs/ui-and-activity.md)
 - [Common requests](docs/common-cases.md)
 - [Device recovery](docs/device-recovery.md)
 - [Architecture and implementation plan](docs/relaxin-ios26-plan.md)

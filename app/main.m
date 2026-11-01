@@ -8,6 +8,8 @@
 #import "AgentClient.h"
 #import "ModelConfig.h"
 #import "ModelSettingsViewController.h"
+#import "ActivityStore.h"
+#import "ActivityViewController.h"
 
 @interface BBLocalDictation : NSObject
 + (void)transcribeFile:(NSString *)path completion:(void (^)(NSString *text, NSString *error))completion;
@@ -21,6 +23,9 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 @property(nonatomic, strong) UILabel *detailLabel;
 @property(nonatomic, strong) UILabel *feedbackLabel;
 @property(nonatomic, strong) UILabel *modelLabel;
+@property(nonatomic, strong) UILabel *activityLabel;
+@property(nonatomic, strong) UILabel *activityTimeLabel;
+@property(nonatomic, copy) NSString *previewTaskID;
 @property(nonatomic, strong) UIButton *startButton;
 @property(nonatomic, strong) UIBarButtonItem *keyboardStartItem;
 @property(nonatomic, strong) UIButton *stopButton;
@@ -69,7 +74,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 - (UIView *)card:(NSArray<UIView *> *)items spacing:(CGFloat)spacing {
     UIView *card = [UIView new];
     card.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
-    card.layer.cornerRadius = 20;
+    card.layer.cornerRadius = 18;
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:items];
     content.axis = UILayoutConstraintAxisVertical;
     content.spacing = spacing;
@@ -88,19 +93,20 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.systemGroupedBackgroundColor;
     self.title = @"BeanBao";
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
-        initWithImage:[UIImage systemImageNamed:@"slider.horizontal.3"]
-        style:UIBarButtonItemStylePlain target:self action:@selector(settingsTapped)];
-    self.navigationItem.rightBarButtonItem.accessibilityLabel = @"Model settings";
+    UIBarButtonItem *activityItem = [[UIBarButtonItem alloc]
+        initWithTitle:@"Activity"
+        style:UIBarButtonItemStylePlain target:self action:@selector(activityTapped)];
+    activityItem.accessibilityLabel = @"Activity";
+    self.navigationItem.rightBarButtonItem = activityItem;
     UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"BeanBaoIcon60"]];
     icon.contentMode = UIViewContentModeScaleAspectFit;
     icon.layer.cornerRadius = 16;
     icon.clipsToBounds = YES;
-    [icon.widthAnchor constraintEqualToConstant:64].active = YES;
-    [icon.heightAnchor constraintEqualToConstant:64].active = YES;
-    UILabel *heading = [self label:@"Hi, I’m BeanBao" size:28];
-    heading.font = [UIFont boldSystemFontOfSize:28];
-    UILabel *subtitle = [self label:@"Small tasks on your phone, handled with one request." size:15];
+    [icon.widthAnchor constraintEqualToConstant:52].active = YES;
+    [icon.heightAnchor constraintEqualToConstant:52].active = YES;
+    UILabel *heading = [self label:@"Ask BeanBao" size:25];
+    heading.font = [UIFont boldSystemFontOfSize:25];
+    UILabel *subtitle = [self label:@"What would you like to do?" size:15];
     subtitle.textColor = UIColor.secondaryLabelColor;
     UIStackView *titles = [[UIStackView alloc] initWithArrangedSubviews:@[heading, subtitle]];
     titles.axis = UILayoutConstraintAxisVertical;
@@ -108,17 +114,17 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     UIStackView *hero = [[UIStackView alloc] initWithArrangedSubviews:@[icon, titles]];
     hero.axis = UILayoutConstraintAxisHorizontal;
     hero.alignment = UIStackViewAlignmentCenter;
-    hero.spacing = 14;
+    hero.spacing = 12;
 
-    UILabel *modelTitle = [self label:@"Current model" size:13];
+    UILabel *modelTitle = [self label:@"MODEL SERVICE" size:11];
     modelTitle.textColor = UIColor.secondaryLabelColor;
-    self.modelLabel = [self label:@"" size:16];
-    self.modelLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    self.modelLabel = [self label:@"" size:14];
+    self.modelLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
     UIStackView *modelInfo = [[UIStackView alloc] initWithArrangedSubviews:@[modelTitle, self.modelLabel]];
     modelInfo.axis = UILayoutConstraintAxisVertical;
     modelInfo.spacing = 5;
     UIButton *modelEdit = [UIButton buttonWithType:UIButtonTypeSystem];
-    [modelEdit setTitle:@"Manage  ›" forState:UIControlStateNormal];
+    [modelEdit setTitle:@"Change  ›" forState:UIControlStateNormal];
     [modelEdit addTarget:self action:@selector(settingsTapped) forControlEvents:UIControlEventTouchUpInside];
     UIStackView *modelRow = [[UIStackView alloc] initWithArrangedSubviews:@[modelInfo, modelEdit]];
     modelRow.axis = UILayoutConstraintAxisHorizontal;
@@ -128,7 +134,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     self.taskField = [UITextField new];
     self.taskField.borderStyle = UITextBorderStyleRoundedRect;
     self.taskField.placeholder = @"e.g. Open Maps";
-    self.taskField.text = @"Open Maps";
+    self.taskField.text = @"";
     self.taskField.font = [UIFont systemFontOfSize:18];
     self.taskField.clearButtonMode = UITextFieldViewModeWhileEditing;
     self.taskField.returnKeyType = UIReturnKeyDone;
@@ -148,8 +154,8 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     [self.clearButton addTarget:self action:@selector(clearTapped) forControlEvents:UIControlEventTouchUpInside];
     self.voiceButton = [self button:@"🎙️ Voice input" color:UIColor.systemTealColor action:@selector(voiceTapped)];
     self.startButton = [self button:@"Start" color:UIColor.systemIndigoColor action:@selector(startTapped)];
-    UILabel *composerTitle = [self label:@"What can I do for you?" size:20];
-    composerTitle.font = [UIFont boldSystemFontOfSize:20];
+    UILabel *composerTitle = [self label:@"New task" size:19];
+    composerTitle.font = [UIFont boldSystemFontOfSize:19];
     NSArray *quickNames = @[@"Settings", @"Maps", @"Contacts", @"Notes"];
     NSMutableArray<UIView *> *quickButtons = [NSMutableArray array];
     for (NSInteger i = 0; i < (NSInteger)quickNames.count; i++) {
@@ -170,6 +176,11 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     composerActions.axis = UILayoutConstraintAxisHorizontal;
     composerActions.distribution = UIStackViewDistributionFillEqually;
     composerActions.spacing = 10;
+    UIStackView *inputRow = [[UIStackView alloc] initWithArrangedSubviews:@[self.taskField, self.clearButton]];
+    inputRow.axis = UILayoutConstraintAxisHorizontal;
+    inputRow.alignment = UIStackViewAlignmentCenter;
+    inputRow.spacing = 10;
+    [self.clearButton setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
 
     UILabel *hotkeyHint = [self label:@"Triple press Volume Down in another app to open BeanBao and record. Volume still changes normally." size:14];
     hotkeyHint.textColor = UIColor.secondaryLabelColor;
@@ -191,25 +202,37 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     [self.stopButton addTarget:self action:@selector(stopTapped) forControlEvents:UIControlEventTouchUpInside];
     self.stopButton.enabled = NO;
     self.stopButton.alpha = 0.5;
+    self.stopButton.hidden = YES;
     self.stateLabel = [self label:@"Connecting…" size:19];
     self.stateLabel.font = [UIFont boldSystemFontOfSize:19];
     self.detailLabel = [self label:@"" size:15];
     self.detailLabel.textColor = UIColor.secondaryLabelColor;
     self.feedbackLabel = [self label:@"" size:15];
     self.feedbackLabel.textColor = UIColor.systemTealColor;
-    UILabel *statusTitle = [self label:@"Task status" size:13];
+    UILabel *statusTitle = [self label:@"CURRENT TASK" size:11];
     statusTitle.textColor = UIColor.secondaryLabelColor;
-    UILabel *hotkeyTitle = [self label:@"Quick launch" size:17];
+    UILabel *hotkeyTitle = [self label:@"Volume Down shortcut" size:15];
     hotkeyTitle.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
-    UILabel *footer = [self label:@"Tasks stop if the phone locks or the screen changes unexpectedly." size:13];
-    footer.textColor = UIColor.tertiaryLabelColor;
+    UILabel *activityTitle = [self label:@"Recent activity" size:17];
+    activityTitle.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
+    UIButton *activityMore = [UIButton buttonWithType:UIButtonTypeSystem];
+    [activityMore setTitle:@"See all  ›" forState:UIControlStateNormal];
+    [activityMore addTarget:self action:@selector(activityTapped) forControlEvents:UIControlEventTouchUpInside];
+    UIStackView *activityHeader = [[UIStackView alloc] initWithArrangedSubviews:@[activityTitle, activityMore]];
+    activityHeader.axis = UILayoutConstraintAxisHorizontal;
+    activityHeader.alignment = UIStackViewAlignmentCenter;
+    self.activityLabel = [self label:@"No tasks yet" size:15];
+    self.activityTimeLabel = [self label:@"Completed tasks will appear here." size:13];
+    self.activityTimeLabel.textColor = UIColor.secondaryLabelColor;
+    UILabel *footer = [self label:@"Requests and screenshots are not stored in Activity." size:12];
+    footer.textColor = UIColor.secondaryLabelColor;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
-        hero, [self card:@[modelRow] spacing:0],
-        [self card:@[composerTitle, self.taskField, quickRow, composerActions, self.clearButton] spacing:15],
-        [self card:@[statusTitle, self.stateLabel, self.detailLabel, self.stopButton] spacing:9],
-        [self card:@[hotkeyTitle, hotkeyRow] spacing:12], self.feedbackLabel, footer]];
+        hero, [self card:@[composerTitle, inputRow, quickRow, composerActions] spacing:14],
+        self.feedbackLabel, [self card:@[statusTitle, self.stateLabel, self.detailLabel, self.stopButton] spacing:7],
+        [self card:@[activityHeader, self.activityLabel, self.activityTimeLabel] spacing:7],
+        [self card:@[modelRow] spacing:0], [self card:@[hotkeyTitle, hotkeyRow] spacing:10], footer]];
     stack.axis = UILayoutConstraintAxisVertical;
-    stack.spacing = 18;
+    stack.spacing = 13;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     UIScrollView *scroll = [UIScrollView new];
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
@@ -223,7 +246,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         [scroll.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
         [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:20],
         [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-20],
-        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:24],
+        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:18],
         [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-28],
         [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-40],
         [self.taskField.heightAnchor constraintEqualToConstant:52],
@@ -231,6 +254,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         [self.startButton.heightAnchor constraintEqualToConstant:52]
     ]];
     [self refreshModelLabel];
+    [self refreshActivityPreview];
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.8 target:self selector:@selector(refreshStatus)
                                                userInfo:nil repeats:YES];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationBecameActive:)
@@ -242,6 +266,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     [super viewWillAppear:animated];
     [self refreshModelLabel];
     [self refreshStatus];
+    [self refreshActivityPreview];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -252,6 +277,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 - (void)applicationBecameActive:(NSNotification *)notification {
     (void)notification;
     [self checkHotkeyVoice];
+    [self refreshActivityPreview];
 }
 
 - (void)checkHotkeyVoice {
@@ -313,6 +339,37 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     self.startButton.alpha = running ? 0.5 : 1.0;
     self.stopButton.enabled = running;
     self.stopButton.alpha = running ? 1.0 : 0.5;
+    self.stopButton.hidden = !running;
+    NSString *taskID = reply[@"task_id"];
+    if (ok && !running && [taskID isKindOfClass:NSString.class] && taskID.length &&
+        ![self.previewTaskID isEqualToString:taskID]) {
+        self.previewTaskID = taskID;
+        [self refreshActivityPreview];
+    }
+}
+
+- (void)refreshActivityPreview {
+    NSDictionary *latest = BBRecentActivity(1).firstObject;
+    if (!latest) {
+        self.activityLabel.text = @"No tasks yet";
+        self.activityTimeLabel.text = @"Completed tasks will appear here.";
+        return;
+    }
+    NSString *state = latest[@"state"];
+    NSString *outcome = [state isEqualToString:@"done"] ? @"Completed" :
+        ([state isEqualToString:@"error"] ? @"Incomplete" :
+         ([state isEqualToString:@"stopped"] ? @"Stopped" : @"Started"));
+    self.activityLabel.text = latest[@"title"];
+    NSDateFormatter *formatter = [NSDateFormatter new];
+    formatter.dateStyle = NSDateFormatterMediumStyle;
+    formatter.timeStyle = NSDateFormatterShortStyle;
+    self.activityTimeLabel.text = [NSString stringWithFormat:@"%@ · %@", outcome,
+        [formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:[latest[@"time"] doubleValue]]]];
+}
+
+- (void)activityTapped {
+    [self.taskField resignFirstResponder];
+    [self.navigationController pushViewController:[BBActivityViewController new] animated:YES];
 }
 
 - (void)request:(NSDictionary *)payload {

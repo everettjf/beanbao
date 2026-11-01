@@ -8,7 +8,7 @@ Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.4: restricted SpringBoard observation and UI actions.
 2. `dev.beanbao.agent` 0.3.56: on-device task service and model adapters.
-3. `dev.beanbao.app` 0.3.19: native text, voice, status, shortcut, and model settings UI.
+3. `dev.beanbao.app` 0.3.21: native text, voice, activity, shortcut, and model settings UI.
 
 The packages are under `bridge/packages/`, `agent-native/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
 
@@ -24,7 +24,7 @@ With a root shell on the jailbroken phone, copy over the packages and install th
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.4_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.agent_0.3.56_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.19_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.21_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
 

@@ -9,6 +9,7 @@ test -f "$THEOS/makefiles/common.mk" || {
 }
 
 sh "$repo_root/scripts/test_native_policy.sh"
+sh "$repo_root/scripts/test_activity_store.sh"
 python3 -m unittest discover -s "$repo_root/agent" -p 'test_*.py' -q
 swift test --package-path "$repo_root"
 

@@ -71,6 +71,14 @@ def main() -> int:
         else:
             raise RuntimeError("BeanBao did not become foreground")
 
+        # uiopen resumes the last navigation screen, including Activity.
+        if not any(e.get("text") == "Clear" for e in source.get("ui", {}).get("elements", [])):
+            back = next((e.get("tap") for e in source.get("ui", {}).get("elements", [])
+                         if e.get("text") == "BeanBao" and "Back" in e.get("aliases", [])
+                         and isinstance(e.get("tap"), dict)), None)
+            if not back or bridge.act(source["observation_id"], {"action": "tap", **back}).get("ok") is not True:
+                raise RuntimeError("Could not return to BeanBao's task composer")
+
         tap_label("Clear")
         tap_label("e.g. Open Maps")
         source = observe()
