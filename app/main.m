@@ -10,6 +10,7 @@
 #import "ModelSettingsViewController.h"
 #import "ActivityStore.h"
 #import "ActivityViewController.h"
+#import "VoiceIPC.h"
 
 @interface BBLocalDictation : NSObject
 + (void)transcribeFile:(NSString *)path completion:(void (^)(NSString *text, NSString *error))completion;
@@ -47,6 +48,8 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 @property(nonatomic, strong) AVAudioEngine *audioEngine;
 @property(nonatomic, strong) AVAudioRecorder *localRecorder;
 @property(nonatomic, strong) NSURL *localRecordingURL;
+@property(nonatomic, copy) NSString *overlaySessionID;
+@property(nonatomic) UIBackgroundTaskIdentifier overlayBackgroundTask;
 @end
 
 @implementation BBRootViewController
@@ -91,6 +94,7 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.overlayBackgroundTask = UIBackgroundTaskInvalid;
     self.view.backgroundColor = UIColor.systemGroupedBackgroundColor;
     self.title = @"BeanBao";
     UIBarButtonItem *activityItem = [[UIBarButtonItem alloc]
@@ -281,16 +285,26 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 }
 
 - (void)checkHotkeyVoice {
+    NSDictionary *overlayStart = BBVoiceRead(@"start");
+    NSTimeInterval created = [overlayStart[@"created"] doubleValue];
+    BOOL overlayPending = BBVoiceValidSession(overlayStart[@"session"]) &&
+        created > 0 && NSDate.date.timeIntervalSince1970 >= created &&
+        NSDate.date.timeIntervalSince1970 - created <= 10;
     int fd = open(BBHotkeyVoiceFile, O_RDONLY | O_NOFOLLOW);
-    if (fd < 0) return;
+    if (fd < 0 && !overlayPending) return;
     struct stat info = {0};
     char value = 0;
-    BOOL pending = !fstat(fd, &info) && S_ISREG(info.st_mode) && info.st_uid == getuid() &&
+    BOOL pending = fd >= 0 && !fstat(fd, &info) && S_ISREG(info.st_mode) && info.st_uid == getuid() &&
         !(info.st_mode & 077) && info.st_size == 1 &&
         time(NULL) >= info.st_mtime && time(NULL) - info.st_mtime <= 10 &&
         read(fd, &value, 1) == 1 && value == '1';
-    close(fd);
-    if (!pending || self.recording) {
+    if (fd >= 0) close(fd);
+    if ((!pending && !overlayPending) || self.recording) {
+        if (overlayPending && self.recording) {
+            BBVoiceWrite(@"result", @{@"session": overlayStart[@"session"],
+                                       @"error": @"A recording is already in progress"});
+            BBVoiceRemove(@"start");
+        }
         unlink(BBHotkeyVoiceFile);
         return;
     }
@@ -304,7 +318,47 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     }
     self.feedbackLabel.text = @"Shortcut received. Preparing to record…";
     unlink(BBHotkeyVoiceFile);
+    if (overlayPending) {
+        self.overlaySessionID = overlayStart[@"session"];
+        BBVoiceRemove(@"start");
+    }
     [self voiceTapped];
+}
+
+- (void)overlayVoiceFailed:(NSString *)message {
+    if (!self.overlaySessionID) return;
+    BBVoiceWrite(@"result", @{@"session": self.overlaySessionID,
+                               @"error": message ?: @"Voice input failed"});
+    self.overlaySessionID = nil;
+}
+
+- (void)checkOverlayCancel:(NSString *)session generation:(NSUInteger)generation {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (![self.overlaySessionID isEqualToString:session] ||
+            self.speechGeneration != generation || !self.recording) return;
+        NSDictionary *cancel = BBVoiceRead(@"cancel");
+        if ([cancel[@"session"] isEqualToString:session]) {
+            self.speechGeneration++;
+            [self.localRecorder stop];
+            self.localRecorder = nil;
+            self.recording = NO;
+            [self.voiceButton setTitle:@"🎙️ Voice input" forState:UIControlStateNormal];
+            [[NSFileManager defaultManager] removeItemAtURL:self.localRecordingURL error:nil];
+            self.localRecordingURL = nil;
+            [[AVAudioSession sharedInstance] setActive:NO error:nil];
+            self.overlaySessionID = nil;
+            BBVoiceRemove(@"cancel");
+            return;
+        }
+        NSDictionary *stop = BBVoiceRead(@"stop");
+        if ([stop[@"session"] isEqualToString:session]) {
+            BBVoiceRemove(@"stop");
+            [self stopRecording];
+            return;
+        }
+        [self checkOverlayCancel:session generation:generation];
+    });
 }
 
 - (void)dealloc {
@@ -519,12 +573,16 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         dispatch_async(dispatch_get_main_queue(), ^{
             if (status != SFSpeechRecognizerAuthorizationStatusAuthorized) {
                 self.feedbackLabel.text = @"Speech recognition is not allowed. You can still type.";
+                [self overlayVoiceFailed:@"Speech recognition is not allowed"];
                 return;
             }
             [[AVAudioSession sharedInstance] requestRecordPermission:^(BOOL granted) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (granted) [self startRecording];
-                    else self.feedbackLabel.text = @"Microphone access is not allowed. You can still type.";
+                    else {
+                        self.feedbackLabel.text = @"Microphone access is not allowed. You can still type.";
+                        [self overlayVoiceFailed:@"Microphone access is not allowed"];
+                    }
                 });
             }];
         });
@@ -598,7 +656,11 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     AVAudioSession *session = [AVAudioSession sharedInstance];
     [session setCategory:AVAudioSessionCategoryRecord mode:AVAudioSessionModeDefault options:0 error:&error];
     if (!error) [session setActive:YES error:&error];
-    if (error) { self.feedbackLabel.text = @"Could not start the microphone"; return; }
+    if (error) {
+        self.feedbackLabel.text = @"Could not start the microphone";
+        [self overlayVoiceFailed:@"Could not start the microphone"];
+        return;
+    }
     self.localRecordingURL = [NSURL fileURLWithPath:
         [NSTemporaryDirectory() stringByAppendingPathComponent:
             [NSString stringWithFormat:@"beanbao-voice-%@.caf", NSUUID.UUID.UUIDString]]];
@@ -613,13 +675,20 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         self.localRecordingURL = nil;
         [session setActive:NO error:nil];
         self.feedbackLabel.text = @"Could not start recording";
+        [self overlayVoiceFailed:@"Could not start recording"];
         return;
     }
     self.recording = YES;
     [self.voiceButton setTitle:@"Stop recording" forState:UIControlStateNormal];
     self.feedbackLabel.text = @"Recording. Transcription starts when you stop.";
     NSUInteger generation = self.speechGeneration;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)),
+    NSString *overlaySession = self.overlaySessionID;
+    if (overlaySession) {
+        BBVoiceWrite(@"ready", @{@"session": overlaySession});
+        [self checkOverlayCancel:overlaySession generation:generation];
+    }
+    NSTimeInterval duration = overlaySession ? 8 : 30;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(duration * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         if (self.recording && self.localRecorder && self.speechGeneration == generation)
             [self stopRecording];
@@ -628,6 +697,18 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 
 - (void)stopRecording {
     if (self.localRecorder) {
+        NSString *overlaySession = self.overlaySessionID;
+        if (overlaySession) {
+            self.overlayBackgroundTask = [[UIApplication sharedApplication]
+                beginBackgroundTaskWithExpirationHandler:^{
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (self.overlayBackgroundTask != UIBackgroundTaskInvalid) {
+                            [[UIApplication sharedApplication] endBackgroundTask:self.overlayBackgroundTask];
+                            self.overlayBackgroundTask = UIBackgroundTaskInvalid;
+                        }
+                    });
+                }];
+        }
         [self.localRecorder stop];
         self.localRecorder = nil;
         self.recording = NO;
@@ -640,13 +721,32 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         __weak typeof(self) weakSelf = self;
         [BBLocalDictation transcribeFile:path completion:^(NSString *text, NSString *failure) {
             typeof(self) strongSelf = weakSelf;
-            if (!strongSelf || strongSelf.speechGeneration != generation) return;
+            if (!strongSelf) return;
+            if (strongSelf.speechGeneration != generation) {
+                if (strongSelf.overlayBackgroundTask != UIBackgroundTaskInvalid) {
+                    [[UIApplication sharedApplication] endBackgroundTask:strongSelf.overlayBackgroundTask];
+                    strongSelf.overlayBackgroundTask = UIBackgroundTaskInvalid;
+                }
+                return;
+            }
             if (text.length) {
                 strongSelf.taskField.text = text;
                 strongSelf.feedbackLabel.text = @"Transcription ready. Edit it if needed, then tap Start.";
             } else {
                 strongSelf.feedbackLabel.text = [NSString stringWithFormat:
                     @"On-device transcription failed (%@). Please type your request.", failure ?: @"unknown"];
+            }
+            if ([strongSelf.overlaySessionID isEqualToString:overlaySession] &&
+                ![BBVoiceRead(@"cancel")[@"session"] isEqualToString:overlaySession]) {
+                NSMutableDictionary *result = [@{@"session": overlaySession} mutableCopy];
+                if (text.length) result[@"text"] = text;
+                else result[@"error"] = failure ?: @"No speech recognized";
+                BBVoiceWrite(@"result", result);
+                strongSelf.overlaySessionID = nil;
+            }
+            if (strongSelf.overlayBackgroundTask != UIBackgroundTaskInvalid) {
+                [[UIApplication sharedApplication] endBackgroundTask:strongSelf.overlayBackgroundTask];
+                strongSelf.overlayBackgroundTask = UIBackgroundTaskInvalid;
             }
         }];
         return;

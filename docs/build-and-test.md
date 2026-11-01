@@ -6,6 +6,8 @@ Updated November 1, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide
 
 Bridge 0.2.5 displayed the quick input panel above Maps; its keyboard Dictation experiment was rejected as the voice architecture. Bridge 0.2.6 source removes that trigger and is built but not installed. App 0.3.22 adds the `audio` background mode and is installed on the phone. Its package build passed, and after starting a recording in BeanBao, the audio file grew from 284,234 to 674,378 bytes over five seconds while Maps was foreground. The phone remained unlocked; no SpringBoard reload was used for this app update. A real spoken transcript and automatic microphone start from the overlay remain unverified. See [the overlay plan](quick-overlay-prototype.md).
 
+Bridge 0.2.7 / App 0.3.23 implement a session-bound overlay voice prototype and build successfully. The Bridge package audit passes. These two packages have not been installed together or accepted on the phone; the physical Volume Down shortcut remains unchanged in this code.
+
 ## Current English build
 
 Bridge 0.2.4 / Agent 0.3.56 / App 0.3.21 are the current versions for this English release and UI update. Intermediate English builds were installed and tested on the connected phone. The app, model settings, status and error messages, permission descriptions, release archive instructions, and default command examples are in English. English typed requests are normalized into the same restricted internal task set; legacy Chinese requests remain accepted. Speech is configured for `en-US` dictation. English voice transcription itself has not yet been accepted with a real spoken sample.

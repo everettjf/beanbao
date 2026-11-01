@@ -1,12 +1,22 @@
 #import "BBQuickOverlay.h"
 #import "AgentClient.h"
+#import "BeanBaoApp.h"
+#import "VoiceIPC.h"
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
+#import <objc/message.h>
 
 @interface BBQuickOverlay () <UITextFieldDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @property(nonatomic, strong) UITextField *field;
 @property(nonatomic, strong) UILabel *message;
 @property(nonatomic, strong) UIButton *runButton;
+@property(nonatomic, copy) NSString *voiceSession;
+@property(nonatomic, copy) NSString *returnBundle;
+@property(nonatomic) BOOL voiceReady;
+@property(nonatomic) NSUInteger voiceGeneration;
+@property(nonatomic) NSTimeInterval voiceDeadline;
+@property(nonatomic) NSTimeInterval voiceReadyDeadline;
 @end
 
 @implementation BBQuickOverlay
@@ -27,9 +37,9 @@
     return nil;
 }
 
-- (BOOL)show {
+- (BOOL)showFocused:(BOOL)focus {
     if (!NSThread.isMainThread) return NO;
-    if (self.window) { [self.field becomeFirstResponder]; return YES; }
+    if (self.window) { if (focus) [self.field becomeFirstResponder]; return YES; }
     UIWindowScene *scene = [self windowScene];
     UIWindow *window = scene ? [[UIWindow alloc] initWithWindowScene:scene] :
         [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
@@ -139,13 +149,104 @@
     window.alpha = 0;
     [window makeKeyAndVisible];
     [UIView animateWithDuration:0.22 animations:^{ window.alpha = 1; }];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+    if (focus) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
         dispatch_get_main_queue(), ^{ if (self.window == window) [self.field becomeFirstResponder]; });
     return YES;
 }
 
+- (BOOL)show { return [self showFocused:YES]; }
+
+- (void)restorePreviousApp {
+    NSString *bundleID = self.returnBundle;
+    if (!bundleID.length || [bundleID isEqualToString:@"com.apple.springboard"] ||
+        [bundleID isEqualToString:@"dev.beanbao.app"]) return;
+    Class cls = objc_getClass("LSApplicationWorkspace");
+    SEL workspaceSel = @selector(defaultWorkspace);
+    SEL openSel = @selector(openApplicationWithBundleID:);
+    if (!cls || ![cls respondsToSelector:workspaceSel]) return;
+    @try {
+        id workspace = ((id (*)(id, SEL))objc_msgSend)((id)cls, workspaceSel);
+        if ([workspace respondsToSelector:openSel])
+            ((BOOL (*)(id, SEL, NSString *))objc_msgSend)(workspace, openSel, bundleID);
+    } @catch (__unused NSException *exception) {}
+}
+
+- (BOOL)beginVoiceFromBundle:(NSString *)bundleID {
+    if (!NSThread.isMainThread || self.voiceSession || ![bundleID isKindOfClass:NSString.class] ||
+        !bundleID.length || [bundleID isEqualToString:@"com.apple.springboard"] ||
+        [bundleID isEqualToString:@"dev.beanbao.app"] || ![self showFocused:NO]) return NO;
+    NSString *session = NSUUID.UUID.UUIDString;
+    BBVoiceRemove(@"start"); BBVoiceRemove(@"ready");
+    BBVoiceRemove(@"stop"); BBVoiceRemove(@"result"); BBVoiceRemove(@"cancel");
+    if (!BBVoiceWrite(@"start", @{@"session": session,
+                                  @"created": @(NSDate.date.timeIntervalSince1970)})) {
+        self.message.text = @"Could not prepare voice input. You can type instead.";
+        return NO;
+    }
+    self.voiceSession = session;
+    self.returnBundle = bundleID;
+    self.voiceReady = NO;
+    self.voiceReadyDeadline = NSProcessInfo.processInfo.systemUptime + 8;
+    self.voiceDeadline = NSProcessInfo.processInfo.systemUptime + 40;
+    NSUInteger generation = ++self.voiceGeneration;
+    self.message.text = @"Starting microphone…";
+    [self.runButton setTitle:@"Stop recording" forState:UIControlStateNormal];
+    BBOpenBeanBaoApp();
+    [self pollVoiceSession:generation];
+    return YES;
+}
+
+- (void)pollVoiceSession:(NSUInteger)generation {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (!self.window || !self.voiceSession || generation != self.voiceGeneration) return;
+        NSDictionary *ready = BBVoiceRead(@"ready");
+        if (!self.voiceReady && [ready[@"session"] isEqualToString:self.voiceSession]) {
+            self.voiceReady = YES;
+            self.message.text = @"Listening… Speak now.";
+            [self restorePreviousApp];
+        }
+        NSDictionary *result = BBVoiceRead(@"result");
+        if ([result[@"session"] isEqualToString:self.voiceSession]) {
+            if (!self.voiceReady) [self restorePreviousApp];
+            NSString *text = [result[@"text"] isKindOfClass:NSString.class] ? result[@"text"] : nil;
+            self.field.text = text ?: @"";
+            self.message.text = text.length ? @"Review the transcript, then tap Run." :
+                @"No speech recognized. You can type your request.";
+            self.voiceSession = nil;
+            self.returnBundle = nil;
+            BBVoiceRemove(@"start"); BBVoiceRemove(@"ready");
+            BBVoiceRemove(@"stop"); BBVoiceRemove(@"result"); BBVoiceRemove(@"cancel");
+            [self.runButton setTitle:@"Run" forState:UIControlStateNormal];
+            self.runButton.enabled = YES;
+            [self.field becomeFirstResponder];
+            return;
+        }
+        if ((!self.voiceReady && NSProcessInfo.processInfo.systemUptime > self.voiceReadyDeadline) ||
+            NSProcessInfo.processInfo.systemUptime > self.voiceDeadline) {
+            BBVoiceWrite(@"cancel", @{@"session": self.voiceSession});
+            [self restorePreviousApp];
+            self.message.text = @"Voice input timed out. You can type your request.";
+            self.voiceSession = nil;
+            self.returnBundle = nil;
+            [self.runButton setTitle:@"Run" forState:UIControlStateNormal];
+            self.runButton.enabled = YES;
+            [self.field becomeFirstResponder];
+            return;
+        }
+        [self pollVoiceSession:generation];
+    });
+}
+
 - (void)hide {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self hide]; }); return; }
+    if (self.voiceSession) {
+        BBVoiceWrite(@"cancel", @{@"session": self.voiceSession});
+        [self restorePreviousApp];
+        self.voiceSession = nil;
+        self.returnBundle = nil;
+        self.voiceGeneration++;
+    }
     [self.field resignFirstResponder];
     self.window.hidden = YES;
     self.window.rootViewController = nil;
@@ -162,6 +263,13 @@
 }
 
 - (void)run {
+    if (self.voiceSession) {
+        if (BBVoiceWrite(@"stop", @{@"session": self.voiceSession})) {
+            self.message.text = @"Transcribing on device…";
+            self.runButton.enabled = NO;
+        } else self.message.text = @"Could not stop recording. Tap Close to cancel.";
+        return;
+    }
     NSString *task = [self.field.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!task.length || task.length > 220) {
         self.message.text = @"Enter a request of up to 220 characters.";

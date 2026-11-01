@@ -198,13 +198,15 @@ static NSString *BBTokenFromFile(void) {
 
 - (NSDictionary *)quickOverlay:(NSDictionary *)request {
     NSString *mode = request[@"mode"];
-    if (![mode isKindOfClass:NSString.class] || ![@[@"show", @"hide"] containsObject:mode])
+    if (![mode isKindOfClass:NSString.class] || ![@[@"show", @"show_voice", @"hide"] containsObject:mode])
         return BBError(@"Invalid quick overlay mode");
     if (![mode isEqualToString:@"hide"] && ![self unlocked])
         return BBError(@"Device is locked, screen is off, or state is unknown");
     __block BOOL shown = YES;
     void (^update)(void) = ^{
         if ([mode isEqualToString:@"show"]) shown = [[BBQuickOverlay shared] show];
+        else if ([mode isEqualToString:@"show_voice"])
+            shown = [[BBQuickOverlay shared] beginVoiceFromBundle:BBFrontmostApp()[@"bundleId"]];
         else [[BBQuickOverlay shared] hide];
     };
     if (NSThread.isMainThread) update();
