@@ -11,11 +11,12 @@
 <key>CFBundleIconFiles</key><array><string>BeanBaoIcon29</string><string>BeanBaoIcon60</string></array>
 </dict>
 </dict>
-<key>CFBundleShortVersionString</key><string>0.3.21</string>
-<key>CFBundleVersion</key><string>21</string>
+<key>CFBundleShortVersionString</key><string>0.3.22</string>
+<key>CFBundleVersion</key><string>22</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>UIDeviceFamily</key><array><integer>1</integer></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
+<key>UIBackgroundModes</key><array><string>audio</string></array>
 <key>NSMicrophoneUsageDescription</key><string>BeanBao uses the microphone when you tap Voice input or use the Volume Down shortcut to turn your request into editable text.</string>
 <key>NSSpeechRecognitionUsageDescription</key><string>BeanBao recognizes spoken English after you tap Voice input or use the Volume Down shortcut. Apple may process speech online if on-device recognition is unavailable.</string>
 </dict></plist>

@@ -1,6 +1,10 @@
 # Build and device test record
 
-Updated October 31, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file describes the current release candidate and the evidence needed to interpret it.
+Updated November 1, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
+
+## November 1 overlay voice development
+
+Bridge 0.2.5 displayed the quick input panel above Maps; its keyboard Dictation experiment was rejected as the voice architecture. Bridge 0.2.6 source removes that trigger and is built but not installed. App 0.3.22 adds the `audio` background mode and is installed on the phone. Its package build passed, and after starting a recording in BeanBao, the audio file grew from 284,234 to 674,378 bytes over five seconds while Maps was foreground. The phone remained unlocked; no SpringBoard reload was used for this app update. A real spoken transcript and automatic microphone start from the overlay remain unverified. See [the overlay plan](quick-overlay-prototype.md).
 
 ## Current English build
 
