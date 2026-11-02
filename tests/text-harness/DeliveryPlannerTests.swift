@@ -129,19 +129,48 @@ final class DeliveryPlannerTests: XCTestCase {
         let changed = observation(item.url.absoluteString,
                                   "Chicken Pho Egg Noodle Add 1 to order")
         do {
-            try await BeanBaoDeliveryPlanner.completeOptionsReview(proposal, on: changed,
-                                                                   store: journal)
+            try await BeanBaoDeliveryPlanner.completeReadOnlyReview(proposal, on: changed,
+                                                                    store: journal)
             XCTFail("A changed page cannot complete the review")
         } catch BeanBaoDeliveryPlanError.invalidAction { }
-        try await BeanBaoDeliveryPlanner.completeOptionsReview(proposal, on: item, store: journal)
+        try await BeanBaoDeliveryPlanner.completeReadOnlyReview(proposal, on: item, store: journal)
         let saved = await journal.snapshot()
         XCTAssertEqual(saved.phase, .completed)
         XCTAssertEqual(saved.operations["delivery-review-v1-\(id)"]?.state, .completed)
         XCTAssertFalse(String(decoding: try Data(contentsOf: file), as: UTF8.self)
             .contains("private-page-marker"))
-        try await BeanBaoDeliveryPlanner.completeOptionsReview(proposal, on: item, store: journal)
+        try await BeanBaoDeliveryPlanner.completeReadOnlyReview(proposal, on: item, store: journal)
         let repeated = await journal.snapshot()
         XCTAssertEqual(repeated.operations.count, 2)
+    }
+
+    func testCartReviewCompletesOnlyFromTheSameFreshCart() async throws {
+        let request = "Add Chicken Pho to cart and review the cart"
+        let (journal, file) = try store(request: request)
+        let cart = observation("https://www.ubereats.com/store/example/id",
+                               "Chicken Pho Rice Noodle $27.99 Go to checkout private-cart-marker")
+        let id = try BeanBaoDeliveryObservationContract.identifier(cart)
+        let proposal = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: cart, store: journal,
+            client: DeliveryScriptModel(action: "review_cart", target: "", observationID: id),
+            model: "scripted")
+        XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(
+            proposal, observation: observation(cart.url.absoluteString,
+                "Chicken Pho $28.99 Go to checkout")))
+        do {
+            try await BeanBaoDeliveryPlanner.completeReadOnlyReview(
+                proposal, on: observation(cart.url.absoluteString,
+                    "Chicken Pho $28.99 Go to checkout"), store: journal)
+            XCTFail("A changed cart cannot complete the review")
+        } catch BeanBaoDeliveryPlanError.invalidAction { }
+        try await BeanBaoDeliveryPlanner.completeReadOnlyReview(
+            proposal, on: cart, store: journal)
+        let saved = await journal.snapshot()
+        XCTAssertEqual(saved.phase, .completed)
+        XCTAssertEqual(saved.operations["delivery-review-v1-\(id)"]?.tool,
+                       "delivery_review_cart")
+        XCTAssertFalse(String(decoding: try Data(contentsOf: file), as: UTF8.self)
+            .contains("private-cart-marker"))
     }
 
     func testFeedMustOpenSearchBeforeSubmittingAQuery() throws {

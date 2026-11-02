@@ -306,6 +306,11 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                     [self finishDeliveryRun:@"Item options are ready. Review them here; no item was added to the cart."];
                     return;
                 }
+                if ([name isEqualToString:@"review_cart"]) {
+                    self.deliveryTaskID = nil;
+                    [self finishDeliveryRun:@"Cart is ready for review. No checkout or order was started."];
+                    return;
+                }
                 if ([name isEqualToString:@"review_checkout"]) {
                     [self finishDeliveryRun:@"Checkout reached. Review the exact total yourself. No order placed."];
                     return;
@@ -339,6 +344,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         "const clean=s=>(s||'').replace(/\\s+/g,' ').trim();"
         "const rendered=e=>{const r=e.getBoundingClientRect();const s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)!==0};"
         "const visible=e=>{const r=e.getBoundingClientRect();return rendered(e)&&r.top>=0&&r.left>=0&&r.top<window.innerHeight&&r.left<window.innerWidth};"
+        "const reachable=e=>{if(!visible(e))return false;const r=e.getBoundingClientRect(),x=Math.max(0,Math.min(window.innerWidth-1,r.left+r.width/2)),y=Math.max(0,Math.min(window.innerHeight-1,r.top+r.height/2)),hit=document.elementFromPoint(x,y);return hit&&(hit===e||e.contains(hit))};"
         "const selected=()=>{const labels=[...document.querySelectorAll('label[for]')];return [...document.querySelectorAll('input[type=radio]:checked,input[type=checkbox]:checked')].map(e=>labels.find(l=>l.htmlFor===e.id)).filter(l=>l&&rendered(l)).map(l=>clean(l.textContent)).filter(Boolean)};"
         "if(JSON.stringify(selected())!==JSON.stringify(p.selected))return {ok:false,error:'Page changed'};"
         "if([...document.querySelectorAll('input[type=password],input[type=email],input[type=tel],input[autocomplete=one-time-code]')].some(rendered))return {ok:false,error:'Sign-in page'};"
@@ -352,10 +358,12 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         "e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));"
         "if(e.form)e.form.requestSubmit();else e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));"
         "return {ok:true};}"
-        "if(p.action==='choose_option'){const labels=[...document.querySelectorAll('label[for]')].filter(e=>visible(e)&&clean(e.textContent)===p.target);"
-        "if(labels.length!==1)return {ok:false,error:'Option target not unique'};"
-        "const e=labels[0],input=document.getElementById(e.htmlFor);"
-        "if(!input||input.type!=='radio'||input.checked||!input.name)return {ok:false,error:'Option changed'};"
+        "if(p.action==='choose_option'){const candidates=[...document.querySelectorAll('label[for]')].filter(e=>visible(e)&&clean(e.textContent)===p.target).map(e=>({label:e,input:document.getElementById(e.htmlFor)})).filter(x=>x.input&&x.input.type==='radio'&&!x.input.checked&&x.input.name);"
+        "if(!candidates.length)return {ok:false,error:'Option changed'};"
+        "const top=candidates.filter(x=>reachable(x.label)),pool=top.length?top:candidates;"
+        "const unique=new Map(pool.map(x=>[x.input.id,x]));"
+        "if(unique.size!==1)return {ok:false,error:'Option target not unique'};"
+        "const e=[...unique.values()][0].label;"
         "e.click();return {ok:true};}"
         "if(!['open_merchant','open_item','add_to_cart','open_checkout'].includes(p.action))return {ok:false,error:'Unsupported action'};"
         "let wanted=p.target;"

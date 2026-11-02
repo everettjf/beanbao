@@ -42,8 +42,8 @@ int32_t BBDeliveryActionFinish(const char *workflowID, const char *actionJSON,
                                const char *snapshotJSON) {
     (void)workflowID; (void)actionJSON; (void)snapshotJSON; return 0;
 }
-int32_t BBDeliveryOptionsReviewFinish(const char *workflowID, const char *actionJSON,
-                                     const char *snapshotJSON) {
+int32_t BBDeliveryReadOnlyReviewFinish(const char *workflowID, const char *actionJSON,
+                                       const char *snapshotJSON) {
     (void)workflowID; (void)actionJSON; (void)snapshotJSON; DeliveryReviewCalls++; return 0;
 }
 

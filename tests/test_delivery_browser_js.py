@@ -93,16 +93,116 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         const radio = {{id:'option-one',type:'radio',name:'noodle',checked:false}};
         const label = {{htmlFor:'option-one',textContent:'Rice Noodle',
           getBoundingClientRect() {{return {{width:200,height:30,top:300,left:20}}}},
+          contains(hit) {{return hit===this}},
           click() {{radio.checked=true}}}};
         globalThis.location = {{href:{json.dumps(payload['url'])},host:'www.ubereats.com'}};
         globalThis.window = {{innerWidth:414,innerHeight:896}};
         globalThis.getComputedStyle = () =>
           ({{display:'block',visibility:'visible',opacity:'1'}});
         globalThis.document = {{body:{{innerText:{json.dumps(payload['text'])}}},
+          elementFromPoint() {{return label}},
           getElementById(id) {{return id==='option-one' ? radio : null}},
           querySelectorAll(selector) {{
             if(selector==='label[for]')return [label];
             if(selector.includes('input[type=radio]:checked'))return radio.checked ? [radio] : [];
+            if(selector.includes('input[type=password]'))return [];
+            return [];
+          }}
+        }};
+        process.stdout.write(JSON.stringify({{result:{script},checked:radio.checked}}));
+        """
+        completed = subprocess.run([shutil.which("node"), "-e", fixture],
+                                   check=True, capture_output=True, text=True)
+        self.assertEqual(json.loads(completed.stdout),
+                         {"result": {"ok": True}, "checked": True})
+
+    def test_occluded_duplicate_option_does_not_block_visible_radio(self):
+        payload = {"url": "https://www.ubereats.com/store/example/id?mod=quickView",
+                   "text": "Rice Noodle Add 1 to order", "selected": [],
+                   "action": "choose_option", "target": "Rice Noodle"}
+        script = browser_action_script(payload)
+        fixture = f"""
+        const radio = {{id:'visible-option',type:'radio',name:'noodle',checked:false}};
+        const visible = {{htmlFor:'visible-option',textContent:'Rice Noodle',
+          getBoundingClientRect() {{return {{width:200,height:30,top:300,left:20}}}},
+          contains(hit) {{return hit===this}},click() {{radio.checked=true}}}};
+        const occluded = {{htmlFor:'hidden-behind-modal',textContent:'Rice Noodle',
+          getBoundingClientRect() {{return {{width:200,height:30,top:400,left:20}}}},
+          contains() {{return false}},click() {{throw Error('occluded label clicked')}}}};
+        globalThis.location = {{href:{json.dumps(payload['url'])},host:'www.ubereats.com'}};
+        globalThis.window = {{innerWidth:414,innerHeight:896}};
+        globalThis.getComputedStyle = () =>
+          ({{display:'block',visibility:'visible',opacity:'1'}});
+        globalThis.document = {{body:{{innerText:{json.dumps(payload['text'])}}},
+          elementFromPoint(x,y) {{return y<350 ? visible : null}},
+          getElementById(id) {{return id==='visible-option' ? radio : null}},
+          querySelectorAll(selector) {{
+            if(selector==='label[for]')return [occluded,visible];
+            if(selector.includes('input[type=radio]:checked'))return [];
+            if(selector.includes('input[type=password]'))return [];
+            return [];
+          }}
+        }};
+        process.stdout.write(JSON.stringify({{result:{script},checked:radio.checked}}));
+        """
+        completed = subprocess.run([shutil.which("node"), "-e", fixture],
+                                   check=True, capture_output=True, text=True)
+        self.assertEqual(json.loads(completed.stdout),
+                         {"result": {"ok": True}, "checked": True})
+
+    def test_two_distinct_radio_options_with_same_label_are_rejected(self):
+        payload = {"url": "https://www.ubereats.com/store/example/id?mod=quickView",
+                   "text": "Rice Noodle Add 1 to order", "selected": [],
+                   "action": "choose_option", "target": "Rice Noodle"}
+        script = browser_action_script(payload)
+        fixture = f"""
+        const inputs = [{{id:'one',type:'radio',name:'first',checked:false}},
+                        {{id:'two',type:'radio',name:'second',checked:false}}];
+        const labels = inputs.map((input,i)=>({{htmlFor:input.id,textContent:'Rice Noodle',
+          getBoundingClientRect() {{return {{width:100,height:20,top:300+i*40,left:20}}}},
+          contains() {{return false}},click() {{input.checked=true}}}}));
+        globalThis.location = {{href:{json.dumps(payload['url'])},host:'www.ubereats.com'}};
+        globalThis.window = {{innerWidth:414,innerHeight:896}};
+        globalThis.getComputedStyle = () =>
+          ({{display:'block',visibility:'visible',opacity:'1'}});
+        globalThis.document = {{body:{{innerText:{json.dumps(payload['text'])}}},
+          elementFromPoint() {{return null}},
+          getElementById(id) {{return inputs.find(x=>x.id===id)||null}},
+          querySelectorAll(selector) {{
+            if(selector==='label[for]')return labels;
+            if(selector.includes('input[type=radio]:checked'))return [];
+            if(selector.includes('input[type=password]'))return [];
+            return [];
+          }}
+        }};
+        process.stdout.write(JSON.stringify({{result:{script},checked:inputs.map(x=>x.checked)}}));
+        """
+        completed = subprocess.run([shutil.which("node"), "-e", fixture],
+                                   check=True, capture_output=True, text=True)
+        self.assertEqual(json.loads(completed.stdout),
+                         {"result": {"ok": False, "error": "Option target not unique"},
+                          "checked": [False, False]})
+
+    def test_unique_radio_can_be_chosen_when_hit_test_returns_an_ancestor(self):
+        payload = {"url": "https://www.ubereats.com/store/example/id?mod=quickView",
+                   "text": "Rice Noodle Add 1 to order", "selected": [],
+                   "action": "choose_option", "target": "Rice Noodle"}
+        script = browser_action_script(payload)
+        fixture = f"""
+        const radio = {{id:'option-one',type:'radio',name:'noodle',checked:false}};
+        const label = {{htmlFor:'option-one',textContent:'Rice Noodle',
+          getBoundingClientRect() {{return {{width:200,height:30,top:300,left:20}}}},
+          contains() {{return false}},click() {{radio.checked=true}}}};
+        globalThis.location = {{href:{json.dumps(payload['url'])},host:'www.ubereats.com'}};
+        globalThis.window = {{innerWidth:414,innerHeight:896}};
+        globalThis.getComputedStyle = () =>
+          ({{display:'block',visibility:'visible',opacity:'1'}});
+        globalThis.document = {{body:{{innerText:{json.dumps(payload['text'])}}},
+          elementFromPoint() {{return {{}}}},
+          getElementById(id) {{return id==='option-one' ? radio : null}},
+          querySelectorAll(selector) {{
+            if(selector==='label[for]')return [label];
+            if(selector.includes('input[type=radio]:checked'))return [];
             if(selector.includes('input[type=password]'))return [];
             return [];
           }}

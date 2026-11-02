@@ -30,8 +30,8 @@ extern char *BBUberEatsValidateAction(const char *snapshotJSON, const char *acti
 extern int32_t BBDeliveryActionBegin(const char *workflowID, const char *actionJSON);
 extern int32_t BBDeliveryActionFinish(const char *workflowID, const char *actionJSON,
                                      const char *snapshotJSON);
-extern int32_t BBDeliveryOptionsReviewFinish(const char *workflowID, const char *actionJSON,
-                                            const char *snapshotJSON);
+extern int32_t BBDeliveryReadOnlyReviewFinish(const char *workflowID, const char *actionJSON,
+                                             const char *snapshotJSON);
 
 static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.sock";
 static const uint16_t BBBrowserPort = 47813;
@@ -450,7 +450,7 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
             NSString *target = candidate[@"target"];
             NSString *identity = candidate[@"observationID"];
             if ([@[@"open_search", @"search", @"open_merchant", @"open_item", @"review_options", @"choose_option",
-                   @"add_to_cart", @"open_checkout", @"review_checkout"] containsObject:action] &&
+                   @"add_to_cart", @"review_cart", @"open_checkout", @"review_checkout"] containsObject:action] &&
                 [target isKindOfClass:NSString.class] && target.length <= 120 &&
                 [identity isKindOfClass:NSString.class] && identity.length == 64)
                 deliveryAction = candidate;
@@ -903,15 +903,18 @@ static NSDictionary *BBDeliveryVerifyAction(NSDictionary *request) {
         if (![result isKindOfClass:NSDictionary.class] || ![result[@"valid"] boolValue])
             return [result isKindOfClass:NSDictionary.class] ? result :
                 @{@"ok": @NO, @"error": @"Delivery action check failed"};
-        if ([BBState.deliveryAction[@"action"] isEqualToString:@"review_options"]) {
-            if (BBDeliveryOptionsReviewFinish(taskID.UTF8String, actionJSON.UTF8String,
-                                              snapshotJSON.UTF8String) != 0) {
+        NSString *reviewAction = BBState.deliveryAction[@"action"];
+        if ([reviewAction isEqualToString:@"review_options"] ||
+            [reviewAction isEqualToString:@"review_cart"]) {
+            if (BBDeliveryReadOnlyReviewFinish(taskID.UTF8String, actionJSON.UTF8String,
+                                               snapshotJSON.UTF8String) != 0) {
                 BBState.phase = @"error";
-                BBState.message = @"Could not verify the item options. Check the page.";
+                BBState.message = @"Could not verify the delivery review. Check the page.";
                 return @{@"ok": @NO, @"error": BBState.message};
             }
             BBState.phase = @"done";
-            BBState.message = @"Item options ready for review";
+            BBState.message = [reviewAction isEqualToString:@"review_cart"] ?
+                @"Cart ready for review" : @"Item options ready for review";
             BBState.deliveryAction = nil;
             return result;
         }
