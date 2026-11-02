@@ -1,10 +1,10 @@
 # Complex workflows: implementation plan
 
-Updated November 1, 2026. This plan targets the existing on-device BeanBao Agent, App, and RootHide Bridge on the connected iOS 26 phone. It describes work to build; these workflows are not implemented by the current release.
+Updated November 2, 2026. This plan targets the on-device BeanBao Agent, App, and RootHide Bridge on the connected iOS 26 phone. The research-to-PDF and email-draft path has an initial implementation in source and offline tests; it is not yet verified on the phone. App acquisition and food delivery remain planned.
 
 ## Current boundary
 
-The current Agent interprets a request as exactly one canonical task. It can open four allowed apps, search Maps, or create a note. A task has a 20-action and five-minute limit; the Bridge has no general app installation, file, purchase, or messaging route. Activity is a bounded audit log, not a resumable session. Removing the intent filter or extending the action limit would not provide durable multi-step execution.
+The existing UI task path interprets a request as one canonical action. It can open four allowed apps, search Maps, or create a note. A separate research path now executes a bounded Palmino model/tool loop and persists its checkpoints. The Bridge still has no general app installation, file, purchase, or messaging route. Activity remains a bounded audit log; Sessions holds research workflow progress and artifacts.
 
 ## Proposed execution model
 
@@ -12,9 +12,9 @@ Use a workflow coordinator in the mobile-owned Agent. The model may propose a ty
 
 ### Reuse the copied Palmino runtime
 
-The copied `PHKAgentRuntime` already runs multi-step model/tool turns with call and time budgets, cancellation, conversation snapshots, and an execution checkpoint hook. `PHKToolRegistry` validates tool arguments against JSON schemas; `PHKGovernedTool` provides per-call authorization and audit hooks. These are the foundation of the workflow coordinator, so no new general-purpose agent loop is needed. BeanBao must supply a real Claude-backed `PHKModelClient`, typed workflow tools, a durable `PHKExecutionCheckpointPersisting` implementation, and a host authorization policy.
+The copied `PHKAgentRuntime` runs multi-step model/tool turns with call and time budgets, cancellation, conversation snapshots, and an execution checkpoint hook. `PHKToolRegistry` validates tool arguments against JSON schemas. BeanBao now supplies a Claude-backed `PHKModelClient`, typed research tools, and a private atomic `PHKExecutionCheckpointPersisting` journal. Tool receipts prevent duplicate local writes, and an uncertain write requires reconciliation. The policy still needs to expand one capability at a time for other workflow types.
 
-Today `BeanBaoStepHarness` instead uses `FixedStepModel`, which repeatedly calls one `DeviceStepTool`. Its action history lives only in that process. The Claude call occurs inside the Objective-C device step for Maps, while the upstream runtime sees only a fixed `map_step` result. The Agent service starts a single child task and the current intent resolver rejects compound requests. Moving to complex work therefore requires new integration around the copied runtime, rather than merely raising the 20-step limit. The existing single-task wrappers remain useful as bounded UI tools within a larger workflow.
+The older `BeanBaoStepHarness` still uses `FixedStepModel` for bounded device actions. The new research route uses the actual Claude/Palmino tool loop. The service recognizes an explicit research/PDF request, creates a stable session ID, and the App exposes saved sessions, PDF preview, and optional Apple Mail compose. Other compound requests still require purpose-built tools and routing; merely raising the 20-step limit would not make them reliable.
 
 The workflow states are `planned -> running -> waiting_for_user -> running -> completed`, with `failed`, `cancelled`, and `needs_reconciliation` terminal or recovery states. Each step records a stable workflow ID, step ID, typed input, output reference, observed postcondition, attempt count, timestamp, and policy decision. Persist this record atomically in an app-private database. Do not store API keys, raw screenshots, or full page content in the default activity log. A separate, user-deletable session may retain the user's request, plan, source links, and resulting files for a configurable period.
 
@@ -55,6 +55,8 @@ Acceptance: a scripted request reaches a correct cart and review screen without 
 
 ## Delivery sequence
 
+As of November 2, source implementation and offline verification cover the workflow core, research-to-PDF path, email draft, and Sessions list/select/resume/delete controls. The tests use scripted Claude replies and web-search responses; they verify citation rejection, PDF readability, checkpoint recovery, duplicate prevention, and Mail result state. A phone run against a live Claude account and Mail composer is still required before calling this release complete. App Store and delivery flows are not implemented.
+
 1. **Workflow core:** typed plan schema, capability registry, persistent checkpoints, session and step status in App, stop/resume, deadlines, and a fake-tool integration test for interruption and duplicate prevention. Keep the existing single-task path unchanged while this is developed.
 2. **Research to PDF:** source-aware web search/fetch, citation checks, structured report, on-device PDF rendering and preview. Test with a fixed research topic and inspect the generated PDF.
 3. **Email draft:** recipient validation, attachment verification, native compose screen, cancel/send/queue state handling. Use a test mailbox for a separately approved send test; never use a real recipient from a research prompt without review.
@@ -66,6 +68,6 @@ For the first release, the phone remains sufficient to execute a workflow once i
 ## External API evidence
 
 - [Claude web search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) can return current results with citations; capability and account availability must be checked at runtime.
-- [UIGraphicsPDFRenderer](https://developer.apple.com/documentation/uikit/uigraphicspdfrenderer) writes PDF data or a file; [PDFView](https://developer.apple.com/documentation/pdfkit/pdfview) displays it.
+- [Core Graphics PDF contexts](https://developer.apple.com/documentation/coregraphics/cgcontext) and [Core Text frames](https://developer.apple.com/documentation/coretext/ctframegetvisiblestringrange) render and paginate the on-device PDF. Quick Look previews it in the app.
 - [MFMailComposeViewController](https://developer.apple.com/documentation/messageui/mfmailcomposeviewcontroller) supports a prepared message and attachment for user review, and does not guarantee delivery.
 - [SKStoreProductViewController](https://developer.apple.com/documentation/storekit/skstoreproductviewcontroller) displays an App Store product page. This supports an installation handoff, not a promise of silent installation.

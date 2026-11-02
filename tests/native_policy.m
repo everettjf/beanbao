@@ -12,6 +12,10 @@
 int32_t BBRunHarnessText(const char *task) { (void)task; return 1; }
 int32_t BBRunHarnessNote(const char *task) { (void)task; return 1; }
 int32_t BBRunHarnessMap(const char *task) { (void)task; return 1; }
+int32_t BBRunHarnessResearch(const char *task, const char *workflowID) {
+    (void)task; (void)workflowID; return 1;
+}
+int32_t BBMarkResearchMailQueued(const char *workflowID) { (void)workflowID; return 0; }
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
     return @{@"device_state": @{@"locked_known": @YES, @"locked": @(locked),
@@ -63,11 +67,65 @@ int main(void) {
                    "stop refuses a different task identity") ||
             !Check(![BBStop(@{@"service_id": @"service-B"})[@"ok"] boolValue],
                    "stop refuses a different service identity")) return 1;
+        BBState.phase = @"waiting_for_user";
+        BBState.mailDraftPath = @"/tmp/test-draft.json";
+        if (!Check(![BBMailResult(@{@"task_id": @"task-B", @"service_id": @"service-A",
+                                   @"result": @"sent"})[@"ok"] boolValue],
+                   "mail result rejects a stale task identity") ||
+            !Check([BBMailResult(@{@"task_id": @"task-A", @"service_id": @"service-A",
+                                  @"result": @"sent"})[@"phase"] isEqualToString:@"done"],
+                   "mail sent callback changes waiting task to queued") ||
+            !Check(!BBState.mailDraftPath,
+                   "queued mail no longer exposes the draft action") ||
+            !Check(![BBMailResult(@{@"task_id": @"task-A", @"service_id": @"service-A",
+                                   @"result": @"sent"})[@"ok"] boolValue],
+                   "duplicate mail result is rejected")) return 1;
+        NSString *workflowRoot = [NSTemporaryDirectory() stringByAppendingPathComponent:
+            [@"BeanBao-workflow-policy-" stringByAppendingString:NSUUID.UUID.UUIDString]];
+        NSString *workflowID = NSUUID.UUID.UUIDString;
+        NSString *workflowFolder = [workflowRoot stringByAppendingPathComponent:workflowID];
+        BBWorkflowRoot = workflowRoot;
+        if (![NSFileManager.defaultManager createDirectoryAtPath:workflowFolder
+            withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0700} error:nil]) return 1;
+        NSDictionary *savedWorkflow = @{@"id": workflowID, @"request": @"Research iOS speech and make a PDF",
+                                        @"phase": @"completed", @"updatedAt": @1000};
+        NSData *savedJSON = [NSJSONSerialization dataWithJSONObject:savedWorkflow options:0 error:nil];
+        NSString *sessionPath = [workflowFolder stringByAppendingPathComponent:@"session.json"];
+        [savedJSON writeToFile:sessionPath atomically:YES];
+        chmod(sessionPath.fileSystemRepresentation, 0600);
+        NSString *pdfPath = [workflowFolder stringByAppendingPathComponent:@"report.pdf"];
+        [[NSMutableData dataWithLength:200] writeToFile:pdfPath atomically:YES];
+        chmod(pdfPath.fileSystemRepresentation, 0600);
+        if (!Check(BBWorkflowSummaries().count == 1,
+                   "private saved workflow appears in Sessions") ||
+            !Check([BBSelectWorkflow(@{@"workflow_id": workflowID})[@"phase"] isEqualToString:@"done"],
+                   "selecting a saved workflow restores status") ||
+            !Check([BBState.reportPath isEqualToString:pdfPath],
+                   "selection exposes only a private regular PDF") ||
+            !Check(![BBResumeWorkflow(@{@"workflow_id": workflowID})[@"ok"] boolValue],
+                   "completed workflow cannot restart")) return 1;
+        NSString *unknown = [workflowFolder stringByAppendingPathComponent:@"unexpected.txt"];
+        [@"keep" writeToFile:unknown atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        if (!Check(![BBDeleteWorkflow(@{@"workflow_id": workflowID})[@"ok"] boolValue] &&
+                   [NSFileManager.defaultManager fileExistsAtPath:sessionPath],
+                   "unexpected file prevents partial session deletion")) return 1;
+        unlink(unknown.fileSystemRepresentation);
+        if (!Check([BBDeleteWorkflow(@{@"workflow_id": workflowID})[@"ok"] boolValue] &&
+                   BBWorkflowSummaries().count == 0,
+                   "session deletion removes known private files")) return 1;
+        rmdir(workflowRoot.fileSystemRepresentation);
+        BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";
         for (NSString *task in @[@"打开设置", @"打开备忘录", @"打开地图", @"打开通讯录"])
             if (!Check(BBUsesTextHarness(task), "fixed text opens use Palmino harness")) return 1;
         if (!Check(!BBUsesTextHarness(@"在地图搜索金门大桥") &&
                    !BBUsesTextHarness(@"新建备忘录：测试内容"),
                    "map search and note creation have separate bounded workflows")) return 1;
+        if (!Check(BBIsResearchPDFTask(@"Research iOS speech recognition and create a PDF") &&
+                   BBIsResearchPDFTask(@"调研设备语音识别并生成 PDF") &&
+                   BBIsResearchPDFTask(@"Research iOS speech, create a PDF and email to test@example.com") &&
+                   !BBIsResearchPDFTask(@"Research iOS speech and email the PDF to someone") &&
+                   !BBIsResearchPDFTask(@"Open Maps"),
+                   "research PDF routing requires an explicit address for email drafts")) return 1;
         char *invalidNoteJSON = BBNoteStepJSON("打开地图", "[]");
         NSDictionary *invalidNote = invalidNoteJSON ?
             [NSJSONSerialization JSONObjectWithData:

@@ -15,8 +15,10 @@
 
 extern char **environ;
 extern void BBReleaseWakeLease(void);
+extern int32_t BBMarkResearchMailQueued(const char *workflowID);
 
 static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.sock";
+static NSString *BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";
 
 @interface BBServiceState : NSObject
 @property(nonatomic) pid_t child;
@@ -26,6 +28,8 @@ static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.s
 @property(nonatomic, copy) NSString *app;
 @property(nonatomic, copy) NSString *serviceID;
 @property(nonatomic, copy) NSString *taskID;
+@property(nonatomic, copy) NSString *reportPath;
+@property(nonatomic, copy) NSString *mailDraftPath;
 @property(nonatomic) BOOL stopping;
 @end
 @implementation BBServiceState
@@ -39,9 +43,135 @@ static BOOL BBIsNoteTask(NSString *task) {
 }
 
 static NSString *BBCompletionMessage(NSString *task) {
+    if ([task.lowercaseString containsString:@"pdf"] &&
+        ([task.lowercaseString hasPrefix:@"research "] || [task hasPrefix:@"调研"]))
+        return @"PDF report created";
     if ([task hasPrefix:@"在地图搜索"]) return @"Maps search completed";
     if (BBIsNoteTask(task)) return @"Note created";
     return @"Target app is in the foreground";
+}
+
+static BOOL BBIsResearchPDFTask(NSString *task) {
+    NSString *lower = task.lowercaseString;
+    BOOL research = [lower hasPrefix:@"research "] || [lower hasPrefix:@"investigate "] ||
+        [task hasPrefix:@"调研"];
+    BOOL pdf = [lower containsString:@"pdf"];
+    BOOL externalAction = [lower containsString:@"email"] || [lower containsString:@"mail to"] ||
+        [lower containsString:@"send "] || [task containsString:@"邮件"] ||
+        [task containsString:@"发送"];
+    NSRegularExpression *recipient = [NSRegularExpression
+        regularExpressionWithPattern:@"[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}"
+        options:NSRegularExpressionCaseInsensitive error:nil];
+    BOOL hasRecipient = [recipient firstMatchInString:task options:0
+                                                range:NSMakeRange(0, task.length)] != nil;
+    return research && pdf && (!externalAction || hasRecipient);
+}
+
+static NSString *BBWorkflowFolder(NSString *identity) {
+    NSUUID *uuid = [identity isKindOfClass:NSString.class] ?
+        [[NSUUID alloc] initWithUUIDString:identity] : nil;
+    if (!uuid || ![uuid.UUIDString isEqualToString:identity]) return nil;
+    return [BBWorkflowRoot stringByAppendingPathComponent:identity];
+}
+
+static NSDictionary *BBReadWorkflowRecord(NSString *identity) {
+    NSString *folder = BBWorkflowFolder(identity);
+    if (!folder) return nil;
+    struct stat directory = {0};
+    if (lstat(folder.fileSystemRepresentation, &directory) ||
+        !S_ISDIR(directory.st_mode) || directory.st_uid != 501 ||
+        (directory.st_mode & 077)) return nil;
+    NSString *path = [folder stringByAppendingPathComponent:@"session.json"];
+    int fd = open(path.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return nil;
+    struct stat info = {0};
+    if (fstat(fd, &info) || !S_ISREG(info.st_mode) || info.st_uid != 501 ||
+        (info.st_mode & 077) || info.st_size <= 0 || info.st_size > 4 * 1024 * 1024) {
+        close(fd); return nil;
+    }
+    NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)info.st_size];
+    NSUInteger remaining = data.length;
+    uint8_t *cursor = data.mutableBytes;
+    while (remaining) {
+        ssize_t count = read(fd, cursor, remaining);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) { close(fd); return nil; }
+        cursor += count; remaining -= (NSUInteger)count;
+    }
+    close(fd);
+    NSDictionary *record = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![record isKindOfClass:NSDictionary.class] ||
+        ![record[@"id"] isEqualToString:identity] ||
+        ![record[@"request"] isKindOfClass:NSString.class] ||
+        ![record[@"phase"] isKindOfClass:NSString.class]) return nil;
+    return record;
+}
+
+static BOOL BBPrivateWorkflowFile(NSString *path, off_t minimum, off_t maximum) {
+    struct stat info = {0};
+    return !lstat(path.fileSystemRepresentation, &info) && S_ISREG(info.st_mode) &&
+        info.st_uid == 501 && !(info.st_mode & 077) &&
+        info.st_size >= minimum && info.st_size <= maximum;
+}
+
+static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
+    struct stat root = {0};
+    if (lstat(BBWorkflowRoot.fileSystemRepresentation, &root) ||
+        !S_ISDIR(root.st_mode) || root.st_uid != 501 || (root.st_mode & 077)) return @[];
+    NSArray<NSString *> *entries = [NSFileManager.defaultManager
+        contentsOfDirectoryAtPath:BBWorkflowRoot error:nil] ?: @[];
+    NSMutableArray<NSDictionary *> *items = [NSMutableArray array];
+    for (NSString *identity in entries) {
+        NSDictionary *record = BBReadWorkflowRecord(identity);
+        if (!record) continue;
+        NSNumber *updated = [record[@"updatedAt"] isKindOfClass:NSNumber.class] ?
+            record[@"updatedAt"] : @0;
+        NSString *request = record[@"request"];
+        if (request.length > 220) continue;
+        [items addObject:@{@"id": identity, @"request": request,
+                           @"phase": record[@"phase"],
+                           @"updated_at": @([updated doubleValue] + 978307200.0)}];
+    }
+    [items sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [b[@"updated_at"] compare:a[@"updated_at"]];
+    }];
+    if (items.count > 30) [items removeObjectsInRange:NSMakeRange(30, items.count - 30)];
+    return items;
+}
+
+static void BBRestoreWorkflowIdentity(NSString *identity) {
+    NSDictionary *record = BBReadWorkflowRecord(identity);
+    if (!record) return;
+    NSString *folder = BBWorkflowFolder(identity);
+    if (!folder) return;
+    BBState.taskID = identity;
+    BBState.reportPath = nil;
+    BBState.mailDraftPath = nil;
+    NSString *phase = record[@"phase"];
+    NSString *pdfPath = [folder stringByAppendingPathComponent:@"report.pdf"];
+    NSString *draftPath = [folder stringByAppendingPathComponent:@"mail-draft.json"];
+    BOOL hasPDF = BBPrivateWorkflowFile(pdfPath, 100, 20 * 1024 * 1024);
+    BOOL hasDraft = BBPrivateWorkflowFile(draftPath, 1, 16 * 1024);
+    BBState.app = hasDraft ? @"ResearchMailDraft" : @"ResearchPDF";
+    BBState.reportPath = hasPDF ? pdfPath : nil;
+    if ([phase isEqualToString:@"waitingForUser"] && hasPDF && hasDraft) {
+        BBState.phase = @"waiting_for_user";
+        BBState.message = @"Review the email draft";
+        BBState.mailDraftPath = draftPath;
+    } else if ([phase isEqualToString:@"completed"] && hasPDF) {
+        BBState.phase = @"done";
+        BBState.message = @"Research PDF available";
+    } else if ([phase isEqualToString:@"needsReconciliation"]) {
+        BBState.phase = @"needs_reconciliation";
+        BBState.message = @"Workflow outcome needs review";
+    } else {
+        BBState.phase = @"error";
+        BBState.message = @"Interrupted workflow. Open Sessions to resume.";
+    }
+}
+
+static void BBRestoreRecentWorkflow(void) {
+    BBRestoreWorkflowIdentity(BBWorkflowSummaries().firstObject[@"id"]);
 }
 
 static NSString *BBNormalizeTask(NSString *task) {
@@ -117,11 +247,14 @@ static BOOL BBUsesTextHarness(NSString *task) {
 
 static NSDictionary *BBStatus(void) {
     @synchronized (BBState) {
-        return @{@"ok": @YES, @"phase": BBState.phase ?: @"idle",
+        NSMutableDictionary *status = [@{@"ok": @YES, @"phase": BBState.phase ?: @"idle",
                  @"message": BBState.message ?: @"",
                  @"app": BBState.app ?: @"", @"running": @(BBState.child > 0),
                  @"service_id": BBState.serviceID ?: @"",
-                 @"task_id": BBState.taskID ?: @""};
+                 @"task_id": BBState.taskID ?: @""} mutableCopy];
+        if (BBState.reportPath) status[@"report_path"] = BBState.reportPath;
+        if (BBState.mailDraftPath) status[@"mail_draft_path"] = BBState.mailDraftPath;
+        return status;
     }
 }
 
@@ -179,7 +312,7 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
     for (NSString *line in [summary componentsSeparatedByString:@"\n"])
         if ([line hasPrefix:@"BB_INTENT="]) {
             NSString *candidate = [line substringFromIndex:@"BB_INTENT=".length];
-            if ([@[@"Settings", @"Maps", @"Contacts", @"Notes", @"MapsSearch", @"NoteCreate"]
+            if ([@[@"Settings", @"Maps", @"Contacts", @"Notes", @"MapsSearch", @"NoteCreate", @"ResearchPDF", @"ResearchMailDraft"]
                     containsObject:candidate]) resolvedApp = candidate;
             break;
         }
@@ -187,7 +320,9 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
         app = [resolvedApp isEqualToString:@"MapsSearch"] ? @"Maps" :
             ([resolvedApp isEqualToString:@"NoteCreate"] ? @"Notes" : resolvedApp);
         completionMessage = [resolvedApp isEqualToString:@"MapsSearch"] ? @"Maps search completed" :
-            ([resolvedApp isEqualToString:@"NoteCreate"] ? @"Note created" : @"Target app is in the foreground");
+            ([resolvedApp isEqualToString:@"NoteCreate"] ? @"Note created" :
+             ([resolvedApp isEqualToString:@"ResearchPDF"] ? @"PDF report created" :
+              ([resolvedApp isEqualToString:@"ResearchMailDraft"] ? @"Review the email draft" : @"Target app is in the foreground")));
     }
     NSString *auditAction = nil, *auditResult = nil;
     @synchronized (BBState) {
@@ -196,12 +331,22 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
         BBState.child = 0;
         BBState.app = app;
         BBState.stopping = NO;
+        BOOL succeeded = waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0;
         BBState.phase = stopped ? @"stopped" :
-            (waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? @"done" : @"error");
+            (succeeded ? ([resolvedApp isEqualToString:@"ResearchMailDraft"] ?
+                          @"waiting_for_user" : @"done") : @"error");
+        BOOL reportReady = succeeded &&
+            ([@[@"ResearchPDF", @"ResearchMailDraft"] containsObject:resolvedApp]);
+        BBState.reportPath = reportReady ?
+            [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/report.pdf",
+                                       BBState.taskID ?: @""] : nil;
+        BBState.mailDraftPath = succeeded && [resolvedApp isEqualToString:@"ResearchMailDraft"] ?
+            [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/mail-draft.json",
+                                       BBState.taskID ?: @""] : nil;
         BBState.message = stopped ? @"Task stopped" :
-            ([BBState.phase isEqualToString:@"done"] ? completionMessage : BBFailureMessage(summary));
+            (succeeded ? completionMessage : BBFailureMessage(summary));
         auditAction = BBState.phase;
-        auditResult = [auditAction isEqualToString:@"done"] ? @"ok" : @"failed";
+        auditResult = succeeded ? @"ok" : @"failed";
     }
     BBAudit(@"task", app, auditAction, auditResult);
 }
@@ -209,13 +354,25 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
 static NSDictionary *BBStart(NSDictionary *request) {
     NSString *task = request[@"task"];
     NSString *model = request[@"model"];
+    NSString *resumeID = request[@"resume_id"];
     if (![task isKindOfClass:NSString.class] ||
-        (model && ![model isKindOfClass:NSString.class]) || task.length > 220)
+        (model && ![model isKindOfClass:NSString.class]) ||
+        (resumeID && ![resumeID isKindOfClass:NSString.class]) || task.length > 220)
         return @{@"ok": @NO, @"error": @"Invalid text request"};
     task = BBNormalizeTask(task);
+    if (resumeID) {
+        NSDictionary *saved = BBReadWorkflowRecord(resumeID);
+        if (!saved || ![saved[@"request"] isEqualToString:task] ||
+            ![@[@"planned", @"running", @"failed", @"cancelled"] containsObject:saved[@"phase"]])
+            return @{@"ok": @NO, @"error": @"This workflow cannot be resumed automatically"};
+    }
+    BOOL researchPDF = BBIsResearchPDFTask(task);
     NSString *app = BBAllowedTarget(task);
-    BOOL resolveTask = !app;
+    BOOL resolveTask = !app && !researchPDF;
+    if (researchPDF && ![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
+        return @{@"ok": @NO, @"error": @"Research PDF currently requires Claude"};
     if (resolveTask) app = @"BeanBao";
+    if (researchPDF) app = @"ResearchPDF";
     NSString *selectedProvider = BBModelLoad()[@"provider"];
     if (model && ![model isEqualToString:selectedProvider])
         return @{@"ok": @NO, @"error": @"Model settings changed. Submit the task again."};
@@ -244,11 +401,15 @@ static NSDictionary *BBStart(NSDictionary *request) {
         const char *argvText[] = {executable, "--harness-text", task.UTF8String, NULL};
         const char *argvResolve[] = {executable, "--resolve-task", task.UTF8String,
                                      selectedProvider.UTF8String, NULL};
+        NSString *taskID = resumeID ?: NSUUID.UUID.UUIDString;
+        const char *argvResearch[] = {executable, "--workflow-research", task.UTF8String,
+                                      taskID.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
-                                     (char *const *)(resolveTask ? argvResolve :
+                                     (char *const *)(researchPDF ? argvResearch :
+                                         (resolveTask ? argvResolve :
                                          (noteTask ? argvNote :
-                                          (BBUsesTextHarness(task) ? argvText : argvMap))), environ);
+                                          (BBUsesTextHarness(task) ? argvText : argvMap)))), environ);
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,
@@ -256,7 +417,9 @@ static NSDictionary *BBStart(NSDictionary *request) {
         int readFD = outputPipe[0];
         BBState.generation++;
         NSUInteger generation = BBState.generation;
-        BBState.taskID = NSUUID.UUID.UUIDString;
+        BBState.taskID = taskID;
+        BBState.reportPath = nil;
+        BBState.mailDraftPath = nil;
         BBState.child = child;
         BBState.stopping = NO;
         BBState.phase = @"running";
@@ -267,6 +430,62 @@ static NSDictionary *BBStart(NSDictionary *request) {
             BBWaitForChild(child, readFD, generation, completionMessage, app);
         });
         return BBStatus();
+    }
+}
+
+static NSDictionary *BBResumeWorkflow(NSDictionary *request) {
+    NSString *identity = request[@"workflow_id"];
+    NSDictionary *saved = BBReadWorkflowRecord(identity);
+    if (!saved) return @{@"ok": @NO, @"error": @"Workflow not found"};
+    return BBStart(@{@"task": saved[@"request"], @"resume_id": identity});
+}
+
+static NSDictionary *BBSelectWorkflow(NSDictionary *request) {
+    NSString *identity = request[@"workflow_id"];
+    if (!BBReadWorkflowRecord(identity))
+        return @{@"ok": @NO, @"error": @"Workflow not found"};
+    @synchronized (BBState) {
+        if (BBState.child > 0) return @{@"ok": @NO, @"error": @"A task is already running"};
+        BBRestoreWorkflowIdentity(identity);
+        return BBStatus();
+    }
+}
+
+static NSDictionary *BBDeleteWorkflow(NSDictionary *request) {
+    NSString *identity = request[@"workflow_id"];
+    if (!BBReadWorkflowRecord(identity))
+        return @{@"ok": @NO, @"error": @"Workflow not found"};
+    @synchronized (BBState) {
+        if (BBState.child > 0) return @{@"ok": @NO, @"error": @"A task is already running"};
+        NSString *folder = BBWorkflowFolder(identity);
+        NSSet<NSString *> *known = [NSSet setWithArray:
+            @[@"session.json", @"report.json", @"report.pdf", @"mail-draft.json"]];
+        NSArray<NSString *> *files = [NSFileManager.defaultManager
+            contentsOfDirectoryAtPath:folder error:nil];
+        if (!files || ![[NSSet setWithArray:files] isSubsetOfSet:known])
+            return @{@"ok": @NO, @"error": @"Session contains files that need manual review"};
+        for (NSString *name in files) {
+            NSString *path = [folder stringByAppendingPathComponent:name];
+            if (!BBPrivateWorkflowFile(path, 0, 20 * 1024 * 1024))
+                return @{@"ok": @NO, @"error": @"Session files are unsafe to delete"};
+        }
+        for (NSString *name in files) {
+            NSString *path = [folder stringByAppendingPathComponent:name];
+            if (unlink(path.fileSystemRepresentation) && errno != ENOENT)
+                return @{@"ok": @NO, @"error": @"Could not delete workflow files"};
+        }
+        if (rmdir(folder.fileSystemRepresentation))
+            return @{@"ok": @NO, @"error": @"Could not delete workflow directory"};
+        if ([BBState.taskID isEqualToString:identity]) {
+            BBState.taskID = nil;
+            BBState.app = nil;
+            BBState.reportPath = nil;
+            BBState.mailDraftPath = nil;
+            BBState.phase = @"idle";
+            BBState.message = @"Waiting for a task";
+        }
+        BBAudit(@"workflow", @"ResearchPDF", @"delete", @"ok");
+        return @{@"ok": @YES};
     }
 }
 
@@ -289,11 +508,50 @@ static NSDictionary *BBStop(NSDictionary *request) {
     }
 }
 
+static NSDictionary *BBMailResult(NSDictionary *request) {
+    @synchronized (BBState) {
+        NSString *taskID = request[@"task_id"];
+        NSString *serviceID = request[@"service_id"];
+        NSString *result = request[@"result"];
+        if (![taskID isKindOfClass:NSString.class] ||
+            ![serviceID isKindOfClass:NSString.class] ||
+            ![taskID isEqualToString:BBState.taskID] ||
+            ![serviceID isEqualToString:BBState.serviceID] ||
+            ![BBState.phase isEqualToString:@"waiting_for_user"] ||
+            ![@[@"sent", @"cancelled", @"failed"] containsObject:result])
+            return @{@"ok": @NO, @"error": @"The email draft changed or the result is invalid"};
+        if ([result isEqualToString:@"sent"]) {
+            if (BBMarkResearchMailQueued(taskID.UTF8String) != 0) {
+                BBState.phase = @"needs_reconciliation";
+                BBState.message = @"Mail was queued, but its workflow record could not be saved. Check Apple Mail.";
+                BBState.mailDraftPath = nil;
+                BBAudit(@"task", @"ResearchMailDraft", @"needs_reconciliation", @"record_failed");
+                return BBStatus();
+            }
+            BBState.phase = @"done";
+            BBState.message = @"Email queued in Mail";
+            BBState.mailDraftPath = nil;
+            BBAudit(@"task", @"ResearchMailDraft", @"done", @"queued");
+        } else {
+            BBState.message = [result isEqualToString:@"cancelled"] ?
+                @"Email draft saved for review" : @"Mail could not queue the message";
+            BBAudit(@"task", @"ResearchMailDraft", @"mail_review", result);
+        }
+        return BBStatus();
+    }
+}
+
 static NSDictionary *BBHandle(NSDictionary *request) {
     NSString *op = request[@"op"];
     if ([op isEqualToString:@"status"]) return BBStatus();
     if ([op isEqualToString:@"start"]) return BBStart(request);
     if ([op isEqualToString:@"stop"]) return BBStop(request);
+    if ([op isEqualToString:@"mail_result"]) return BBMailResult(request);
+    if ([op isEqualToString:@"list_workflows"])
+        return @{@"ok": @YES, @"workflows": BBWorkflowSummaries()};
+    if ([op isEqualToString:@"resume_workflow"]) return BBResumeWorkflow(request);
+    if ([op isEqualToString:@"select_workflow"]) return BBSelectWorkflow(request);
+    if ([op isEqualToString:@"delete_workflow"]) return BBDeleteWorkflow(request);
     return @{@"ok": @NO, @"error": @"Unknown operation"};
 }
 
@@ -331,6 +589,7 @@ int BBServe(void) {
         BBState.serviceID = NSUUID.UUID.UUIDString;
         BBState.phase = @"idle";
         BBState.message = @"Waiting for a task";
+        BBRestoreRecentWorkflow();
         signal(SIGPIPE, SIG_IGN);
         umask(077);
         struct stat existing = {0};

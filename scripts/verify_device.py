@@ -32,7 +32,8 @@ def verify_bundle(remote) -> None:
     running = status.get("running")
     if status.get("ok") is not True or not isinstance(status.get("service_id"), str) or \
             not status["service_id"] or not isinstance(status.get("task_id"), str) or \
-            status.get("phase") not in {"idle", "running", "stopping", "stopped", "done", "error"} or \
+            status.get("phase") not in {"idle", "running", "stopping", "stopped", "done", "error",
+                                         "waiting_for_user", "needs_reconciliation"} or \
             type(running) not in (bool, int) or running not in (0, 1):
         raise SystemExit("Agent status protocol is unavailable or incompatible")
     print("agent:", json.dumps({"phase": status["phase"], "running": status["running"],

@@ -1,7 +1,10 @@
 #import <UIKit/UIKit.h>
 #import <Speech/Speech.h>
 #import <AVFoundation/AVFoundation.h>
+#import <QuickLook/QuickLook.h>
+#import <MessageUI/MessageUI.h>
 #import <fcntl.h>
+#import <errno.h>
 #import <sys/stat.h>
 #import <time.h>
 #import <unistd.h>
@@ -10,6 +13,7 @@
 #import "ModelSettingsViewController.h"
 #import "ActivityStore.h"
 #import "ActivityViewController.h"
+#import "WorkflowSessionsViewController.h"
 #import "VoiceIPC.h"
 
 @interface BBLocalDictation : NSObject
@@ -18,7 +22,30 @@
 
 static const char *BBHotkeyFile = "/var/mobile/Library/Caches/BeanBao/hotkey.enabled";
 static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotkey.voice";
-@interface BBRootViewController : UIViewController <UITextFieldDelegate>
+static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
+    int fd = open(path.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return nil;
+    struct stat info = {0};
+    if (fstat(fd, &info) || !S_ISREG(info.st_mode) || info.st_uid != getuid() ||
+        (info.st_mode & 077) || info.st_size <= 0 || info.st_size > (off_t)limit) {
+        close(fd);
+        return nil;
+    }
+    NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)info.st_size];
+    NSUInteger remaining = data.length;
+    uint8_t *cursor = data.mutableBytes;
+    while (remaining) {
+        ssize_t count = read(fd, cursor, remaining);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) { close(fd); return nil; }
+        cursor += count;
+        remaining -= (NSUInteger)count;
+    }
+    close(fd);
+    return data;
+}
+
+@interface BBRootViewController : UIViewController <UITextFieldDelegate, QLPreviewControllerDataSource, MFMailComposeViewControllerDelegate>
 @property(nonatomic, strong) UITextField *taskField;
 @property(nonatomic, strong) UILabel *stateLabel;
 @property(nonatomic, strong) UILabel *detailLabel;
@@ -30,6 +57,12 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 @property(nonatomic, strong) UIButton *startButton;
 @property(nonatomic, strong) UIBarButtonItem *keyboardStartItem;
 @property(nonatomic, strong) UIButton *stopButton;
+@property(nonatomic, strong) UIButton *viewPDFButton;
+@property(nonatomic, strong) UIButton *reviewEmailButton;
+@property(nonatomic, strong) NSURL *reportURL;
+@property(nonatomic, strong) NSURL *mailDraftURL;
+@property(nonatomic, copy) NSString *mailReviewTaskID;
+@property(nonatomic, copy) NSString *mailReviewServiceID;
 @property(nonatomic, strong) UIButton *voiceButton;
 @property(nonatomic, strong) UIButton *clearButton;
 @property(nonatomic, strong) UISwitch *hotkeySwitch;
@@ -103,6 +136,9 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
         style:UIBarButtonItemStylePlain target:self action:@selector(activityTapped)];
     activityItem.accessibilityLabel = @"Activity";
     self.navigationItem.rightBarButtonItem = activityItem;
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
+        initWithTitle:@"Sessions" style:UIBarButtonItemStylePlain
+        target:self action:@selector(sessionsTapped)];
     UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"BeanBaoIcon60"]];
     icon.contentMode = UIViewContentModeScaleAspectFit;
     icon.layer.cornerRadius = 16;
@@ -208,6 +244,12 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     self.stopButton.enabled = NO;
     self.stopButton.alpha = 0.5;
     self.stopButton.hidden = YES;
+    self.viewPDFButton = [self button:@"View PDF report" color:UIColor.systemTealColor
+                                 action:@selector(viewPDFTapped)];
+    self.viewPDFButton.hidden = YES;
+    self.reviewEmailButton = [self button:@"Review email draft" color:UIColor.systemIndigoColor
+                                    action:@selector(reviewEmailTapped)];
+    self.reviewEmailButton.hidden = YES;
     self.stateLabel = [self label:@"Connecting…" size:19];
     self.stateLabel.font = [UIFont boldSystemFontOfSize:19];
     self.detailLabel = [self label:@"" size:15];
@@ -233,7 +275,9 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     footer.textColor = UIColor.secondaryLabelColor;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
         hero, [self card:@[composerTitle, inputRow, quickRow, composerActions] spacing:14],
-        self.feedbackLabel, [self card:@[statusTitle, self.stateLabel, self.detailLabel, self.stopButton] spacing:7],
+        self.feedbackLabel, [self card:@[statusTitle, self.stateLabel, self.detailLabel,
+                                       self.stopButton, self.viewPDFButton,
+                                       self.reviewEmailButton] spacing:7],
         [self card:@[activityHeader, self.activityLabel, self.activityTimeLabel] spacing:7],
         [self card:@[modelRow] spacing:0], [self card:@[hotkeyTitle, hotkeyRow] spacing:10], footer]];
     stack.axis = UILayoutConstraintAxisVertical;
@@ -391,7 +435,10 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     NSString *phase = reply[@"phase"];
     BOOL running = [reply[@"running"] boolValue];
     self.stateLabel.text = ok ? (@{@"idle": @"Ready", @"running": @"Running", @"stopping": @"Stopping",
-                                   @"stopped": @"Stopped", @"done": @"Completed", @"error": @"Incomplete"}[phase] ?: @"Connecting") : @"Service unavailable";
+                                   @"stopped": @"Stopped", @"done": @"Completed",
+                                   @"waiting_for_user": @"Ready for review",
+                                   @"needs_reconciliation": @"Check Mail",
+                                   @"error": @"Incomplete"}[phase] ?: @"Connecting") : @"Service unavailable";
     self.detailLabel.text = ok ? (reply[@"message"] ?: @"") : (reply[@"error"] ?: @"Could not connect to the on-device service");
     self.startButton.enabled = !running;
     self.keyboardStartItem.enabled = !running;
@@ -400,11 +447,110 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     self.stopButton.alpha = running ? 1.0 : 0.5;
     self.stopButton.hidden = !running;
     NSString *taskID = reply[@"task_id"];
+    if (ok && [phase isEqualToString:@"waiting_for_user"] &&
+        [taskID isKindOfClass:NSString.class] && taskID.length &&
+        [reply[@"service_id"] isKindOfClass:NSString.class]) {
+        self.activeTaskID = taskID;
+        self.activeServiceID = reply[@"service_id"];
+    }
+    NSString *reportPath = reply[@"report_path"];
+    NSString *expected = [taskID isKindOfClass:NSString.class] &&
+        [[NSUUID alloc] initWithUUIDString:taskID] ?
+        [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/report.pdf",
+                                   taskID] : nil;
+    self.reportURL = ok && [phase isEqualToString:@"done"] &&
+        [reportPath isKindOfClass:NSString.class] && [reportPath isEqualToString:expected] ?
+        [NSURL fileURLWithPath:reportPath] : nil;
+    if (ok && [phase isEqualToString:@"waiting_for_user"] &&
+        [reportPath isKindOfClass:NSString.class] && [reportPath isEqualToString:expected])
+        self.reportURL = [NSURL fileURLWithPath:reportPath];
+    self.viewPDFButton.hidden = self.reportURL == nil;
+    NSString *draftPath = reply[@"mail_draft_path"];
+    NSString *expectedDraft = expected ? [[expected stringByDeletingLastPathComponent]
+        stringByAppendingPathComponent:@"mail-draft.json"] : nil;
+    self.mailDraftURL = ok && [phase isEqualToString:@"waiting_for_user"] &&
+        [draftPath isKindOfClass:NSString.class] && [draftPath isEqualToString:expectedDraft] ?
+        [NSURL fileURLWithPath:draftPath] : nil;
+    self.reviewEmailButton.hidden = self.mailDraftURL == nil;
     if (ok && !running && [taskID isKindOfClass:NSString.class] && taskID.length &&
         ![self.previewTaskID isEqualToString:taskID]) {
         self.previewTaskID = taskID;
         [self refreshActivityPreview];
     }
+}
+
+- (void)reviewEmailTapped {
+    if (!self.mailDraftURL || !self.reportURL) return;
+    if (![MFMailComposeViewController canSendMail]) {
+        self.feedbackLabel.text = @"Set up an account in Apple Mail to send this draft";
+        return;
+    }
+    NSData *draftData = BBReadPrivateArtifact(self.mailDraftURL.path, 16 * 1024);
+    NSData *pdfData = BBReadPrivateArtifact(self.reportURL.path, 20 * 1024 * 1024);
+    NSDictionary *draft = draftData ? [NSJSONSerialization JSONObjectWithData:draftData options:0 error:nil] : nil;
+    NSString *recipient = [draft isKindOfClass:NSDictionary.class] ? draft[@"recipient"] : nil;
+    NSString *subject = draft[@"subject"], *body = draft[@"body"];
+    if (![recipient isKindOfClass:NSString.class] || ![subject isKindOfClass:NSString.class] ||
+        ![body isKindOfClass:NSString.class] || recipient.length > 254 ||
+        ![draft[@"attachmentName"] isEqualToString:@"report.pdf"] || !pdfData.length) {
+        self.feedbackLabel.text = @"The email draft or PDF is unavailable";
+        return;
+    }
+    MFMailComposeViewController *composer = [MFMailComposeViewController new];
+    composer.mailComposeDelegate = self;
+    [composer setToRecipients:@[recipient]];
+    [composer setSubject:subject];
+    [composer setMessageBody:body isHTML:NO];
+    [composer addAttachmentData:pdfData mimeType:@"application/pdf" fileName:@"BeanBao-Report.pdf"];
+    self.mailReviewTaskID = self.activeTaskID;
+    self.mailReviewServiceID = self.activeServiceID;
+    [self presentViewController:composer animated:YES completion:nil];
+}
+
+- (void)mailComposeController:(MFMailComposeViewController *)controller
+          didFinishWithResult:(MFMailComposeResult)result error:(NSError *)error {
+    (void)error;
+    NSString *state = result == MFMailComposeResultSent ? @"sent" :
+        (result == MFMailComposeResultFailed ? @"failed" : @"cancelled");
+    NSString *taskID = self.mailReviewTaskID;
+    NSString *serviceID = self.mailReviewServiceID;
+    self.mailReviewTaskID = nil;
+    self.mailReviewServiceID = nil;
+    [controller dismissViewControllerAnimated:YES completion:nil];
+    if (!taskID.length || !serviceID.length) return;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSDictionary *reply = BBAgentRequest(@{@"op": @"mail_result", @"task_id": taskID,
+                                              @"service_id": serviceID, @"result": state});
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if ([reply[@"ok"] boolValue]) [self showReply:reply];
+            else self.feedbackLabel.text = @"Mail status could not be saved; check Apple Mail";
+        });
+    });
+}
+
+- (void)viewPDFTapped {
+    if (!self.reportURL) return;
+    struct stat info = {0};
+    if (lstat(self.reportURL.path.fileSystemRepresentation, &info) ||
+        !S_ISREG(info.st_mode) || info.st_uid != getuid() || (info.st_mode & 077) ||
+        info.st_size < 100 || info.st_size > 20 * 1024 * 1024) {
+        self.feedbackLabel.text = @"The PDF is unavailable";
+        return;
+    }
+    QLPreviewController *preview = [QLPreviewController new];
+    preview.dataSource = self;
+    [self.navigationController pushViewController:preview animated:YES];
+}
+
+- (NSInteger)numberOfPreviewItemsInPreviewController:(QLPreviewController *)controller {
+    (void)controller;
+    return self.reportURL ? 1 : 0;
+}
+
+- (id<QLPreviewItem>)previewController:(QLPreviewController *)controller
+                    previewItemAtIndex:(NSInteger)index {
+    (void)controller;
+    return index == 0 ? self.reportURL : nil;
 }
 
 - (void)refreshActivityPreview {
@@ -417,7 +563,8 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
     NSString *state = latest[@"state"];
     NSString *outcome = [state isEqualToString:@"done"] ? @"Completed" :
         ([state isEqualToString:@"error"] ? @"Incomplete" :
-         ([state isEqualToString:@"stopped"] ? @"Stopped" : @"Started"));
+         ([state isEqualToString:@"stopped"] ? @"Stopped" :
+          ([state isEqualToString:@"waiting_for_user"] ? @"Waiting for review" : @"Started")));
     self.activityLabel.text = latest[@"title"];
     NSDateFormatter *formatter = [NSDateFormatter new];
     formatter.dateStyle = NSDateFormatterMediumStyle;
@@ -429,6 +576,11 @@ static const char *BBHotkeyVoiceFile = "/var/mobile/Library/Caches/BeanBao/hotke
 - (void)activityTapped {
     [self.taskField resignFirstResponder];
     [self.navigationController pushViewController:[BBActivityViewController new] animated:YES];
+}
+
+- (void)sessionsTapped {
+    [self.taskField resignFirstResponder];
+    [self.navigationController pushViewController:[BBWorkflowSessionsViewController new] animated:YES];
 }
 
 - (void)request:(NSDictionary *)payload {

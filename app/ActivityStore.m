@@ -6,6 +6,8 @@
 static NSString *const BBAuditPath = @"/var/mobile/Library/Application Support/BeanBao/audit.jsonl";
 
 static NSString *BBActivityTitle(NSString *app, BOOL enteredText, NSString *state) {
+    if ([app isEqualToString:@"ResearchPDF"] || [app isEqualToString:@"ResearchMailDraft"])
+        return [state isEqualToString:@"waiting_for_user"] ? @"Review research email" : @"Created research PDF";
     if ([app isEqualToString:@"Maps"] || [app isEqualToString:@"地图"])
         return enteredText ? @"Searched Maps" :
             ([state isEqualToString:@"done"] ? @"Opened Maps" : @"Maps task");
@@ -41,6 +43,9 @@ NSArray<NSDictionary *> *BBActivityFromAuditData(NSData *data, NSUInteger limit)
         } else if (current && [event isEqualToString:@"step"] &&
                    [action isEqualToString:@"input_text"] && [record[@"result"] isEqualToString:@"ok"]) {
             current[@"entered_text"] = @YES;
+        } else if (current && [event isEqualToString:@"task"] &&
+                   [action isEqualToString:@"waiting_for_user"]) {
+            current[@"state"] = @"waiting_for_user";
         } else if (current && [event isEqualToString:@"task"] &&
                    [@[@"done", @"error", @"stopped"] containsObject:action]) {
             current[@"state"] = action;

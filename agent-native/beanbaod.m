@@ -119,9 +119,28 @@ void BBBridgeFreeJSON(char *response) { free(response); }
 extern int32_t BBRunHarnessText(const char *task);
 extern int32_t BBRunHarnessNote(const char *task);
 extern int32_t BBRunHarnessMap(const char *task);
+extern int32_t BBRunHarnessResearch(const char *task, const char *workflowID);
 extern NSString *BBAllowedTarget(NSString *task);
 static NSString *BBNoteText(NSString *task);
 static NSString *BBMapQuery(NSString *task);
+
+char *BBWorkflowClaudeConfigJSON(void) {
+    @autoreleasepool {
+        NSDictionary *config = BBModelLoad();
+        if (![config[@"provider"] isEqualToString:@"claude"]) return NULL;
+        NSString *model = BBModelProfile(config, @"claude")[@"model"];
+        NSString *key = BBModelReadKey(@"claude");
+        if (!model.length || !key.length) return NULL;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"model": model, @"key": key}
+                                                           options:0 error:nil];
+        if (!data || data.length > 8192) return NULL;
+        char *copy = malloc(data.length + 1);
+        if (!copy) return NULL;
+        memcpy(copy, data.bytes, data.length);
+        copy[data.length] = '\0';
+        return copy;
+    }
+}
 
 void BBReleaseWakeLease(void) {
     BBBridge(@{@"op": @"wake_lease", @"mode": @"release"});
@@ -1629,6 +1648,14 @@ int main(int argc, const char *argv[]) {
         if (argc == 4 && !strcmp(argv[1], "--harness-map")) {
             BBExpectedProvider = [NSString stringWithUTF8String:argv[3]];
             return BBRunHarnessMap(argv[2]);
+        }
+        if (argc == 4 && !strcmp(argv[1], "--workflow-research")) {
+            NSString *request = [NSString stringWithUTF8String:argv[2]];
+            if (!request.length || request.length > 220 || BBHasSecret(request)) {
+                fputs("Unsupported research request\n", stderr);
+                return 2;
+            }
+            return BBRunHarnessResearch(argv[2], argv[3]);
         }
         if (argc == 4 && !strcmp(argv[1], "--resolve-task"))
             return BBResolveAndRunTask([NSString stringWithUTF8String:argv[2]],

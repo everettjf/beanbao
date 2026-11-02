@@ -31,6 +31,12 @@ int main(void) {
                 dataUsingEncoding:NSUTF8StringEncoding], 1)[0][@"title"] isEqualToString:@"Maps task"],
                    @"failed search before input is not called an app open") ||
             !Check(![items.description containsString:@"input_text"], @"low-level audit steps stay hidden")) return 1;
+        NSString *mailAudit = @"{\"event\":\"task\",\"app\":\"ResearchMailDraft\",\"action\":\"start\",\"time\":11}\n"
+            "{\"event\":\"task\",\"app\":\"ResearchMailDraft\",\"action\":\"waiting_for_user\",\"time\":12}\n";
+        NSArray *waiting = BBActivityFromAuditData([mailAudit dataUsingEncoding:NSUTF8StringEncoding], 1);
+        if (!Check(waiting.count == 1 && [waiting[0][@"state"] isEqualToString:@"waiting_for_user"] &&
+                   [waiting[0][@"title"] isEqualToString:@"Review research email"],
+                   @"research email remains visibly pending until reviewed")) return 1;
         puts("PASS: private audit maps to content-free activity");
     }
     return 0;
