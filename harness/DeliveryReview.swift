@@ -35,6 +35,18 @@ public struct BeanBaoDeliveryItem: Codable, Equatable, Sendable {
     }
 }
 
+/// A checkout line that does not fit the standard tax, delivery, service, or tip fields.
+/// Discounts are negative; every line remains visible in the approval snapshot.
+public struct BeanBaoDeliveryAdjustment: Codable, Equatable, Sendable {
+    public let name: String
+    public let amountMinor: Int
+
+    public init(name: String, amountMinor: Int) {
+        self.name = name
+        self.amountMinor = amountMinor
+    }
+}
+
 public struct BeanBaoDeliveryCart: Codable, Equatable, Sendable {
     public let service: String
     public let merchantID: String
@@ -47,6 +59,7 @@ public struct BeanBaoDeliveryCart: Codable, Equatable, Sendable {
     public let deliveryFeeMinor: Int
     public let serviceFeeMinor: Int
     public let tipMinor: Int
+    public let adjustments: [BeanBaoDeliveryAdjustment]
     public let totalMinor: Int
     public let arrivalEstimate: String?
 
@@ -54,7 +67,8 @@ public struct BeanBaoDeliveryCart: Codable, Equatable, Sendable {
                 items: [BeanBaoDeliveryItem], address: String, currency: String,
                 subtotalMinor: Int, taxMinor: Int, deliveryFeeMinor: Int,
                 serviceFeeMinor: Int, tipMinor: Int, totalMinor: Int,
-                arrivalEstimate: String?) {
+                arrivalEstimate: String?,
+                adjustments: [BeanBaoDeliveryAdjustment] = []) {
         self.service = service
         self.merchantID = merchantID
         self.merchantName = merchantName
@@ -66,6 +80,7 @@ public struct BeanBaoDeliveryCart: Codable, Equatable, Sendable {
         self.deliveryFeeMinor = deliveryFeeMinor
         self.serviceFeeMinor = serviceFeeMinor
         self.tipMinor = tipMinor
+        self.adjustments = adjustments
         self.totalMinor = totalMinor
         self.arrivalEstimate = arrivalEstimate
     }
@@ -82,9 +97,13 @@ public struct BeanBaoDeliveryCart: Codable, Equatable, Sendable {
               }),
               [subtotalMinor, taxMinor, deliveryFeeMinor, serviceFeeMinor, tipMinor, totalMinor]
                 .allSatisfy({ $0 >= 0 && $0 <= 1_000_000 }),
+              adjustments.count <= 20,
+              adjustments.allSatisfy({ (2...120).contains($0.name.count) &&
+                  (-1_000_000...1_000_000).contains($0.amountMinor) && $0.amountMinor != 0 }),
               (arrivalEstimate?.count ?? 0) <= 120,
               items.reduce(0, { $0 + $1.lineTotalMinor }) == subtotalMinor,
-              subtotalMinor + taxMinor + deliveryFeeMinor + serviceFeeMinor + tipMinor == totalMinor,
+              subtotalMinor + taxMinor + deliveryFeeMinor + serviceFeeMinor + tipMinor +
+                adjustments.reduce(0, { $0 + $1.amountMinor }) == totalMinor,
               totalMinor > 0 else { throw BeanBaoDeliveryReviewError.invalidCart }
     }
 

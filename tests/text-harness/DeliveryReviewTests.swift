@@ -5,14 +5,16 @@ import BeanBaoTextHarness
 final class DeliveryReviewTests: XCTestCase {
     private func cart(address: String = "123 Test Street, San Jose, CA",
                       tip: Int = 100, total: Int? = nil,
-                      merchant: String = "Example Kitchen") -> BeanBaoDeliveryCart {
+                      merchant: String = "Example Kitchen",
+                      adjustments: [BeanBaoDeliveryAdjustment] = []) -> BeanBaoDeliveryCart {
         BeanBaoDeliveryCart(service: "Example Delivery", merchantID: "merchant-123",
             merchantName: merchant,
             items: [.init(name: "Rice bowl", options: ["No onions"], quantity: 1,
                           lineTotalMinor: 1800)], address: address, currency: "USD",
             subtotalMinor: 1800, taxMinor: 149, deliveryFeeMinor: 350,
-            serviceFeeMinor: 100, tipMinor: tip, totalMinor: total ?? 2399 + tip,
-            arrivalEstimate: "30–40 minutes")
+            serviceFeeMinor: 100, tipMinor: tip,
+            totalMinor: total ?? 2399 + tip + adjustments.reduce(0, { $0 + $1.amountMinor }),
+            arrivalEstimate: "30–40 minutes", adjustments: adjustments)
     }
 
     func testReviewRequiresFreshExactCartAndOneCommitAttempt() async throws {
@@ -101,5 +103,35 @@ final class DeliveryReviewTests: XCTestCase {
         } catch BeanBaoDeliveryReviewError.outcomeUnconfirmed { }
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+
+    func testAdditionalFeeAndDiscountArePartOfExactApproval() async throws {
+        let original = cart(adjustments: [
+            .init(name: "Small order fee", amountMinor: 250),
+            .init(name: "Promotion", amountMinor: -100)
+        ])
+        try original.validate()
+        XCTAssertEqual(original.totalMinor, 2649)
+
+        let now = Date()
+        let evidence = BeanBaoDeliveryScreenEvidence(bundleID: "com.example.delivery",
+            checkoutFingerprint: String(repeating: "a", count: 64), observedAt: now)
+        let gate = BeanBaoDeliveryReviewGate()
+        let digest = try await gate.present(original, evidence: evidence, now: now)
+        let approval = try await gate.approve(digest: digest, now: now)
+        let changedFee = cart(adjustments: [
+            .init(name: "Small order fee", amountMinor: 300),
+            .init(name: "Promotion", amountMinor: -100)
+        ])
+        do {
+            try await gate.beginCommit(changedFee, evidence: evidence, approval: approval, now: now)
+            XCTFail("A changed additional fee must invalidate approval")
+        } catch BeanBaoDeliveryReviewError.changedCart { }
+
+        let hiddenFee = cart(total: 2649)
+        do {
+            try hiddenFee.validate()
+            XCTFail("A total with an undisclosed fee must be rejected")
+        } catch BeanBaoDeliveryReviewError.invalidCart { }
     }
 }
