@@ -64,4 +64,25 @@ final class UberEatsAdapterTests: XCTestCase {
             XCTAssertThrowsError(try BeanBaoUberEatsAdapter.checkoutEvidence(observation, cart: cart()))
         }
     }
+
+    func testAgentEntryReturnsOnlyBoundedPageStatus() throws {
+        let snapshot: [String: Any] = [
+            "url": "https://www.ubereats.com/store/example/id",
+            "visible_text": "Go to checkout",
+            "bundle_id": "dev.beanbao.app",
+            "observed_at": Date().timeIntervalSince1970
+        ]
+        let input = String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self)
+        let pointer = input.withCString { BBUberEatsClassifySnapshot($0) }
+        XCTAssertNotNil(pointer)
+        defer { free(pointer) }
+        let response = String(cString: try XCTUnwrap(pointer))
+        XCTAssertEqual(response, "{\"ok\":true,\"page\":\"cart\",\"adapter_version\":1}")
+        XCTAssertFalse(response.contains("checkout"))
+
+        let old = "{\"url\":\"https://www.ubereats.com/checkout\",\"visible_text\":\"Place order\",\"bundle_id\":\"dev.beanbao.app\",\"observed_at\":0}"
+        let stale = old.withCString { BBUberEatsClassifySnapshot($0) }
+        defer { free(stale) }
+        XCTAssertTrue(String(cString: try XCTUnwrap(stale)).contains("Delivery page changed"))
+    }
 }

@@ -7,8 +7,8 @@ Updated November 2, 2026. This is a developer installation procedure for a compa
 Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
-2. `dev.beanbao.agent` 0.3.65: on-device task service, model interpretation, resumable research and App Store workflows, and a delivery review gate for future adapters.
-3. `dev.beanbao.app` 0.3.31: native text, Apple voice transcription, Sessions, App Store review, a food-delivery browser, Activity, shortcut, and model settings UI.
+2. `dev.beanbao.agent` 0.3.66: on-device task service, model interpretation, resumable research and App Store workflows, and a delivery page classifier/review gate.
+3. `dev.beanbao.app` 0.3.33: native text, Apple voice transcription, Sessions, App Store review, a food-delivery browser with page checks, Activity, shortcut, and model settings UI.
 
 The packages are under `bridge/packages/`, `agent-native/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
 
@@ -23,8 +23,8 @@ With a root shell on the jailbroken phone, copy over the packages and install th
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.65_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.31_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.66_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.33_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
 
@@ -41,7 +41,7 @@ To check the connected development device, run `python3 scripts/verify_device.py
 5. Tap **Voice input**, speak an English request, then tap **Stop recording**. Check or edit the transcript before tapping **Start**. iOS 26 uses on-device English dictation where available and may download a language asset on first use. Audio is removed after transcription. Recording stops automatically after 30 seconds.
 6. For a multi-step research test, enter **Research on-device speech recognition on iOS, create a PDF with sources**. Open **Sessions** to revisit the result and **View PDF report** to inspect it. The current Claude workflow can also prepare an email draft addressed to an explicit recipient. Apple Mail must have an account configured before **Review email draft** can open its native composer; review the recipient and attachment there before sending.
 7. For an App Store handoff, enter **Find app Apple Pages**. Review the exact name, developer, product ID, bundle ID, and price before opening the official listing. Installing is a separate user action in the App Store. After that, **Check installation** verifies the matching bundle; simply closing the listing leaves the workflow pending.
-8. Tap **Browse food delivery** to open Uber Eats inside BeanBao. The browser keeps its own website session and can observe the current Uber Eats page for a future delivery workflow. It does not read the Uber sign-in page or place an order. The model-driven search, cart construction, and checkout review are still in development.
+8. Tap **Browse food delivery** to open Uber Eats inside BeanBao. The browser keeps its own website session. Tap **Check** to classify the visible page through the on-device Agent. It does not read the Uber sign-in page or place an order. The model-driven search, cart construction, and exact checkout review are still in development.
 
 The **Quick launch** Volume Down triple-press switch is off by default. A normal press still changes volume. Triple press opens the quick overlay and asks the BeanBao app to start recording. On the tested phone, a real spoken request completed from both an app and the unlocked Home screen. From Home, the overlay started recording and **Open Settings** brought Settings to the foreground.
 

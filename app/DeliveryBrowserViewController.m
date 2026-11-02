@@ -1,4 +1,5 @@
 #import "DeliveryBrowserViewController.h"
+#import "AgentClient.h"
 #import <WebKit/WebKit.h>
 
 @interface BBDeliveryBrowserViewController () <WKNavigationDelegate>
@@ -19,6 +20,8 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     self.title = @"Food delivery";
     self.view.backgroundColor = UIColor.systemBackgroundColor;
     self.navigationItem.rightBarButtonItems = @[
+        [[UIBarButtonItem alloc] initWithTitle:@"Check" style:UIBarButtonItemStylePlain
+                                       target:self action:@selector(checkPage)],
         [[UIBarButtonItem alloc] initWithTitle:@"Safari" style:UIBarButtonItemStylePlain
                                        target:self action:@selector(openSafari)],
         [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
@@ -90,6 +93,43 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
 
 - (void)reloadPage { [self.webView reload]; }
 
+- (void)checkPage {
+    [self captureCurrentPageWithCompletion:^(NSDictionary *snapshot) {
+        if (!snapshot) {
+            if ([self.webView.URL.host.lowercaseString isEqualToString:@"auth.uber.com"]) {
+                [self updatePageStatus];
+            } else {
+                self.statusLabel.text = @"This page is unavailable for BeanBao review.";
+            }
+            return;
+        }
+        NSString *checkedURL = snapshot[@"url"];
+        self.statusLabel.text = @"Checking the current page…";
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSDictionary *reply = BBAgentRequest(@{@"op": @"delivery_observe", @"snapshot": snapshot});
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (![self.webView.URL.absoluteString isEqualToString:checkedURL]) return;
+                if (![reply[@"ok"] boolValue]) {
+                    self.statusLabel.text = reply[@"error"] ?: @"Could not check this page.";
+                    return;
+                }
+                NSString *page = reply[@"page"];
+                NSDictionary<NSString *, NSString *> *messages = @{
+                    @"feed": @"Uber Eats home. Search for a restaurant or item.",
+                    @"search": @"Search results. Choose a restaurant.",
+                    @"merchant": @"Restaurant menu. Choose an item.",
+                    @"item_configuration": @"Item options are open. Review them before adding.",
+                    @"cart": @"Cart detected. Review items before checkout.",
+                    @"checkout": @"Checkout detected. BeanBao has not verified or placed this order.",
+                    @"login_required": @"Sign in on Uber Eats to continue.",
+                    @"unsupported": @"This page is outside the supported delivery flow."
+                };
+                self.statusLabel.text = messages[page] ?: @"This page is outside the supported delivery flow.";
+            });
+        });
+    }];
+}
+
 - (void)openSafari {
     NSURL *url = self.webView.URL;
     if (![url.scheme.lowercaseString isEqualToString:@"https"] ||
@@ -136,7 +176,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         return;
     }
     NSString *expectedURL = url.absoluteString;
-    NSString *script = @"(() => { if (document.querySelector('input[type=password],input[type=email],input[type=tel],input[autocomplete=one-time-code]')) return ''; const text = document.body && document.body.innerText; return typeof text === 'string' ? text.slice(0, 30000) : ''; })()";
+    NSString *script = @"(() => { if (document.querySelector('input[type=password],input[type=email],input[type=tel],input[autocomplete=one-time-code]')) return ''; const text = document.body && document.body.innerText; return typeof text === 'string' ? text.slice(0, 20000) : ''; })()";
     [self.webView evaluateJavaScript:script completionHandler:^(id result, NSError *error) {
         if (error || ![result isKindOfClass:NSString.class] || ![(NSString *)result length] ||
             ![self.webView.URL.absoluteString isEqualToString:expectedURL]) {

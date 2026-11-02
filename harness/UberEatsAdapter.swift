@@ -112,3 +112,36 @@ public enum BeanBaoUberEatsAdapter {
             String(format: "$%d.%02d", minor / 100, minor % 100)
     }
 }
+
+/// Foundation-only entry used by the mobile Agent's local socket. It returns
+/// a small classification receipt; the page body never enters Activity logs.
+@_cdecl("BBUberEatsClassifySnapshot")
+public func BBUberEatsClassifySnapshot(_ pointer: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
+    guard let pointer, strlen(pointer) <= 65_536,
+          let fields = try? JSONSerialization.jsonObject(with: Data(String(cString: pointer).utf8)) as? [String: Any],
+          let urlString = fields["url"] as? String, let url = URL(string: urlString),
+          let visibleText = fields["visible_text"] as? String, visibleText.count <= 20_000,
+          let bundleID = fields["bundle_id"] as? String, bundleID == "dev.beanbao.app",
+          let timestamp = fields["observed_at"] as? NSNumber else {
+        return "{\"ok\":false,\"error\":\"Invalid delivery snapshot\"}".withCString { strdup($0) }
+    }
+    let now = Date()
+    let observedAt = Date(timeIntervalSince1970: timestamp.doubleValue)
+    guard observedAt <= now, now.timeIntervalSince(observedAt) <= 15 else {
+        return "{\"ok\":false,\"error\":\"Delivery page changed; check again\"}".withCString { strdup($0) }
+    }
+    let observation = BeanBaoUberEatsObservation(url: url, visibleText: visibleText,
+                                                  bundleID: bundleID, observedAt: observedAt)
+    let page: String
+    switch BeanBaoUberEatsAdapter.page(observation) {
+    case .feed: page = "feed"
+    case .search: page = "search"
+    case .merchant: page = "merchant"
+    case .itemConfiguration: page = "item_configuration"
+    case .cart: page = "cart"
+    case .loginRequired: page = "login_required"
+    case .checkout: page = "checkout"
+    case .unsupported: page = "unsupported"
+    }
+    return "{\"ok\":true,\"page\":\"\(page)\",\"adapter_version\":1}".withCString { strdup($0) }
+}

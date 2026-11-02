@@ -22,6 +22,10 @@ int32_t BBMarkResearchMailQueued(const char *workflowID) { (void)workflowID; ret
 int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID) {
     (void)workflowID; (void)bundleID; return 0;
 }
+char *BBUberEatsClassifySnapshot(const char *snapshotJSON) {
+    if (!snapshotJSON || !strstr(snapshotJSON, "Go to checkout")) return NULL;
+    return strdup("{\"ok\":true,\"page\":\"cart\",\"adapter_version\":1}");
+}
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
     return @{@"device_state": @{@"locked_known": @YES, @"locked": @(locked),
@@ -62,6 +66,13 @@ int main(void) {
             !Check(!BBRecentObservation(@{@"timestamp": @(testNow - 60)}),
                    "stale Agent observation is rejected")) return 1;
         BBState = [BBServiceState new];
+        NSDictionary *delivery = BBHandle(@{@"op": @"delivery_observe",
+            @"snapshot": @{@"url": @"https://www.ubereats.com/store/example/id",
+                             @"visible_text": @"Go to checkout"}});
+        if (!Check([delivery[@"page"] isEqualToString:@"cart"] &&
+                   !delivery[@"visible_text"] &&
+                   ![BBHandle(@{@"op": @"delivery_observe"})[@"ok"] boolValue],
+                   "delivery observation returns only bounded page status")) return 1;
         BBState.serviceID = @"service-A";
         BBState.taskID = @"task-A";
         BBState.phase = @"done";

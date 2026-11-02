@@ -7,7 +7,8 @@
 NSDictionary *BBAgentRequest(NSDictionary *request) {
     if (![NSJSONSerialization isValidJSONObject:request]) return @{@"ok": @NO, @"error": @"Invalid request format"};
     NSData *json = [NSJSONSerialization dataWithJSONObject:request options:0 error:nil];
-    if (json.length >= 4096) return @{@"ok": @NO, @"error": @"Request is too long"};
+    NSUInteger requestLimit = [request[@"op"] isEqualToString:@"delivery_observe"] ? 65536 : 4096;
+    if (json.length >= requestLimit) return @{@"ok": @NO, @"error": @"Request is too long"};
     // RootHide's SSH shell has a different /var/mobile view from launchd and
     // SpringBoard. The app can use the first path; its CLI can use /rootfs.
     const char *paths[] = {"/var/mobile/Library/Caches/BeanBao/agent.sock",

@@ -13,6 +13,8 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <dlfcn.h>
+#import <string.h>
+#import <stdlib.h>
 #import "BBAudit.h"
 #import "ModelConfig.h"
 
@@ -20,6 +22,7 @@ extern char **environ;
 extern void BBReleaseWakeLease(void);
 extern int32_t BBMarkResearchMailQueued(const char *workflowID);
 extern int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID);
+extern char *BBUberEatsClassifySnapshot(const char *snapshotJSON);
 
 static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.sock";
 static NSString *BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";
@@ -678,6 +681,23 @@ static NSDictionary *BBVerifyAppInstall(NSDictionary *request) {
     }
 }
 
+static NSDictionary *BBDeliveryObserve(NSDictionary *request) {
+    NSDictionary *snapshot = request[@"snapshot"];
+    if (![snapshot isKindOfClass:NSDictionary.class])
+        return @{@"ok": @NO, @"error": @"Invalid delivery snapshot"};
+    NSData *data = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
+    if (!data || data.length > 65536)
+        return @{@"ok": @NO, @"error": @"Invalid delivery snapshot"};
+    NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    char *receipt = json ? BBUberEatsClassifySnapshot(json.UTF8String) : NULL;
+    if (!receipt) return @{@"ok": @NO, @"error": @"Delivery observation failed"};
+    NSData *replyData = [NSData dataWithBytes:receipt length:strlen(receipt)];
+    free(receipt);
+    NSDictionary *reply = [NSJSONSerialization JSONObjectWithData:replyData options:0 error:nil];
+    return [reply isKindOfClass:NSDictionary.class] ? reply :
+        @{@"ok": @NO, @"error": @"Delivery observation failed"};
+}
+
 static NSDictionary *BBHandle(NSDictionary *request) {
     NSString *op = request[@"op"];
     if ([op isEqualToString:@"status"]) return BBStatus();
@@ -685,6 +705,7 @@ static NSDictionary *BBHandle(NSDictionary *request) {
     if ([op isEqualToString:@"stop"]) return BBStop(request);
     if ([op isEqualToString:@"mail_result"]) return BBMailResult(request);
     if ([op isEqualToString:@"verify_app_install"]) return BBVerifyAppInstall(request);
+    if ([op isEqualToString:@"delivery_observe"]) return BBDeliveryObserve(request);
     if ([op isEqualToString:@"list_workflows"])
         return @{@"ok": @YES, @"workflows": BBWorkflowSummaries()};
     if ([op isEqualToString:@"resume_workflow"]) return BBResumeWorkflow(request);
@@ -700,9 +721,21 @@ static void BBClient(int fd) {
     struct timeval timeout = {.tv_sec = 3};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     NSMutableData *data = [NSMutableData data];
-    char byte = 0;
-    while (data.length < 4096 && read(fd, &byte, 1) == 1 && byte != '\n') [data appendBytes:&byte length:1];
-    NSDictionary *request = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    BOOL complete = NO;
+    uint8_t buffer[4096];
+    while (data.length < 65536) {
+        ssize_t count = read(fd, buffer, MIN(sizeof(buffer), 65536 - data.length));
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) break;
+        const uint8_t *end = memchr(buffer, '\n', (size_t)count);
+        NSUInteger length = end ? (NSUInteger)(end - buffer) : (NSUInteger)count;
+        [data appendBytes:buffer length:length];
+        if (end) { complete = YES; break; }
+    }
+    NSDictionary *request = complete ?
+        [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    if (data.length >= 4096 && ![request[@"op"] isEqualToString:@"delivery_observe"])
+        request = nil;
     NSDictionary *reply = [request isKindOfClass:NSDictionary.class] ? BBHandle(request) :
         @{@"ok": @NO, @"error": @"Invalid request"};
     NSData *encoded = [NSJSONSerialization dataWithJSONObject:reply options:0 error:nil];
