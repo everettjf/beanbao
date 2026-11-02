@@ -34,12 +34,17 @@ char *BBUberEatsValidateAction(const char *snapshotJSON, const char *actionJSON)
     return strdup("{\"ok\":true,\"valid\":true}");
 }
 static int DeliveryBeginCalls = 0;
+static int DeliveryReviewCalls = 0;
 int32_t BBDeliveryActionBegin(const char *workflowID, const char *actionJSON) {
     (void)workflowID; (void)actionJSON; DeliveryBeginCalls++; return 0;
 }
 int32_t BBDeliveryActionFinish(const char *workflowID, const char *actionJSON,
                                const char *snapshotJSON) {
     (void)workflowID; (void)actionJSON; (void)snapshotJSON; return 0;
+}
+int32_t BBDeliveryOptionsReviewFinish(const char *workflowID, const char *actionJSON,
+                                     const char *snapshotJSON) {
+    (void)workflowID; (void)actionJSON; (void)snapshotJSON; DeliveryReviewCalls++; return 0;
 }
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
@@ -113,6 +118,15 @@ int main(void) {
         if (!Check([deliveryCheck[@"valid"] boolValue] && DeliveryBeginCalls == 0 &&
                    [BBState.phase isEqualToString:@"waiting_for_user"],
                    "checkout review never claims a browser mutation")) return 1;
+        BBState.deliveryAction = @{@"action": @"review_options", @"target": @"",
+                                   @"observationID": @"1234567890123456789012345678901234567890123456789012345678901234"};
+        deliveryCheck = BBDeliveryVerifyAction(@{@"task_id": @"task-A",
+            @"service_id": @"service-A", @"snapshot": @{@"visible_text": @"Add 1 to order"}});
+        if (!Check([deliveryCheck[@"valid"] boolValue] && DeliveryReviewCalls == 1 &&
+                   DeliveryBeginCalls == 0 && [BBState.phase isEqualToString:@"done"] &&
+                   BBState.deliveryAction == nil,
+                   "options review completes without claiming a cart mutation")) return 1;
+        BBState.phase = @"waiting_for_user";
         BBState.deliveryAction = @{@"action": @"open_checkout", @"target": @"",
                                    @"observationID": @"1234567890123456789012345678901234567890123456789012345678901234"};
         deliveryCheck = BBDeliveryVerifyAction(@{@"task_id": @"task-A",

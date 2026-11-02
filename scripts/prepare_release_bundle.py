@@ -54,6 +54,7 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             "App Store listing handoff passed on one device. Mail composition needs an Apple Mail account. "
             "The sandboxed delivery browser has an experimental Palmino-driven multi-step Run control. "
             "One phone completed visible search, restaurant, and item-opening actions through to item options. "
+            "A review-only request completed on the visible item-options page. "
             "Option selection, cart construction, and exact checkout review still need acceptance; "
             "order placement is unavailable. "
             "See docs/complex-workflows.md. "

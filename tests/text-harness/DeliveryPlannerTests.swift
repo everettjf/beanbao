@@ -30,14 +30,14 @@ final class DeliveryPlannerTests: XCTestCase {
               observedAt: Date())
     }
 
-    private func store() throws -> (BeanBaoWorkflowStore, URL) {
+    private func store(request: String = "Find a rice bowl") throws -> (BeanBaoWorkflowStore, URL) {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("beanbao-delivery-plan-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false,
                                                 attributes: [.posixPermissions: 0o700])
         addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
         let url = folder.appendingPathComponent("session.json")
-        return (try BeanBaoWorkflowStore(url: url, request: "Find a rice bowl"), url)
+        return (try BeanBaoWorkflowStore(url: url, request: request), url)
     }
 
     func testPalminoChoosesSeveralPageBoundActionsWithoutSavingPageText() async throws {
@@ -113,6 +113,34 @@ final class DeliveryPlannerTests: XCTestCase {
         let saved = await journal.snapshot()
         XCTAssertTrue(saved.operations.isEmpty)
         XCTAssertEqual(saved.phase, .failed)
+    }
+
+    func testModelCanFinishReviewOnlyRequestAtFreshItemOptions() async throws {
+        let (journal, file) = try store(request: "Find Chicken Pho and review its options")
+        let item = observation("https://www.ubereats.com/store/example/id?mod=quickView",
+                               "Chicken Pho Rice Noodle Egg Noodle Add 1 to order private-page-marker")
+        let id = try BeanBaoDeliveryObservationContract.identifier(item)
+        let proposal = try await BeanBaoDeliveryPlanner.choose(
+            request: "Find Chicken Pho and review its options", observation: item, store: journal,
+            client: DeliveryScriptModel(action: "review_options", target: "", observationID: id),
+            model: "scripted")
+        XCTAssertEqual(proposal.action, "review_options")
+        let changed = observation(item.url.absoluteString,
+                                  "Chicken Pho Egg Noodle Add 1 to order")
+        do {
+            try await BeanBaoDeliveryPlanner.completeOptionsReview(proposal, on: changed,
+                                                                   store: journal)
+            XCTFail("A changed page cannot complete the review")
+        } catch BeanBaoDeliveryPlanError.invalidAction { }
+        try await BeanBaoDeliveryPlanner.completeOptionsReview(proposal, on: item, store: journal)
+        let saved = await journal.snapshot()
+        XCTAssertEqual(saved.phase, .completed)
+        XCTAssertEqual(saved.operations["delivery-review-v1-\(id)"]?.state, .completed)
+        XCTAssertFalse(String(decoding: try Data(contentsOf: file), as: UTF8.self)
+            .contains("private-page-marker"))
+        try await BeanBaoDeliveryPlanner.completeOptionsReview(proposal, on: item, store: journal)
+        let repeated = await journal.snapshot()
+        XCTAssertEqual(repeated.operations.count, 2)
     }
 
     func testFeedMustOpenSearchBeforeSubmittingAQuery() throws {

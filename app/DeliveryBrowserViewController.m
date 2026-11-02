@@ -306,6 +306,11 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                     [self finishDeliveryRun:@"The page or step changed. Run again to replan."];
                     return;
                 }
+                if ([name isEqualToString:@"review_options"]) {
+                    self.deliveryTaskID = nil;
+                    [self finishDeliveryRun:@"Item options are ready. Review them here; no item was added to the cart."];
+                    return;
+                }
                 if ([name isEqualToString:@"review_checkout"]) {
                     [self finishDeliveryRun:@"Checkout reached. Review the exact total yourself. No order placed."];
                     return;

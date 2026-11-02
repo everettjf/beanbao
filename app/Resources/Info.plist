@@ -11,8 +11,8 @@
 <key>CFBundleIconFiles</key><array><string>BeanBaoIcon29</string><string>BeanBaoIcon60</string></array>
 </dict>
 </dict>
-<key>CFBundleShortVersionString</key><string>0.3.48</string>
-<key>CFBundleVersion</key><string>47</string>
+<key>CFBundleShortVersionString</key><string>0.3.49</string>
+<key>CFBundleVersion</key><string>48</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>UIDeviceFamily</key><array><integer>1</integer></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
