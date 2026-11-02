@@ -15,7 +15,13 @@ int32_t BBRunHarnessMap(const char *task) { (void)task; return 1; }
 int32_t BBRunHarnessResearch(const char *task, const char *workflowID) {
     (void)task; (void)workflowID; return 1;
 }
+int32_t BBRunHarnessAppStore(const char *task, const char *workflowID) {
+    (void)task; (void)workflowID; return 1;
+}
 int32_t BBMarkResearchMailQueued(const char *workflowID) { (void)workflowID; return 0; }
+int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID) {
+    (void)workflowID; (void)bundleID; return 0;
+}
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
     return @{@"device_state": @{@"locked_known": @YES, @"locked": @(locked),
@@ -113,6 +119,36 @@ int main(void) {
         if (!Check([BBDeleteWorkflow(@{@"workflow_id": workflowID})[@"ok"] boolValue] &&
                    BBWorkflowSummaries().count == 0,
                    "session deletion removes known private files")) return 1;
+        NSString *appID = NSUUID.UUID.UUIDString;
+        NSString *appFolder = [workflowRoot stringByAppendingPathComponent:appID];
+        [NSFileManager.defaultManager createDirectoryAtPath:appFolder withIntermediateDirectories:NO
+                                  attributes:@{NSFilePosixPermissions: @0700} error:nil];
+        NSDictionary *appRecord = @{@"id": appID, @"request": @"Install Example Notes",
+                                     @"phase": @"waitingForUser", @"updatedAt": @1100};
+        NSString *appSession = [appFolder stringByAppendingPathComponent:@"session.json"];
+        [[NSJSONSerialization dataWithJSONObject:appRecord options:0 error:nil]
+            writeToFile:appSession atomically:YES];
+        chmod(appSession.fileSystemRepresentation, 0600);
+        NSString *candidatePath = [appFolder stringByAppendingPathComponent:@"app-candidate.json"];
+        NSDictionary *candidate = @{@"productID": @123456789, @"name": @"Example Notes",
+                                     @"developer": @"Example Studio", @"bundleID": @"com.example.notinstalled",
+                                     @"price": @0, @"currency": @"USD", @"country": @"US"};
+        [[NSJSONSerialization dataWithJSONObject:candidate options:0 error:nil]
+            writeToFile:candidatePath atomically:YES];
+        chmod(candidatePath.fileSystemRepresentation, 0600);
+        NSDictionary *appStatus = BBSelectWorkflow(@{@"workflow_id": appID});
+        NSDictionary *notInstalled = BBVerifyAppInstall(@{@"task_id": appID,
+            @"service_id": BBState.serviceID});
+        if (!Check([appStatus[@"phase"] isEqualToString:@"waiting_for_user"] &&
+                   [appStatus[@"app_candidate_path"] isEqualToString:candidatePath],
+                   "saved App Store candidate opens for review") ||
+            !Check([BBWorkflowSummaries().firstObject[@"kind"] isEqualToString:@"app_store"],
+                   "Sessions identifies App Store handoff") ||
+            !Check([notInstalled[@"ok"] boolValue] && ![notInstalled[@"installed"] boolValue] &&
+                   [BBState.phase isEqualToString:@"waiting_for_user"],
+                   "closing a listing cannot claim an uninstalled app succeeded") ||
+            !Check([BBDeleteWorkflow(@{@"workflow_id": appID})[@"ok"] boolValue],
+                   "App Store candidate and search files are user-deletable")) return 1;
         rmdir(workflowRoot.fileSystemRepresentation);
         BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";
         for (NSString *task in @[@"打开设置", @"打开备忘录", @"打开地图", @"打开通讯录"])
@@ -126,6 +162,11 @@ int main(void) {
                    !BBIsResearchPDFTask(@"Research iOS speech and email the PDF to someone") &&
                    !BBIsResearchPDFTask(@"Open Maps"),
                    "research PDF routing requires an explicit address for email drafts")) return 1;
+        if (!Check(BBIsAppStoreTask(@"Install Example Notes") &&
+                   BBIsAppStoreTask(@"Download Example Notes") &&
+                   !BBIsAppStoreTask(@"Install Example Notes and send an email") &&
+                   !BBIsAppStoreTask(@"Open Maps"),
+                   "App Store routing accepts a single explicit acquisition request")) return 1;
         char *invalidNoteJSON = BBNoteStepJSON("打开地图", "[]");
         NSDictionary *invalidNote = invalidNoteJSON ?
             [NSJSONSerialization JSONObjectWithData:

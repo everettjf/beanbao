@@ -3,6 +3,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <QuickLook/QuickLook.h>
 #import <MessageUI/MessageUI.h>
+#import <StoreKit/StoreKit.h>
 #import <fcntl.h>
 #import <errno.h>
 #import <sys/stat.h>
@@ -45,7 +46,7 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
     return data;
 }
 
-@interface BBRootViewController : UIViewController <UITextFieldDelegate, QLPreviewControllerDataSource, MFMailComposeViewControllerDelegate>
+@interface BBRootViewController : UIViewController <UITextFieldDelegate, QLPreviewControllerDataSource, MFMailComposeViewControllerDelegate, SKStoreProductViewControllerDelegate>
 @property(nonatomic, strong) UITextField *taskField;
 @property(nonatomic, strong) UILabel *stateLabel;
 @property(nonatomic, strong) UILabel *detailLabel;
@@ -59,8 +60,12 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
 @property(nonatomic, strong) UIButton *stopButton;
 @property(nonatomic, strong) UIButton *viewPDFButton;
 @property(nonatomic, strong) UIButton *reviewEmailButton;
+@property(nonatomic, strong) UIButton *storeButton;
+@property(nonatomic, strong) UIButton *checkInstallButton;
 @property(nonatomic, strong) NSURL *reportURL;
 @property(nonatomic, strong) NSURL *mailDraftURL;
+@property(nonatomic, strong) NSURL *appCandidateURL;
+@property(nonatomic) BOOL storeLoading;
 @property(nonatomic, copy) NSString *mailReviewTaskID;
 @property(nonatomic, copy) NSString *mailReviewServiceID;
 @property(nonatomic, strong) UIButton *voiceButton;
@@ -250,6 +255,14 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
     self.reviewEmailButton = [self button:@"Review email draft" color:UIColor.systemIndigoColor
                                     action:@selector(reviewEmailTapped)];
     self.reviewEmailButton.hidden = YES;
+    self.storeButton = [self button:@"Review App Store listing" color:UIColor.systemIndigoColor
+                              action:@selector(storeTapped)];
+    self.storeButton.hidden = YES;
+    self.checkInstallButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.checkInstallButton setTitle:@"Check installation" forState:UIControlStateNormal];
+    [self.checkInstallButton addTarget:self action:@selector(checkInstallTapped)
+                      forControlEvents:UIControlEventTouchUpInside];
+    self.checkInstallButton.hidden = YES;
     self.stateLabel = [self label:@"Connecting…" size:19];
     self.stateLabel.font = [UIFont boldSystemFontOfSize:19];
     self.detailLabel = [self label:@"" size:15];
@@ -277,7 +290,8 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
         hero, [self card:@[composerTitle, inputRow, quickRow, composerActions] spacing:14],
         self.feedbackLabel, [self card:@[statusTitle, self.stateLabel, self.detailLabel,
                                        self.stopButton, self.viewPDFButton,
-                                       self.reviewEmailButton] spacing:7],
+                                       self.reviewEmailButton, self.storeButton,
+                                       self.checkInstallButton] spacing:7],
         [self card:@[activityHeader, self.activityLabel, self.activityTimeLabel] spacing:7],
         [self card:@[modelRow] spacing:0], [self card:@[hotkeyTitle, hotkeyRow] spacing:10], footer]];
     stack.axis = UILayoutConstraintAxisVertical;
@@ -437,7 +451,7 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
     self.stateLabel.text = ok ? (@{@"idle": @"Ready", @"running": @"Running", @"stopping": @"Stopping",
                                    @"stopped": @"Stopped", @"done": @"Completed",
                                    @"waiting_for_user": @"Ready for review",
-                                   @"needs_reconciliation": @"Check Mail",
+                                   @"needs_reconciliation": @"Needs review",
                                    @"error": @"Incomplete"}[phase] ?: @"Connecting") : @"Service unavailable";
     self.detailLabel.text = ok ? (reply[@"message"] ?: @"") : (reply[@"error"] ?: @"Could not connect to the on-device service");
     self.startButton.enabled = !running;
@@ -472,11 +486,95 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
         [draftPath isKindOfClass:NSString.class] && [draftPath isEqualToString:expectedDraft] ?
         [NSURL fileURLWithPath:draftPath] : nil;
     self.reviewEmailButton.hidden = self.mailDraftURL == nil;
+    NSString *candidatePath = reply[@"app_candidate_path"];
+    NSString *expectedCandidate = expected ? [[expected stringByDeletingLastPathComponent]
+        stringByAppendingPathComponent:@"app-candidate.json"] : nil;
+    self.appCandidateURL = ok && [phase isEqualToString:@"waiting_for_user"] &&
+        [candidatePath isKindOfClass:NSString.class] &&
+        [candidatePath isEqualToString:expectedCandidate] ?
+        [NSURL fileURLWithPath:candidatePath] : nil;
+    self.storeButton.hidden = self.appCandidateURL == nil;
+    self.checkInstallButton.hidden = self.appCandidateURL == nil;
     if (ok && !running && [taskID isKindOfClass:NSString.class] && taskID.length &&
         ![self.previewTaskID isEqualToString:taskID]) {
         self.previewTaskID = taskID;
         [self refreshActivityPreview];
     }
+}
+
+- (NSDictionary *)readAppCandidate {
+    if (!self.appCandidateURL) return nil;
+    NSData *data = BBReadPrivateArtifact(self.appCandidateURL.path, 16 * 1024);
+    NSDictionary *candidate = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    if (![candidate isKindOfClass:NSDictionary.class] ||
+        ![candidate[@"name"] isKindOfClass:NSString.class] ||
+        ![candidate[@"developer"] isKindOfClass:NSString.class] ||
+        ![candidate[@"bundleID"] isKindOfClass:NSString.class] ||
+        ![candidate[@"productID"] isKindOfClass:NSNumber.class] ||
+        [candidate[@"productID"] longLongValue] <= 0 ||
+        ![candidate[@"currency"] isKindOfClass:NSString.class] ||
+        ![candidate[@"price"] isKindOfClass:NSNumber.class]) return nil;
+    return candidate;
+}
+
+- (void)storeTapped {
+    if (self.storeLoading) return;
+    NSDictionary *candidate = [self readAppCandidate];
+    if (!candidate) { self.feedbackLabel.text = @"The saved App Store listing is unavailable"; return; }
+    NSURL *reviewURL = self.appCandidateURL;
+    NSString *reviewTaskID = self.activeTaskID;
+    NSString *price = [candidate[@"price"] doubleValue] == 0 ? @"Free" :
+        [NSString stringWithFormat:@"%@ %@", candidate[@"currency"], candidate[@"price"]];
+    NSString *message = [NSString stringWithFormat:@"%@\nDeveloper: %@\nProduct ID: %@\nBundle ID: %@\nPrice: %@",
+        candidate[@"name"], candidate[@"developer"], candidate[@"productID"],
+        candidate[@"bundleID"], price];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Confirm the exact app"
+        message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Open App Store" style:UIAlertActionStyleDefault
+        handler:^(__unused UIAlertAction *action) {
+            if (self.storeLoading || ![reviewTaskID isEqualToString:self.activeTaskID] ||
+                ![reviewURL isEqual:self.appCandidateURL]) return;
+            self.storeLoading = YES;
+            self.storeButton.enabled = NO;
+            SKStoreProductViewController *store = [SKStoreProductViewController new];
+            store.delegate = self;
+            self.feedbackLabel.text = @"Loading the official App Store listing…";
+            [store loadProductWithParameters:@{SKStoreProductParameterITunesItemIdentifier:
+                                               candidate[@"productID"]}
+                completionBlock:^(BOOL loaded, NSError *error) {
+                    (void)error;
+                    self.storeLoading = NO;
+                    self.storeButton.enabled = YES;
+                    if (![reviewTaskID isEqualToString:self.activeTaskID] ||
+                        ![reviewURL isEqual:self.appCandidateURL]) return;
+                    if (!loaded) {
+                        self.feedbackLabel.text = @"The App Store listing is unavailable in this region";
+                        return;
+                    }
+                    [self presentViewController:store animated:YES completion:nil];
+                }];
+        }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)productViewControllerDidFinish:(SKStoreProductViewController *)viewController {
+    [viewController dismissViewControllerAnimated:YES completion:^{
+        [self checkInstallTapped];
+    }];
+}
+
+- (void)checkInstallTapped {
+    NSString *taskID = self.activeTaskID, *serviceID = self.activeServiceID;
+    if (!self.appCandidateURL || !taskID.length || !serviceID.length) return;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSDictionary *reply = BBAgentRequest(@{@"op": @"verify_app_install",
+                                              @"task_id": taskID, @"service_id": serviceID});
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if ([reply[@"ok"] boolValue]) [self showReply:reply];
+            else self.feedbackLabel.text = reply[@"error"] ?: @"Could not check installation";
+        });
+    });
 }
 
 - (void)reviewEmailTapped {

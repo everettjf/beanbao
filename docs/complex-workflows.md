@@ -1,6 +1,6 @@
 # Complex workflows: implementation plan
 
-Updated November 2, 2026. This plan targets the on-device BeanBao Agent, App, and RootHide Bridge on the connected iOS 26 phone. The research-to-PDF and email-draft path has an initial implementation in source and offline tests; it is not yet verified on the phone. App acquisition and food delivery remain planned.
+Updated November 2, 2026. This plan targets the on-device BeanBao Agent, App, and RootHide Bridge on the connected iOS 26 phone. The research-to-PDF, email-draft, and App Store handoff paths have initial implementations in source and offline tests; they are not yet verified on the phone. Food delivery remains planned.
 
 ## Current boundary
 
@@ -55,7 +55,7 @@ Acceptance: a scripted request reaches a correct cart and review screen without 
 
 ## Delivery sequence
 
-As of November 2, source implementation and offline verification cover the workflow core, research-to-PDF path, email draft, and Sessions list/select/resume/delete controls. The tests use scripted Claude replies and web-search responses; they verify citation rejection, PDF readability, checkpoint recovery, duplicate prevention, and Mail result state. A phone run against a live Claude account and Mail composer is still required before calling this release complete. App Store and delivery flows are not implemented.
+As of November 2, source implementation and offline verification cover the workflow core, research-to-PDF path, email draft, App Store candidate selection and StoreKit handoff, and Sessions list/select/resume/delete controls. The tests use scripted Claude replies and web-search/App Store responses; they verify citation rejection, PDF readability, checkpoint recovery, duplicate prevention, Mail result state, exact App Store candidate identity, and the rule that closing a listing cannot prove installation. The App Store search endpoint was also probed live and returned current software listings. A phone run against a live Claude account, Mail composer, StoreKit listing, and installed-bundle check is still required before calling this release complete. Delivery is not implemented.
 
 1. **Workflow core:** typed plan schema, capability registry, persistent checkpoints, session and step status in App, stop/resume, deadlines, and a fake-tool integration test for interruption and duplicate prevention. Keep the existing single-task path unchanged while this is developed.
 2. **Research to PDF:** source-aware web search/fetch, citation checks, structured report, on-device PDF rendering and preview. Test with a fixed research topic and inspect the generated PDF.

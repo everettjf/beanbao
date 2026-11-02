@@ -64,7 +64,8 @@
     NSDictionary *item = self.workflows[indexPath.row];
     NSString *phase = item[@"phase"];
     NSString *status = [phase isEqualToString:@"completed"] ? @"Completed" :
-        ([phase isEqualToString:@"waitingForUser"] ? @"Review email" :
+        ([phase isEqualToString:@"waitingForUser"] ?
+            ([item[@"kind"] isEqualToString:@"app_store"] ? @"Review app listing" : @"Review email") :
          ([phase isEqualToString:@"needsReconciliation"] ? @"Check Mail" :
           ([phase isEqualToString:@"running"] ? @"Interrupted · Resume" : @"Resume")));
     cell.textLabel.text = item[@"request"];

@@ -10,12 +10,15 @@
 #import <errno.h>
 #import <limits.h>
 #import <mach-o/dyld.h>
+#import <objc/runtime.h>
+#import <objc/message.h>
 #import "BBAudit.h"
 #import "ModelConfig.h"
 
 extern char **environ;
 extern void BBReleaseWakeLease(void);
 extern int32_t BBMarkResearchMailQueued(const char *workflowID);
+extern int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID);
 
 static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.sock";
 static NSString *BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";
@@ -30,6 +33,7 @@ static NSString *BBWorkflowRoot = @"/var/mobile/Library/Application Support/Bean
 @property(nonatomic, copy) NSString *taskID;
 @property(nonatomic, copy) NSString *reportPath;
 @property(nonatomic, copy) NSString *mailDraftPath;
+@property(nonatomic, copy) NSString *appCandidatePath;
 @property(nonatomic) BOOL stopping;
 @end
 @implementation BBServiceState
@@ -65,6 +69,17 @@ static BOOL BBIsResearchPDFTask(NSString *task) {
     BOOL hasRecipient = [recipient firstMatchInString:task options:0
                                                 range:NSMakeRange(0, task.length)] != nil;
     return research && pdf && (!externalAction || hasRecipient);
+}
+
+static BOOL BBIsAppStoreTask(NSString *task) {
+    NSString *lower = task.lowercaseString;
+    BOOL explicitAction = [lower hasPrefix:@"install "] || [lower hasPrefix:@"download "] ||
+        [lower hasPrefix:@"find app "] || [lower hasPrefix:@"get app "] ||
+        [task hasPrefix:@"下载应用"] || [task hasPrefix:@"安装应用"];
+    return explicitAction && task.length > 10 &&
+        [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location == NSNotFound &&
+        [lower rangeOfString:@" and "].location == NSNotFound &&
+        [task rangeOfString:@"并"].location == NSNotFound;
 }
 
 static NSString *BBWorkflowFolder(NSString *identity) {
@@ -114,6 +129,57 @@ static BOOL BBPrivateWorkflowFile(NSString *path, off_t minimum, off_t maximum) 
         info.st_size >= minimum && info.st_size <= maximum;
 }
 
+static NSDictionary *BBReadAppCandidate(NSString *identity) {
+    NSString *folder = BBWorkflowFolder(identity);
+    if (!folder || !BBReadWorkflowRecord(identity)) return nil;
+    NSString *path = [folder stringByAppendingPathComponent:@"app-candidate.json"];
+    int fd = open(path.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return nil;
+    struct stat info = {0};
+    if (fstat(fd, &info) || !S_ISREG(info.st_mode) || info.st_uid != 501 ||
+        (info.st_mode & 077) || info.st_size < 2 || info.st_size > 16 * 1024) {
+        close(fd); return nil;
+    }
+    NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)info.st_size];
+    NSUInteger remaining = data.length;
+    uint8_t *cursor = data.mutableBytes;
+    while (remaining) {
+        ssize_t count = read(fd, cursor, remaining);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) { close(fd); return nil; }
+        cursor += count; remaining -= (NSUInteger)count;
+    }
+    close(fd);
+    NSDictionary *candidate = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![candidate isKindOfClass:NSDictionary.class]) return nil;
+    NSString *bundle = candidate[@"bundleID"];
+    NSNumber *product = candidate[@"productID"];
+    if (![bundle isKindOfClass:NSString.class] ||
+        [bundle rangeOfString:@"^[A-Za-z0-9.-]{3,180}$" options:NSRegularExpressionSearch].location != 0 ||
+        ![product isKindOfClass:NSNumber.class] || product.longLongValue <= 0) return nil;
+    return candidate;
+}
+
+static BOOL BBInstalledBundleVerified(NSString *bundleID) {
+    Class cls = objc_getClass("LSApplicationProxy");
+    SEL proxySelector = @selector(applicationProxyForIdentifier:);
+    if (!cls || ![cls respondsToSelector:proxySelector]) return NO;
+    @try {
+        id proxy = ((id (*)(id, SEL, NSString *))objc_msgSend)((id)cls, proxySelector, bundleID);
+        if (!proxy || ![proxy respondsToSelector:@selector(bundleIdentifier)] ||
+            ![proxy respondsToSelector:@selector(bundleURL)]) return NO;
+        NSString *actual = ((id (*)(id, SEL))objc_msgSend)(proxy, @selector(bundleIdentifier));
+        NSURL *url = ((id (*)(id, SEL))objc_msgSend)(proxy, @selector(bundleURL));
+        if (![actual isEqualToString:bundleID] || ![url isKindOfClass:NSURL.class] ||
+            !url.isFileURL) return NO;
+        if ([proxy respondsToSelector:@selector(isPlaceholder)] &&
+            ((BOOL (*)(id, SEL))objc_msgSend)(proxy, @selector(isPlaceholder))) return NO;
+        NSString *infoPath = [url.path stringByAppendingPathComponent:@"Info.plist"];
+        NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:infoPath];
+        return [info[@"CFBundleIdentifier"] isEqualToString:bundleID];
+    } @catch (__unused NSException *exception) { return NO; }
+}
+
 static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
     struct stat root = {0};
     if (lstat(BBWorkflowRoot.fileSystemRepresentation, &root) ||
@@ -128,7 +194,8 @@ static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
             record[@"updatedAt"] : @0;
         NSString *request = record[@"request"];
         if (request.length > 220) continue;
-        [items addObject:@{@"id": identity, @"request": request,
+        NSString *kind = BBReadAppCandidate(identity) ? @"app_store" : @"research";
+        [items addObject:@{@"id": identity, @"request": request, @"kind": kind,
                            @"phase": record[@"phase"],
                            @"updated_at": @([updated doubleValue] + 978307200.0)}];
     }
@@ -147,17 +214,28 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
     BBState.taskID = identity;
     BBState.reportPath = nil;
     BBState.mailDraftPath = nil;
+    BBState.appCandidatePath = nil;
     NSString *phase = record[@"phase"];
     NSString *pdfPath = [folder stringByAppendingPathComponent:@"report.pdf"];
     NSString *draftPath = [folder stringByAppendingPathComponent:@"mail-draft.json"];
+    NSString *candidatePath = [folder stringByAppendingPathComponent:@"app-candidate.json"];
     BOOL hasPDF = BBPrivateWorkflowFile(pdfPath, 100, 20 * 1024 * 1024);
     BOOL hasDraft = BBPrivateWorkflowFile(draftPath, 1, 16 * 1024);
-    BBState.app = hasDraft ? @"ResearchMailDraft" : @"ResearchPDF";
+    BOOL hasCandidate = BBPrivateWorkflowFile(candidatePath, 1, 16 * 1024);
+    BBState.app = hasCandidate ? @"AppStoreReview" :
+        (hasDraft ? @"ResearchMailDraft" : @"ResearchPDF");
     BBState.reportPath = hasPDF ? pdfPath : nil;
-    if ([phase isEqualToString:@"waitingForUser"] && hasPDF && hasDraft) {
+    if ([phase isEqualToString:@"waitingForUser"] && hasCandidate) {
+        BBState.phase = @"waiting_for_user";
+        BBState.message = @"Review the App Store listing";
+        BBState.appCandidatePath = candidatePath;
+    } else if ([phase isEqualToString:@"waitingForUser"] && hasPDF && hasDraft) {
         BBState.phase = @"waiting_for_user";
         BBState.message = @"Review the email draft";
         BBState.mailDraftPath = draftPath;
+    } else if ([phase isEqualToString:@"completed"] && hasCandidate) {
+        BBState.phase = @"done";
+        BBState.message = @"Selected app is installed";
     } else if ([phase isEqualToString:@"completed"] && hasPDF) {
         BBState.phase = @"done";
         BBState.message = @"Research PDF available";
@@ -254,6 +332,7 @@ static NSDictionary *BBStatus(void) {
                  @"task_id": BBState.taskID ?: @""} mutableCopy];
         if (BBState.reportPath) status[@"report_path"] = BBState.reportPath;
         if (BBState.mailDraftPath) status[@"mail_draft_path"] = BBState.mailDraftPath;
+        if (BBState.appCandidatePath) status[@"app_candidate_path"] = BBState.appCandidatePath;
         return status;
     }
 }
@@ -312,7 +391,7 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
     for (NSString *line in [summary componentsSeparatedByString:@"\n"])
         if ([line hasPrefix:@"BB_INTENT="]) {
             NSString *candidate = [line substringFromIndex:@"BB_INTENT=".length];
-            if ([@[@"Settings", @"Maps", @"Contacts", @"Notes", @"MapsSearch", @"NoteCreate", @"ResearchPDF", @"ResearchMailDraft"]
+            if ([@[@"Settings", @"Maps", @"Contacts", @"Notes", @"MapsSearch", @"NoteCreate", @"ResearchPDF", @"ResearchMailDraft", @"AppStoreReview"]
                     containsObject:candidate]) resolvedApp = candidate;
             break;
         }
@@ -322,7 +401,8 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
         completionMessage = [resolvedApp isEqualToString:@"MapsSearch"] ? @"Maps search completed" :
             ([resolvedApp isEqualToString:@"NoteCreate"] ? @"Note created" :
              ([resolvedApp isEqualToString:@"ResearchPDF"] ? @"PDF report created" :
-              ([resolvedApp isEqualToString:@"ResearchMailDraft"] ? @"Review the email draft" : @"Target app is in the foreground")));
+              ([resolvedApp isEqualToString:@"ResearchMailDraft"] ? @"Review the email draft" :
+               ([resolvedApp isEqualToString:@"AppStoreReview"] ? @"Review the App Store listing" : @"Target app is in the foreground"))));
     }
     NSString *auditAction = nil, *auditResult = nil;
     @synchronized (BBState) {
@@ -333,7 +413,8 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
         BBState.stopping = NO;
         BOOL succeeded = waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0;
         BBState.phase = stopped ? @"stopped" :
-            (succeeded ? ([resolvedApp isEqualToString:@"ResearchMailDraft"] ?
+            (succeeded ? (([resolvedApp isEqualToString:@"ResearchMailDraft"] ||
+                           [resolvedApp isEqualToString:@"AppStoreReview"]) ?
                           @"waiting_for_user" : @"done") : @"error");
         BOOL reportReady = succeeded &&
             ([@[@"ResearchPDF", @"ResearchMailDraft"] containsObject:resolvedApp]);
@@ -342,6 +423,9 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
                                        BBState.taskID ?: @""] : nil;
         BBState.mailDraftPath = succeeded && [resolvedApp isEqualToString:@"ResearchMailDraft"] ?
             [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/mail-draft.json",
+                                       BBState.taskID ?: @""] : nil;
+        BBState.appCandidatePath = succeeded && [resolvedApp isEqualToString:@"AppStoreReview"] ?
+            [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/app-candidate.json",
                                        BBState.taskID ?: @""] : nil;
         BBState.message = stopped ? @"Task stopped" :
             (succeeded ? completionMessage : BBFailureMessage(summary));
@@ -367,12 +451,14 @@ static NSDictionary *BBStart(NSDictionary *request) {
             return @{@"ok": @NO, @"error": @"This workflow cannot be resumed automatically"};
     }
     BOOL researchPDF = BBIsResearchPDFTask(task);
+    BOOL appStore = BBIsAppStoreTask(task);
     NSString *app = BBAllowedTarget(task);
-    BOOL resolveTask = !app && !researchPDF;
-    if (researchPDF && ![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
-        return @{@"ok": @NO, @"error": @"Research PDF currently requires Claude"};
+    BOOL resolveTask = !app && !researchPDF && !appStore;
+    if ((researchPDF || appStore) && ![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
+        return @{@"ok": @NO, @"error": @"This workflow currently requires Claude"};
     if (resolveTask) app = @"BeanBao";
     if (researchPDF) app = @"ResearchPDF";
+    if (appStore) app = @"AppStoreReview";
     NSString *selectedProvider = BBModelLoad()[@"provider"];
     if (model && ![model isEqualToString:selectedProvider])
         return @{@"ok": @NO, @"error": @"Model settings changed. Submit the task again."};
@@ -404,12 +490,15 @@ static NSDictionary *BBStart(NSDictionary *request) {
         NSString *taskID = resumeID ?: NSUUID.UUID.UUIDString;
         const char *argvResearch[] = {executable, "--workflow-research", task.UTF8String,
                                       taskID.UTF8String, NULL};
+        const char *argvAppStore[] = {executable, "--workflow-app-store", task.UTF8String,
+                                      taskID.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
                                      (char *const *)(researchPDF ? argvResearch :
+                                         (appStore ? argvAppStore :
                                          (resolveTask ? argvResolve :
                                          (noteTask ? argvNote :
-                                          (BBUsesTextHarness(task) ? argvText : argvMap)))), environ);
+                                          (BBUsesTextHarness(task) ? argvText : argvMap))))), environ);
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,
@@ -420,6 +509,7 @@ static NSDictionary *BBStart(NSDictionary *request) {
         BBState.taskID = taskID;
         BBState.reportPath = nil;
         BBState.mailDraftPath = nil;
+        BBState.appCandidatePath = nil;
         BBState.child = child;
         BBState.stopping = NO;
         BBState.phase = @"running";
@@ -459,7 +549,8 @@ static NSDictionary *BBDeleteWorkflow(NSDictionary *request) {
         if (BBState.child > 0) return @{@"ok": @NO, @"error": @"A task is already running"};
         NSString *folder = BBWorkflowFolder(identity);
         NSSet<NSString *> *known = [NSSet setWithArray:
-            @[@"session.json", @"report.json", @"report.pdf", @"mail-draft.json"]];
+            @[@"session.json", @"report.json", @"report.pdf", @"mail-draft.json",
+              @"app-search.json", @"app-candidate.json"]];
         NSArray<NSString *> *files = [NSFileManager.defaultManager
             contentsOfDirectoryAtPath:folder error:nil];
         if (!files || ![[NSSet setWithArray:files] isSubsetOfSet:known])
@@ -481,6 +572,7 @@ static NSDictionary *BBDeleteWorkflow(NSDictionary *request) {
             BBState.app = nil;
             BBState.reportPath = nil;
             BBState.mailDraftPath = nil;
+            BBState.appCandidatePath = nil;
             BBState.phase = @"idle";
             BBState.message = @"Waiting for a task";
         }
@@ -541,12 +633,50 @@ static NSDictionary *BBMailResult(NSDictionary *request) {
     }
 }
 
+static NSDictionary *BBVerifyAppInstall(NSDictionary *request) {
+    @synchronized (BBState) {
+        NSString *taskID = request[@"task_id"];
+        NSString *serviceID = request[@"service_id"];
+        if (![taskID isKindOfClass:NSString.class] ||
+            ![serviceID isKindOfClass:NSString.class] ||
+            ![taskID isEqualToString:BBState.taskID] ||
+            ![serviceID isEqualToString:BBState.serviceID] ||
+            ![BBState.phase isEqualToString:@"waiting_for_user"] ||
+            ![BBState.app isEqualToString:@"AppStoreReview"])
+            return @{@"ok": @NO, @"error": @"The App Store session changed"};
+        NSDictionary *candidate = BBReadAppCandidate(taskID);
+        NSString *bundle = candidate[@"bundleID"];
+        if (!bundle) return @{@"ok": @NO, @"error": @"The saved App Store listing is unavailable"};
+        if (!BBInstalledBundleVerified(bundle)) {
+            BBState.message = @"App is not installed yet. Review the listing or check again.";
+            NSMutableDictionary *status = [BBStatus() mutableCopy];
+            status[@"installed"] = @NO;
+            return status;
+        }
+        if (BBMarkAppStoreInstalled(taskID.UTF8String, bundle.UTF8String) != 0) {
+            BBState.phase = @"needs_reconciliation";
+            BBState.message = @"The app is installed, but its session could not be saved.";
+            BBState.appCandidatePath = nil;
+            BBAudit(@"task", @"AppStoreReview", @"needs_reconciliation", @"record_failed");
+            return BBStatus();
+        }
+        BBState.phase = @"done";
+        BBState.message = @"Selected app is installed";
+        BBState.appCandidatePath = nil;
+        BBAudit(@"task", @"AppStoreReview", @"done", @"installed");
+        NSMutableDictionary *status = [BBStatus() mutableCopy];
+        status[@"installed"] = @YES;
+        return status;
+    }
+}
+
 static NSDictionary *BBHandle(NSDictionary *request) {
     NSString *op = request[@"op"];
     if ([op isEqualToString:@"status"]) return BBStatus();
     if ([op isEqualToString:@"start"]) return BBStart(request);
     if ([op isEqualToString:@"stop"]) return BBStop(request);
     if ([op isEqualToString:@"mail_result"]) return BBMailResult(request);
+    if ([op isEqualToString:@"verify_app_install"]) return BBVerifyAppInstall(request);
     if ([op isEqualToString:@"list_workflows"])
         return @{@"ok": @YES, @"workflows": BBWorkflowSummaries()};
     if ([op isEqualToString:@"resume_workflow"]) return BBResumeWorkflow(request);

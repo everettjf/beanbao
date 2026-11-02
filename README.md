@@ -6,7 +6,7 @@ The current release candidate uses a restricted Bridge, an on-device Agent, and 
 
 BeanBao checks the foreground app, screen freshness, sensitive content, and action policy at every step. It cannot install apps, send messages, make payments, or delete content. The connected device has passed text-command and Claude Maps search tests; OpenAI and compatible endpoints still need live tests with their own keys. Other devices and jailbreak environments need separate validation.
 
-The app has an Activity view for recent task outcomes. It derives short summaries from a private on-device audit and does not store request text, note contents, screenshots, or model replies. The separate Sessions view saves research workflow requests, cited sources, checkpoints, PDFs, and optional email drafts in private on-device storage. Other task types remain independent and do not have conversational memory.
+The app has an Activity view for recent task outcomes. It derives short summaries from a private on-device audit and does not store request text, note contents, screenshots, or model replies. The separate Sessions view saves research and App Store workflow requests, checkpoints, and their resulting artifacts in private on-device storage. Research can prepare a cited PDF and optional email draft. An app acquisition request can show a selected App Store listing for review; it reports installation only after a matching bundle is found on the device. Other task types remain independent and do not have conversational memory.
 
 - [Installation and configuration](docs/install-and-configure.md)
 - [Device test record](docs/build-and-test.md)

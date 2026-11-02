@@ -8,6 +8,8 @@ static NSString *const BBAuditPath = @"/var/mobile/Library/Application Support/B
 static NSString *BBActivityTitle(NSString *app, BOOL enteredText, NSString *state) {
     if ([app isEqualToString:@"ResearchPDF"] || [app isEqualToString:@"ResearchMailDraft"])
         return [state isEqualToString:@"waiting_for_user"] ? @"Review research email" : @"Created research PDF";
+    if ([app isEqualToString:@"AppStoreReview"])
+        return [state isEqualToString:@"done"] ? @"Installed App Store app" : @"Review App Store listing";
     if ([app isEqualToString:@"Maps"] || [app isEqualToString:@"地图"])
         return enteredText ? @"Searched Maps" :
             ([state isEqualToString:@"done"] ? @"Opened Maps" : @"Maps task");
