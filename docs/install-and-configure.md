@@ -6,7 +6,7 @@ Updated November 1, 2026. This is a developer installation procedure for a compa
 
 Install these RootHide `iphoneos-arm64e` packages in order:
 
-1. `dev.beanbao.bridge` 0.2.12: restricted SpringBoard observation, UI actions, and quick voice overlay.
+1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
 2. `dev.beanbao.agent` 0.3.59: on-device task service and model interpretation of natural requests.
 3. `dev.beanbao.app` 0.3.27: native text, Apple voice transcription, activity, shortcut, and model settings UI.
 
@@ -22,7 +22,7 @@ The build script runs native policy, Python, and Swift Harness tests and audits 
 With a root shell on the jailbroken phone, copy over the packages and install them in this order:
 
 ```sh
-dpkg -i dev.beanbao.bridge_0.2.12_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.agent_0.3.59_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.27_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
@@ -40,7 +40,7 @@ To check the connected development device, run `python3 scripts/verify_device.py
 4. Try **Search Maps for Golden Gate Bridge**. BeanBao may send a Maps screenshot to the selected model when local actions are insufficient. It searches and checks the place marker and card; it does not start navigation. It stops if the phone locks, the UI changes unexpectedly, or possible credentials appear on screen.
 5. Tap **Voice input**, speak an English request, then tap **Stop recording**. Check or edit the transcript before tapping **Start**. iOS 26 uses on-device English dictation where available and may download a language asset on first use. Audio is removed after transcription. Recording stops automatically after 30 seconds.
 
-The **Quick launch** Volume Down triple-press switch is off by default. A normal press still changes volume. Triple press opens the quick overlay and asks the BeanBao app to start recording. The physical button has opened the overlay on the tested phone, but automatic recording is still under acceptance testing.
+The **Quick launch** Volume Down triple-press switch is off by default. A normal press still changes volume. Triple press opens the quick overlay and asks the BeanBao app to start recording. On the tested phone, a real spoken request completed from both an app and the unlocked Home screen. From Home, the overlay started recording and **Open Settings** brought Settings to the foreground.
 
 ## Data and limits
 

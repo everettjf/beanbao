@@ -3,9 +3,11 @@
 #import "BeanBaoApp.h"
 #import "ScreenManager.h"
 #import "VoiceIPC.h"
+#import "HIDManager.h"
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <unistd.h>
 
 @interface BBQuickOverlay () <UITextFieldDelegate>
 @property(nonatomic, strong) UIWindow *window;
@@ -184,9 +186,22 @@ static dispatch_queue_t BBAppLaunchQueue(void) {
 
 - (void)restorePreviousApp {
     NSString *bundleID = [self.returnBundle copy];
-    if (!bundleID.length || [bundleID isEqualToString:@"com.apple.springboard"] ||
-        [bundleID isEqualToString:@"dev.beanbao.app"]) return;
+    if (!bundleID.length || [bundleID isEqualToString:@"dev.beanbao.app"]) return;
     dispatch_async(BBAppLaunchQueue(), ^{
+        if ([bundleID isEqualToString:@"com.apple.springboard"]) {
+            // LaunchServices cannot open SpringBoard as an app. A Home event
+            // restores the unlocked Home screen after BeanBao starts recording.
+            dispatch_semaphore_t done = dispatch_semaphore_create(0);
+            [[IOSMCPHIDManager sharedInstance] pressButton:HIDButtonHome duration:100 completion:^(__unused BOOL success, __unused NSString *error) {
+                dispatch_semaphore_signal(done);
+            }];
+            dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+            for (NSUInteger i = 0; i < 15; i++) {
+                if ([BBFrontmostApp()[@"bundleId"] isEqualToString:bundleID]) break;
+                usleep(200000);
+            }
+            return;
+        }
         Class cls = objc_getClass("LSApplicationWorkspace");
         SEL workspaceSel = @selector(defaultWorkspace);
         SEL openSel = @selector(openApplicationWithBundleID:);
@@ -202,8 +217,7 @@ static dispatch_queue_t BBAppLaunchQueue(void) {
 - (BOOL)beginVoiceFromBundle:(NSString *)bundleID {
     if (!NSThread.isMainThread || self.window || self.voiceSession ||
         ![bundleID isKindOfClass:NSString.class] ||
-        !bundleID.length || [bundleID isEqualToString:@"com.apple.springboard"] ||
-        [bundleID isEqualToString:@"dev.beanbao.app"]) return NO;
+        !bundleID.length || [bundleID isEqualToString:@"dev.beanbao.app"]) return NO;
     self.backgroundSnapshot = [[ScreenManager sharedInstance] captureScreenImage];
     if (![self showFocused:NO]) { self.backgroundSnapshot = nil; return NO; }
     NSString *session = NSUUID.UUID.UUIDString;
