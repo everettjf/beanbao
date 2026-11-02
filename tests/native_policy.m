@@ -233,6 +233,44 @@ int main(void) {
             @{@"text": @"search", @"visible_rect":
               @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}}]};
         NSDictionary *focusedMap = Observation(@"com.apple.Maps", NO, focusedUI, @{});
+        NSDictionary *oldQueryUI = @{@"elements": @[
+            @{@"text": @"Search field", @"aliases": @[@"San Francisco City Hall"],
+              @"visible_rect": @{@"x": @16, @"y": @64, @"width": @327, @"height": @44}},
+            @{@"text": @"Clear text", @"visible_rect":
+              @{@"x": @308, @"y": @76, @"width": @20, @"height": @20}},
+            @{@"text": @"search", @"visible_rect":
+              @{@"x": @309, @"y": @770, @"width": @100, @"height": @56}}]};
+        NSDictionary *oldQueryMap = Observation(@"com.apple.Maps", NO, oldQueryUI, @{});
+        NSDictionary *clearOldQuery = BBMapFixedClearTextAction(oldQueryMap, @"San Jose City Hall");
+        NSString *sanJoseTask = @"在地图搜索San Jose City Hall";
+        NSArray *priorSearchTaps = @[tapSearch, tapSearch];
+        NSArray *clearedHistory = @[tapSearch, tapSearch, clearOldQuery];
+        NSArray *typedAfterClear = @[tapSearch, tapSearch, clearOldQuery,
+            @{@"action": @"input_text", @"text": @"San Jose City Hall"}];
+        if (!Check([clearOldQuery[@"action"] isEqualToString:@"tap"] &&
+                   BBValidAction(clearOldQuery, oldQueryMap, sanJoseTask,
+                                 priorSearchTaps, YES, YES, NO),
+                   "old Maps query is cleared through its exact control") ||
+            !Check(!BBValidAction(@{@"action": @"input_text", @"text": @"San Jose City Hall"},
+                                  oldQueryMap, sanJoseTask, priorSearchTaps, YES, YES, NO),
+                   "new Maps query cannot append to uncleared text") ||
+            !Check(BBMapFixedSelectionAction(oldQueryMap, @"San Jose City Hall",
+                        @[@{@"action": @"input_text", @"text": @"San Jose City Hall"}]) == nil,
+                   "stale field text after typing cannot trigger a second clear") ||
+            !Check(BBValidAction(@{@"action": @"input_text", @"text": @"San Jose City Hall"},
+                                 focusedMap, sanJoseTask, clearedHistory, YES, YES, NO),
+                   "new Maps query is allowed after clearing old text") ||
+            !Check(BBValidAction(@{@"action": @"press_key", @"key": @"enter"},
+                                 Observation(@"com.apple.Maps", NO,
+                                     @{@"elements": @[
+                                         @{@"text": @"Search field", @"aliases": @[@"San Jose City Hall"],
+                                           @"visible_rect": @{@"x": @16, @"y": @64,
+                                                               @"width": @327, @"height": @44}},
+                                         @{@"text": @"search", @"visible_rect":
+                                           @{@"x": @309, @"y": @770,
+                                             @"width": @100, @"height": @56}}]}, @{}),
+                                 sanJoseTask, typedAfterClear, YES, YES, NO),
+                   "Maps search can submit after a bounded clear-and-type sequence")) return 1;
         NSDictionary *searchedUI = @{@"elements": @[
             @{@"text": @"Search field", @"aliases": @[@"金门大桥"], @"visible_rect":
               @{@"x": @16, @"y": @64, @"width": @327, @"height": @44}},
@@ -267,6 +305,31 @@ int main(void) {
             @{@"text": @"Golden Gate Bridge, Landmark", @"visible_rect":
               @{@"x": @5, @"y": @498, @"width": @403, @"height": @59}}]};
         NSDictionary *placeCard = Observation(@"com.apple.Maps", NO, placeCardUI, @{});
+        NSString *cityTask = @"在地图搜索San Francisco City Hall";
+        NSDictionary *cityResultUI = @{@"elements": @[
+            @{@"text": @"Search field", @"aliases": @[@"San Francisco City Hall"],
+              @"visible_rect": @{@"x": @21, @"y": @514, @"width": @321, @"height": @43}},
+            @{@"text": @"San Francisco City Hall, City Hall · 40 mi, 1 Dr Carlton B Goodlett Pl",
+              @"visible_rect": @{@"x": @21, @"y": @495, @"width": @372, @"height": @133}}]};
+        NSDictionary *cityResultOCR = @{@"texts": @[
+            @{@"text": @"San Francisco City Hall", @"rect":
+                @{@"x": @36, @"y": @645, @"width": @180, @"height": @18}}]};
+        NSDictionary *cityResults = Observation(@"com.apple.Maps", NO,
+                                                  cityResultUI, cityResultOCR);
+        NSArray *cityHistory = @[@{@"action": @"launch_app", @"bundle_id": @"com.apple.Maps"},
+            tapSearch, @{@"action": @"input_text", @"text": @"San Francisco City Hall"}, enter];
+        NSDictionary *cityRowTap = BBMapFixedResultRowAction(cityResults, @"San Francisco City Hall");
+        NSDictionary *wrongCityOCR = Observation(@"com.apple.Maps", NO, cityResultUI,
+            @{@"texts": @[@{@"text": @"City of South San Francisco", @"rect":
+                @{@"x": @36, @"y": @645, @"width": @180, @"height": @18}}]});
+        if (!Check([cityRowTap[@"action"] isEqualToString:@"tap"] &&
+                   BBValidAction(cityRowTap, cityResults, cityTask, cityHistory, YES, YES, NO),
+                   "exact Maps result row can be selected using corroborated OCR") ||
+            !Check(BBMapFixedResultRowAction(wrongCityOCR, @"San Francisco City Hall") == nil,
+                   "different OCR result cannot authorize a Maps tap") ||
+            !Check(!BBValidAction(@{@"action": @"tap", @"x": @180, @"y": @535},
+                                  cityResults, cityTask, cityHistory, YES, YES, NO),
+                   "shifted AX search-field coordinate cannot select a result row")) return 1;
         __block NSUInteger mapLaunchModelCalls = 0, mapLaunchActs = 0;
         __block BOOL mapLaunchScreenshotRequested = NO;
         BBNoteBridgeRequest mapLaunchBridge = ^NSDictionary *(NSDictionary *request) {
@@ -764,6 +827,30 @@ int main(void) {
                    [firstNoteStep[@"action"][@"action"] isEqualToString:@"tap"] &&
                    noteObserveCount == 2 && noteActCount == 1,
                    "harness note step observes twice and executes one validated action")) return 1;
+        __block NSUInteger delayedNoteReads = 0, delayedNoteActs = 0;
+        BBNoteBridgeRequest delayedNoteBridge = ^NSDictionary *(NSDictionary *request) {
+            if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};
+            if ([request[@"op"] isEqualToString:@"observe"]) {
+                delayedNoteReads++;
+                NSDictionary *state = delayedNoteReads == 1 ?
+                    Observation(@"com.apple.mobilenotes", NO, @{@"elements": @[]}, @{}) : noteList;
+                return StepObservation(state,
+                    [NSString stringWithFormat:@"delayed-note-%lu", (unsigned long)delayedNoteReads]);
+            }
+            if ([request[@"op"] isEqualToString:@"act"] &&
+                [request[@"action"] isEqualToString:@"tap"]) {
+                delayedNoteActs++;
+                return @{@"ok": @YES};
+            }
+            return @{@"ok": @NO};
+        };
+        NSDictionary *delayedNoteStep = BBNoteStep(noteTask,
+            @[@{@"action": @"launch_app", @"bundle_id": @"com.apple.mobilenotes"}],
+            delayedNoteBridge);
+        if (!Check([delayedNoteStep[@"ok"] boolValue] &&
+                   [delayedNoteStep[@"action"][@"action"] isEqualToString:@"tap"] &&
+                   delayedNoteReads >= 3 && delayedNoteActs == 1,
+                   "note harness waits for list controls after launching Notes")) return 1;
         __block NSUInteger changedReads = 0, rejectedNoteActCount = 0;
         BBNoteBridgeRequest changedNoteBridge = ^NSDictionary *(NSDictionary *request) {
             if ([request[@"op"] isEqualToString:@"wake_lease"]) return @{@"ok": @YES};

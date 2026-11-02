@@ -538,6 +538,40 @@ static BOOL BBMapSearchTapAllowed(NSDictionary *observation, double x, double y)
     return NO;
 }
 
+static BOOL BBMapClearTextTapAllowed(NSDictionary *observation, NSString *query,
+                                      double x, double y) {
+    if (!BBMapSearchInputReady(observation) ||
+        BBMapQueryInSearchField(observation, query)) return NO;
+    double screenHeight = [observation[@"screen"][@"height"] doubleValue];
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isEqualToString:@"Clear text"]) continue;
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double left = [rect[@"x"] doubleValue], top = [rect[@"y"] doubleValue];
+        double width = [rect[@"width"] doubleValue], height = [rect[@"height"] doubleValue];
+        if (width < 15 || width > 50 || height < 15 || height > 50 ||
+            top < 0 || top >= screenHeight / 3) continue;
+        if (x >= left && x <= left + width && y >= top && y <= top + height)
+            return YES;
+    }
+    return NO;
+}
+
+static NSDictionary *BBMapFixedClearTextAction(NSDictionary *observation, NSString *query) {
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isEqualToString:@"Clear text"]) continue;
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double x = [rect[@"x"] doubleValue] + [rect[@"width"] doubleValue] / 2;
+        double y = [rect[@"y"] doubleValue] + [rect[@"height"] doubleValue] / 2;
+        if (BBMapClearTextTapAllowed(observation, query, x, y))
+            return @{@"action": @"tap", @"x": @(x), @"y": @(y)};
+    }
+    return nil;
+}
+
 static BOOL BBMapSuggestionTapAllowed(NSDictionary *observation, NSString *query, double x, double y) {
     if (!BBMapSearchInputReady(observation)) return NO;
     NSString *title = BBMapResultName(query);
@@ -608,6 +642,73 @@ static NSDictionary *BBMapFixedSuggestionAction(NSDictionary *observation, NSStr
             return @{@"action": @"tap", @"x": @(x), @"y": @(y)};
     }
     return nil;
+}
+
+static BOOL BBMapResultRowTapAllowed(NSDictionary *observation, NSString *query,
+                                      double x, double y) {
+    if (!BBMapQueryInSearchField(observation, query)) return NO;
+    NSString *title = BBMapResultName(query);
+    if (title.length < 5) return NO;
+    double screenWidth = [observation[@"screen"][@"width"] doubleValue];
+    double screenHeight = [observation[@"screen"][@"height"] doubleValue];
+    BOOL exactResultRow = NO;
+    for (NSDictionary *item in observation[@"ui"][@"elements"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isKindOfClass:NSString.class]) continue;
+        NSString *label = item[@"text"];
+        NSDictionary *rect = item[@"visible_rect"] ?: item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        if ([label.lowercaseString hasPrefix:
+                [title.lowercaseString stringByAppendingString:@","]] &&
+            [rect[@"width"] doubleValue] >= screenWidth * 0.7 &&
+            [label.lowercaseString rangeOfString:@"search nearby"].location == NSNotFound) {
+            exactResultRow = YES;
+            break;
+        }
+    }
+    if (!exactResultRow) return NO;
+    // Maps result-list AX rectangles are shifted upward on iOS 26. Require
+    // the exact AX row and the same title in the lower sheet's OCR before tap.
+    for (NSDictionary *item in observation[@"ocr"][@"texts"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isKindOfClass:NSString.class] ||
+            [item[@"text"] caseInsensitiveCompare:title] != NSOrderedSame) continue;
+        NSDictionary *rect = item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double left = [rect[@"x"] doubleValue], top = [rect[@"y"] doubleValue];
+        double width = [rect[@"width"] doubleValue], height = [rect[@"height"] doubleValue];
+        if (width < 50 || height < 10 || top < screenHeight * 0.55 ||
+            top >= screenHeight * 0.9) continue;
+        if (x >= left && x <= left + width && y >= top && y <= top + height)
+            return YES;
+    }
+    return NO;
+}
+
+static NSDictionary *BBMapFixedResultRowAction(NSDictionary *observation, NSString *query) {
+    NSString *title = BBMapResultName(query);
+    for (NSDictionary *item in observation[@"ocr"][@"texts"]) {
+        if (![item isKindOfClass:NSDictionary.class] ||
+            ![item[@"text"] isKindOfClass:NSString.class] ||
+            [item[@"text"] caseInsensitiveCompare:title] != NSOrderedSame) continue;
+        NSDictionary *rect = item[@"rect"];
+        if (![rect isKindOfClass:NSDictionary.class]) continue;
+        double x = [rect[@"x"] doubleValue] + [rect[@"width"] doubleValue] / 2;
+        double y = [rect[@"y"] doubleValue] + [rect[@"height"] doubleValue] / 2;
+        if (BBMapResultRowTapAllowed(observation, query, x, y))
+            return @{@"action": @"tap", @"x": @(x), @"y": @(y)};
+    }
+    return nil;
+}
+
+static NSDictionary *BBMapFixedSelectionAction(NSDictionary *observation, NSString *query,
+                                                 NSArray *history) {
+    BOOL alreadyTyped = NO;
+    for (NSDictionary *item in history)
+        if ([item[@"action"] isEqualToString:@"input_text"]) alreadyTyped = YES;
+    return BBMapFixedSuggestionAction(observation, query) ?:
+        BBMapFixedResultRowAction(observation, query) ?:
+        (alreadyTyped ? nil : BBMapFixedClearTextAction(observation, query));
 }
 
 static NSString *BBNoteTimestamp(NSDictionary *observation) {
@@ -821,6 +922,15 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
         if ([name isEqualToString:@"launch_app"])
             return history.count == 0 && [action[@"bundle_id"] isEqualToString:@"com.apple.Maps"];
         if (!allowUI || ![foreground isEqualToString:@"com.apple.Maps"]) return NO;
+        if ([name isEqualToString:@"tap"] && uiSteps <= 2 &&
+            BBMapFixedClearTextAction(observation, query) &&
+            ![uiHistory containsObject:@"input_text"]) {
+            id x = action[@"x"], y = action[@"y"];
+            if ([x isKindOfClass:NSNumber.class] && [y isKindOfClass:NSNumber.class] &&
+                isfinite([x doubleValue]) && isfinite([y doubleValue]) &&
+                BBMapClearTextTapAllowed(observation, query,
+                                          [x doubleValue], [y doubleValue])) return YES;
+        }
         if ([name isEqualToString:@"tap"] &&
             (uiSteps == 0 || (uiSteps == 1 && [uiHistory[0] isEqualToString:@"tap"]))) {
             id x = action[@"x"], y = action[@"y"];
@@ -843,20 +953,25 @@ static BOOL BBValidAction(NSDictionary *action, NSDictionary *observation, NSStr
                 isfinite([x doubleValue]) && isfinite([y doubleValue]) &&
                 BBMapSuggestionTapAllowed(observation, query, [x doubleValue], [y doubleValue]);
         }
+        if ([name isEqualToString:@"tap"] && uiSteps > 0 &&
+            [uiHistory.lastObject isEqualToString:@"press_key"]) {
+            id x = action[@"x"], y = action[@"y"];
+            return [x isKindOfClass:NSNumber.class] && [y isKindOfClass:NSNumber.class] &&
+                isfinite([x doubleValue]) && isfinite([y doubleValue]) &&
+                BBMapResultRowTapAllowed(observation, query, [x doubleValue], [y doubleValue]);
+        }
+        BOOL onlyTaps = uiSteps <= 3;
+        for (NSString *prior in uiHistory) if (![prior isEqualToString:@"tap"]) onlyTaps = NO;
         if ([name isEqualToString:@"input_text"] && BBMapSearchInputReady(observation) &&
             !BBMapQueryInSearchField(observation, query) &&
-            (uiSteps == 0 || (uiSteps == 1 && [uiHistory[0] isEqualToString:@"tap"]) ||
-             (uiSteps == 2 && [uiHistory[0] isEqualToString:@"tap"] &&
-              [uiHistory[1] isEqualToString:@"tap"])))
+            !BBMapFixedClearTextAction(observation, query) && onlyTaps)
             return [action[@"text"] isKindOfClass:NSString.class] && [action[@"text"] isEqualToString:query];
+        BOOL tapsThenInput = uiSteps >= 1 && uiSteps <= 4 &&
+            [uiHistory.lastObject isEqualToString:@"input_text"];
+        for (NSUInteger i = 0; i + 1 < uiSteps; i++)
+            if (![uiHistory[i] isEqualToString:@"tap"]) tapsThenInput = NO;
         if ([name isEqualToString:@"press_key"] &&
-            ((uiSteps == 0 && BBMapSearchInputReady(observation)) ||
-             (uiSteps == 1 && [uiHistory[0] isEqualToString:@"input_text"]) ||
-             (uiSteps == 2 && [uiHistory[0] isEqualToString:@"tap"] &&
-              [uiHistory[1] isEqualToString:@"input_text"]) ||
-             (uiSteps == 3 && [uiHistory[0] isEqualToString:@"tap"] &&
-              [uiHistory[1] isEqualToString:@"tap"] &&
-              [uiHistory[2] isEqualToString:@"input_text"])))
+            ((uiSteps == 0 && BBMapSearchInputReady(observation)) || tapsThenInput))
             return [action[@"key"] isKindOfClass:NSString.class] && [action[@"key"] isEqualToString:@"enter"] &&
                 BBMapQueryInSearchField(observation, query);
         return NO;
@@ -982,8 +1097,11 @@ static NSDictionary *BBNoteStep(NSString *task, NSArray *history, BBNoteBridgeRe
         }
     }
     NSDictionary *action = BBFixedNoteAction(task, observation, history);
-    if (priorUIAction && action[@"error"]) {
-        for (NSUInteger retry = 0; retry < 6; retry++) {
+    BOOL justLaunchedNotes = history.count == 1 &&
+        [history.lastObject[@"action"] isEqualToString:@"launch_app"];
+    if ((priorUIAction || justLaunchedNotes) &&
+        (action[@"error"] || !BBValidAction(action, observation, task, history, YES, NO, YES))) {
+        for (NSUInteger retry = 0; retry < 10; retry++) {
             usleep(350000);
             NSDictionary *settled = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @YES});
             if (![settled[@"ok"] boolValue] || !BBUnlockedObservation(settled) ||
@@ -992,7 +1110,8 @@ static NSDictionary *BBNoteStep(NSString *task, NSArray *history, BBNoteBridgeRe
             observation = settled;
             if (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"])) continue;
             action = BBFixedNoteAction(task, observation, history);
-            if (!action[@"error"]) break;
+            if (!action[@"error"] &&
+                BBValidAction(action, observation, task, history, YES, NO, YES)) break;
         }
     }
     BOOL safeNewTap = !priorUIAction && [action[@"action"] isEqualToString:@"tap"];
@@ -1083,6 +1202,8 @@ static NSDictionary *BBFixedMapAction(NSString *task, NSDictionary *observation,
             return @{@"action": @"press_key", @"key": @"enter"};
         if ([history.lastObject[@"action"] isEqualToString:@"input_text"])
             return BBError(@"local_state");
+        NSDictionary *clear = BBMapFixedClearTextAction(observation, query);
+        if (clear) return clear;
         return @{@"action": @"input_text", @"text": query};
     }
     double screenHeight = [observation[@"screen"][@"height"] doubleValue];
@@ -1131,7 +1252,7 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
     if (!fixedLaunch && (BBHasSecret(observation[@"ui"]) || BBHasSecret(observation[@"ocr"])))
         return @{@"ok": @NO, @"error": @"sensitive"};
     NSDictionary *fixedAction = fixedLaunch ?: (BBMapResultVisible(observation, query) ?
-        @{@"action": @"done"} : BBMapFixedSuggestionAction(observation, query));
+        @{@"action": @"done"} : BBMapFixedSelectionAction(observation, query, history));
     if (!fixedAction && captureScreenshotForModel) {
         NSDictionary *local = BBFixedMapAction(task, observation, history);
         if (([local[@"action"] isEqualToString:@"input_text"] ||
@@ -1156,7 +1277,7 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
                 break;
             }
             if (BBMapQueryInSearchField(observation, query)) {
-                fixedAction = BBMapFixedSuggestionAction(observation, query);
+                fixedAction = BBMapFixedSelectionAction(observation, query, history);
                 break;
             }
         }
@@ -1173,7 +1294,7 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
                 ![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] ||
                 BBHasSecret(settled[@"ui"]) || BBHasSecret(settled[@"ocr"])) break;
             observation = settled;
-            fixedAction = BBMapFixedSuggestionAction(observation, query);
+            fixedAction = BBMapFixedSelectionAction(observation, query, history);
             if (fixedAction) break;
         }
     }
@@ -1187,7 +1308,7 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
             return @{@"ok": @NO, @"error": @"sensitive"};
         observation = visual;
         fixedAction = BBMapResultVisible(observation, query) ?
-            @{@"action": @"done"} : BBMapFixedSuggestionAction(observation, query);
+            @{@"action": @"done"} : BBMapFixedSelectionAction(observation, query, history);
         if (!fixedAction) {
             NSDictionary *local = BBFixedMapAction(task, observation, history);
             if (([local[@"action"] isEqualToString:@"input_text"] ||
@@ -1255,10 +1376,12 @@ static NSDictionary *BBMapStep(NSString *task, NSArray *history,
         BBAudit(@"step", @"com.apple.Maps", @"done", @"ok");
         return @{@"ok": @YES, @"done": @YES};
     }
-    BOOL suggestionTap = [name isEqualToString:@"tap"] &&
-        BBMapSuggestionTapAllowed(observation, query,
-                                  [action[@"x"] doubleValue], [action[@"y"] doubleValue]);
-    NSDictionary *fresh = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @(suggestionTap)});
+    BOOL verifiedMapTap = [name isEqualToString:@"tap"] &&
+        (BBMapSuggestionTapAllowed(observation, query,
+                                   [action[@"x"] doubleValue], [action[@"y"] doubleValue]) ||
+         BBMapResultRowTapAllowed(observation, query,
+                                  [action[@"x"] doubleValue], [action[@"y"] doubleValue]));
+    NSDictionary *fresh = bridge(@{@"op": @"observe", @"ui": @YES, @"ocr": @(verifiedMapTap)});
     BOOL sameApp = [fresh[@"frontmost_app"][@"bundleId"]
         isEqual:observation[@"frontmost_app"][@"bundleId"]];
     BOOL allowed = BBValidAction(action, fresh, task, history, YES, YES, NO);
@@ -1388,7 +1511,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             fprintf(stderr, "The screen may contain a key. Model request stopped.\n"); return 1;
         }
         NSDictionary *fixedMapAction = fixedMapLaunch ?: (autoMap ?
-            BBMapFixedSuggestionAction(observation, BBMapQuery(task)) : nil);
+            BBMapFixedSelectionAction(observation, BBMapQuery(task), history) : nil);
         if (autoMap && !fixedMapAction &&
             [history.lastObject[@"action"] isEqualToString:@"input_text"] &&
             [observation[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] &&
@@ -1402,7 +1525,7 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
                     ![settled[@"frontmost_app"][@"bundleId"] isEqualToString:@"com.apple.Maps"] ||
                     BBHasSecret(settled[@"ui"]) || BBHasSecret(settled[@"ocr"])) break;
                 observation = settled;
-                fixedMapAction = BBMapFixedSuggestionAction(observation, BBMapQuery(task));
+                fixedMapAction = BBMapFixedSelectionAction(observation, BBMapQuery(task), history);
                 if (fixedMapAction) break;
             }
         }
@@ -1457,11 +1580,13 @@ static int BBRun(NSString *task, BOOL claude, BOOL allowUI, BOOL autoMap, BOOL a
             return 0;
         }
         if (![name isEqualToString:@"launch_app"] && !autoMap && !autoNote && !BBApprove(action)) { fprintf(stderr, "Action was not approved\n"); return 1; }
-        BOOL suggestionTap = autoMap && [name isEqualToString:@"tap"] &&
-            BBMapSuggestionTapAllowed(observation, BBMapQuery(task),
-                                      [action[@"x"] doubleValue], [action[@"y"] doubleValue]);
+        BOOL verifiedMapTap = autoMap && [name isEqualToString:@"tap"] &&
+            (BBMapSuggestionTapAllowed(observation, BBMapQuery(task),
+                                       [action[@"x"] doubleValue], [action[@"y"] doubleValue]) ||
+             BBMapResultRowTapAllowed(observation, BBMapQuery(task),
+                                      [action[@"x"] doubleValue], [action[@"y"] doubleValue]));
         NSDictionary *fresh = BBBridge(@{@"op": @"observe", @"ui": @YES,
-            @"ocr": @(suggestionTap || autoNote)});
+            @"ocr": @(verifiedMapTap || autoNote)});
         BOOL sameUI = [fresh[@"ui"] isEqual:observation[@"ui"]];
         BOOL sameNoteEditor = autoNote && [name isEqualToString:@"input_text"] &&
             BBNoteEditorReady(observation) && BBNoteEditorReady(fresh) &&

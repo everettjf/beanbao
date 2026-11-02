@@ -7,7 +7,7 @@ Updated November 1, 2026. This is a developer installation procedure for a compa
 Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
-2. `dev.beanbao.agent` 0.3.59: on-device task service and model interpretation of natural requests.
+2. `dev.beanbao.agent` 0.3.61: on-device task service and model interpretation of natural requests.
 3. `dev.beanbao.app` 0.3.27: native text, Apple voice transcription, activity, shortcut, and model settings UI.
 
 The packages are under `bridge/packages/`, `agent-native/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
@@ -23,7 +23,7 @@ With a root shell on the jailbroken phone, copy over the packages and install th
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.59_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.61_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.27_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
 ```
@@ -46,4 +46,4 @@ The **Quick launch** Volume Down triple-press switch is off by default. A normal
 
 Keys and settings stay on the phone. The Agent audit file records a limited set of task events and results, without request text, note content, screenshots, model replies, or keys. On the tested RootHide device, the SSH view of this file is `/rootfs/private/var/mobile/Library/Application Support/BeanBao/audit.jsonl`.
 
-BeanBao cannot install apps, send messages, make payments, or delete content. It runs on the phone without a Mac, iCTRL, or Frida; those tools are used for development and verification. One previous version passed a physical USB-disconnect test. The current version still needs that test, a reboot recovery test, and broader Maps and voice acceptance. See [device tests](build-and-test.md) and [human acceptance](human-acceptance.md).
+BeanBao cannot install apps, send messages, make payments, or delete content. It runs on the phone without a Mac, iCTRL, or Frida; those tools are used for development and verification. One previous version passed a physical USB-disconnect test. The current version still needs that test, a reboot recovery test, and validation on other devices. See [device tests](build-and-test.md) and [human acceptance](human-acceptance.md).

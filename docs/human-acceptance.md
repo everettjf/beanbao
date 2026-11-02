@@ -23,4 +23,4 @@ The current test scripts are `scripts/accept_text_device.py` and `scripts/accept
 3. Unplug USB physically and run **Open Settings** in BeanBao. Reconnect, then check that the task ID advanced, the audit contains start and completion, and Settings is in the foreground. A prior build passed this test; repeat it for this build.
 4. Reboot, re-enable Relaxin as needed, confirm Agent starts automatically, and run **Open Notes** and a limited Maps search. Do not repeatedly reinstall packages if the jailbreak has not been restored.
 
-The physical-button recording, current-build USB-disconnect, and current-build reboot tests remain open until their corresponding real-device observations pass. Other devices require separate validation.
+The physical-button recording and voice-to-task flow passed over an app and from the unlocked Home screen on the tested phone. Current-build USB-disconnect and reboot recovery tests remain open. Other devices require separate validation.
