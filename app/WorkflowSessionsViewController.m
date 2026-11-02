@@ -84,7 +84,11 @@
         NSDictionary *reply = BBAgentRequest(@{@"op": op, @"workflow_id": identity});
         dispatch_async(dispatch_get_main_queue(), ^{
             if (![reply[@"ok"] boolValue]) { [self showError:reply[@"error"]]; return; }
-            if (close) [self.navigationController popViewControllerAnimated:YES];
+            if (close) {
+                [[NSNotificationCenter defaultCenter] postNotificationName:@"BBWorkflowSelectedNotification"
+                    object:nil userInfo:@{@"reply": reply}];
+                [self.navigationController popViewControllerAnimated:YES];
+            }
             else [self reloadSessions];
         });
     });

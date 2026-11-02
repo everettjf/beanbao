@@ -324,6 +324,8 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
             selector:@selector(checkHotkeyVoice) userInfo:nil repeats:YES];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationBecameActive:)
         name:UIApplicationDidBecomeActiveNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(workflowSelected:)
+        name:@"BBWorkflowSelectedNotification" object:nil];
     [self refreshStatus];
 }
 
@@ -343,6 +345,16 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
     (void)notification;
     [self checkHotkeyVoice];
     [self refreshActivityPreview];
+}
+
+- (void)workflowSelected:(NSNotification *)notification {
+    NSDictionary *reply = notification.userInfo[@"reply"];
+    if (![reply isKindOfClass:NSDictionary.class] || ![reply[@"ok"] boolValue]) return;
+    self.statusEpoch++;
+    self.startRejection = nil;
+    self.activeTaskID = [reply[@"task_id"] isKindOfClass:NSString.class] ? reply[@"task_id"] : nil;
+    self.activeServiceID = [reply[@"service_id"] isKindOfClass:NSString.class] ? reply[@"service_id"] : nil;
+    [self showReply:reply];
 }
 
 - (void)checkHotkeyVoice {
@@ -752,6 +764,13 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
                     self.startButton.alpha = 1.0;
                     self.stopButton.enabled = NO;
                     self.stopButton.alpha = 0.5;
+                    self.reportURL = nil;
+                    self.mailDraftURL = nil;
+                    self.appCandidateURL = nil;
+                    self.viewPDFButton.hidden = YES;
+                    self.reviewEmailButton.hidden = YES;
+                    self.storeButton.hidden = YES;
+                    self.checkInstallButton.hidden = YES;
                     return;
                 }
             }

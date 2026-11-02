@@ -1,6 +1,17 @@
 # Build and device test record
 
-Updated November 1, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
+Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
+
+## November 2 complex workflow acceptance
+
+The existing paired SSH identity did not match the public key in the device-key helper package. A helper package rebuilt with the current public key was transferred over USB and installed through the already-present Fila file manager. Root key authentication then succeeded. Agent 0.3.65 and App 0.3.30 were installed with `dpkg`; the Agent was restarted without a SpringBoard reload. Bridge 0.2.13 stayed installed, and the phone stayed unlocked throughout these tests.
+
+- Live Claude research on **on-device speech recognition on iOS** completed as one persisted workflow. It made two web-search tool calls, generated a three-page PDF, and returned `done` with the report path. The PDF had extractable text, a source section, 20 link annotations, and rendered legibly in BeanBao's Quick Look preview. This demonstrates the Palmino model/tool loop, checkpoint, PDF rendering, Sessions selection, and in-app preview on this phone; it is not a fact-check of every generated claim.
+- Live **Find app Apple Pages** completed catalog lookup and entered `waiting_for_user`. The saved candidate was `Pages: Create Documents`, developer Apple, product ID `361309726`, bundle ID `com.apple.Pages`, and price USD 0. BeanBao showed those exact fields before opening the official StoreKit product view. Its `Get` control was not used. Closing the view kept the workflow pending, and **Check installation** said the app was not installed. No installation was claimed.
+- Live research with a requested email to the reserved `test@example.com` address generated a separate two-page PDF and private mail draft. The PDF had extractable text, a source section, and 11 link annotations. Sessions showed **Review email draft** and **View PDF report**. This phone has no Apple Mail account configured, so `MFMailComposeViewController.canSendMail` was false and BeanBao displayed the setup message. The native composer, attachment display, and sent/cancel callback still require a configured test account; no message was sent.
+- Selecting the saved research session initially left the App comparing its old task ID and showing **Status unknown** with stale App Store controls. App 0.3.30 now explicitly adopts the selected workflow response and clears stale controls on an unexpected task change. The installed build was retested: selecting research showed **Completed**, **Research PDF available**, and **View PDF report**, without the App Store button or error.
+
+The complete package build passed 43 Swift Harness tests, native and Python policy tests, and release audits. The delivery order gate passed offline tests but is not connected to a named delivery service. No physical install, purchase, mail send, or order placement was attempted.
 
 ## November 1 overlay voice development
 

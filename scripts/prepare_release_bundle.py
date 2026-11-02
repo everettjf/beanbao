@@ -49,8 +49,9 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
     names = [package.name for package in packages]
     return (f"# BeanBao RootHide release candidate\n\n"
             f"Bridge {versions[0]} / Agent {versions[1]} / App {versions[2]}. "
-            "Package contents passed the build audit and offline tests. Research and App Store "
-            "workflows still need device acceptance; the delivery adapter is not yet implemented. "
+            "Package contents passed the build audit and offline tests. Research PDF generation and "
+            "App Store listing handoff passed on one device. Mail composition needs an Apple Mail account, "
+            "and the delivery adapter is not yet implemented. "
             "See docs/complex-workflows.md. "
             "Test other devices separately. A compatible Relaxin / RootHide environment is required.\n\n"
             "First run `shasum -a 256 -c SHA256SUMS` on your computer to verify the packages. "
