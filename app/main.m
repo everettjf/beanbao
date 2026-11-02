@@ -15,6 +15,7 @@
 #import "ActivityStore.h"
 #import "ActivityViewController.h"
 #import "WorkflowSessionsViewController.h"
+#import "DeliveryBrowserViewController.h"
 #import "VoiceIPC.h"
 
 @interface BBLocalDictation : NSObject
@@ -218,6 +219,12 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
     quickRow.axis = UILayoutConstraintAxisHorizontal;
     quickRow.distribution = UIStackViewDistributionFillEqually;
     quickRow.spacing = 8;
+    UIButton *deliveryBrowse = [UIButton buttonWithType:UIButtonTypeSystem];
+    [deliveryBrowse setTitle:@"Browse food delivery  ›" forState:UIControlStateNormal];
+    deliveryBrowse.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
+    deliveryBrowse.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    [deliveryBrowse addTarget:self action:@selector(deliveryBrowseTapped)
+              forControlEvents:UIControlEventTouchUpInside];
     UIStackView *composerActions = [[UIStackView alloc] initWithArrangedSubviews:@[self.voiceButton, self.startButton]];
     composerActions.axis = UILayoutConstraintAxisHorizontal;
     composerActions.distribution = UIStackViewDistributionFillEqually;
@@ -287,7 +294,7 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
     UILabel *footer = [self label:@"Requests and screenshots are not stored in Activity." size:12];
     footer.textColor = UIColor.secondaryLabelColor;
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
-        hero, [self card:@[composerTitle, inputRow, quickRow, composerActions] spacing:14],
+        hero, [self card:@[composerTitle, inputRow, quickRow, composerActions, deliveryBrowse] spacing:14],
         self.feedbackLabel, [self card:@[statusTitle, self.stateLabel, self.detailLabel,
                                        self.stopButton, self.viewPDFButton,
                                        self.reviewEmailButton, self.storeButton,
@@ -454,6 +461,11 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
 
 - (void)dismissKeyboardTapped {
     [self.taskField resignFirstResponder];
+}
+
+- (void)deliveryBrowseTapped {
+    [self.taskField resignFirstResponder];
+    [self.navigationController pushViewController:[BBDeliveryBrowserViewController new] animated:YES];
 }
 
 - (void)showReply:(NSDictionary *)reply {
