@@ -49,8 +49,10 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
     names = [package.name for package in packages]
     return (f"# BeanBao RootHide release candidate\n\n"
             f"Bridge {versions[0]} / Agent {versions[1]} / App {versions[2]}. "
-            "Package contents passed the build audit. See docs/build-and-test.md for device test results "
-            "for these versions. Test other devices separately. A compatible Relaxin / RootHide environment is required.\n\n"
+            "Package contents passed the build audit and offline tests. Research and App Store "
+            "workflows still need device acceptance; the delivery adapter is not yet implemented. "
+            "See docs/complex-workflows.md. "
+            "Test other devices separately. A compatible Relaxin / RootHide environment is required.\n\n"
             "First run `shasum -a 256 -c SHA256SUMS` on your computer to verify the packages. "
             "With a root shell on the device, install in this order:\n\n"
             "```sh\n"
@@ -59,7 +61,8 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             "After installing or updating Bridge, reload SpringBoard to enable injection. "
             "The phone may lock; unlock it yourself. Agent or App updates do not require a SpringBoard reload. "
             "Confirm launchd is running Agent as mobile, then unlock the phone and open BeanBao. "
-            "Choose Claude, OpenAI, or Compatible API under Model services and enter your own key. "
+            "Choose Claude under Model services and enter your own key for research and App Store workflows. "
+            "The older bounded UI tasks also support OpenAI or a Compatible API. "
             "Try 'Open Maps' and 'Search Maps for Golden Gate Bridge'. "
             "Opening apps and creating notes run locally. See docs/install-and-configure.md for details. "
             "This archive contains no model keys, SSH credentials, or device data.\n").encode("utf-8")
