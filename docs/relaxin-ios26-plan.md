@@ -29,3 +29,5 @@ The UI and default examples are English. The Agent maps English phrases to its e
 Keys are stored separately per provider in mobile-owned `0600` files, never in packages or the repository. Compatible endpoints must use HTTPS and cannot contain URL credentials, query parameters, or fragments. Redirects are blocked before a key could be forwarded. Agent status and audit output use fixed categories rather than model-generated text. A key-like pattern in the request or visible UI stops a model step. Free-form request text, including new note content, may be sent to the selected model for intent interpretation. Existing Notes content and contact details are not sent to that interpreter.
 
 Installation and recovery instructions are in [install-and-configure.md](install-and-configure.md) and [device-recovery.md](device-recovery.md). Detailed package and phone evidence is in [build-and-test.md](build-and-test.md). The selected Palmino code is described in [palmino-harness-reuse.md](palmino-harness-reuse.md).
+
+The design for resumable research, PDF, email, App Store, and delivery tasks is in [complex-workflows.md](complex-workflows.md).
