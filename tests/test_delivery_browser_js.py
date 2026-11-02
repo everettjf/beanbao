@@ -20,6 +20,15 @@ def browser_action_script(payload):
     return script.replace("%@", json.dumps(payload, separators=(",", ":")))
 
 
+def browser_capture_script():
+    source = SOURCE.read_text()
+    start = source.index('NSString *script = @"(() => {"',
+                         source.index('- (void)captureCurrentPageWithCompletion:'))
+    end = source.index(';\n    [self.webView evaluateJavaScript:', start)
+    pieces = re.findall(r'@?"(?:\\.|[^"\\])*"', source[start:end])
+    return "".join(json.loads(piece.removeprefix("@")) for piece in pieces)
+
+
 class DeliveryBrowserJavaScriptTests(unittest.TestCase):
     def run_fixture(self, payload, controls, page_text=None):
         script = browser_action_script(payload)
@@ -39,7 +48,9 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         globalThis.document = {{
           body: {{ innerText: {json.dumps(page_text if page_text is not None else payload['text'])} }},
           querySelector() {{ return null; }},
-          querySelectorAll() {{ return controls; }}
+          querySelectorAll(selector) {{
+            return selector.includes('input[type=password]') ? [] : controls;
+          }}
         }};
         const result = {script};
         process.stdout.write(JSON.stringify({{ result, clicks: controls.filter(e => e.clicked).length }}));
@@ -88,6 +99,22 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         self.assertEqual(result["result"], {"ok": True})
         self.assertEqual(result["clicks"], 1)
 
+    def test_item_link_dedupes_same_destination_but_not_distinct_items(self):
+        payload = {"url": "https://www.ubereats.com/store/example/id",
+                   "text": "Chicken Pho", "action": "open_item", "target": "Chicken Pho"}
+        item = {"text": "Chicken Pho", "tagName": "A",
+                "href": "https://www.ubereats.com/store/example/id?mod=quickView&item=one",
+                "top": 400}
+        self.assertEqual(self.run_fixture(payload, [item, item]),
+                         {"result": {"ok": True}, "clicks": 1})
+        other = dict(item, href="https://www.ubereats.com/store/example/id?mod=quickView&item=two")
+        self.assertEqual(self.run_fixture(payload, [item, other]),
+                         {"result": {"ok": False, "error": "Action target not unique"},
+                          "clicks": 0})
+        offscreen = dict(other, top=1200)
+        self.assertEqual(self.run_fixture(payload, [item, offscreen]),
+                         {"result": {"ok": True}, "clicks": 1})
+
     def test_search_only_submits_the_visible_search_form(self):
         payload = {"url": "https://www.ubereats.com/search-suggestions",
                    "text": "Search Uber Eats", "action": "search", "target": "rice bowl"}
@@ -122,7 +149,9 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
           body: {{innerText: 'Search Uber Eats'}},
           elementFromPoint() {{return input;}},
           querySelector() {{return null;}},
-          querySelectorAll() {{return [input, offscreen, covered];}}
+          querySelectorAll(selector) {{
+            return selector.includes('input[type=password]') ? [] : [input, offscreen, covered];
+          }}
         }};
         const result = {script};
         process.stdout.write(JSON.stringify({{result, entered: input.entered,
@@ -132,6 +161,26 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
                                    check=True, capture_output=True, text=True)
         self.assertEqual(json.loads(completed.stdout),
                          {"result": {"ok": True}, "entered": "rice bowl", "submissions": 1})
+
+    def test_capture_ignores_hidden_credentials_but_stops_on_visible_ones(self):
+        script = browser_capture_script()
+        for credential_size, expected in [(0, {"text": "Featured items"}),
+                                          (40, {"reason": "credentials"})]:
+            fixture = f"""
+            const credential = {{
+              getBoundingClientRect() {{return {{width:{credential_size},height:{credential_size}}}}}
+            }};
+            globalThis.document = {{
+              body: {{innerText:'Featured items'}},
+              querySelectorAll() {{return [credential]}}
+            }};
+            globalThis.getComputedStyle = () =>
+              ({{display:'block',visibility:'visible',opacity:'1'}});
+            process.stdout.write(JSON.stringify({script}));
+            """
+            completed = subprocess.run([shutil.which("node"), "-e", fixture],
+                                       check=True, capture_output=True, text=True)
+            self.assertEqual(json.loads(completed.stdout), expected)
 
 
 if __name__ == "__main__":
