@@ -1,0 +1,114 @@
+import Foundation
+import CryptoKit
+
+public enum BeanBaoUberEatsPage: Equatable, Sendable {
+    case feed
+    case search
+    case merchant
+    case itemConfiguration
+    case cart
+    case loginRequired
+    case checkout
+    case unsupported
+}
+
+public enum BeanBaoUberEatsAdapterError: Error, Equatable, Sendable {
+    case unsupportedPage
+    case loginRequired
+    case incompleteCheckout
+}
+
+/// One observation from the active browser. The caller must obtain URL and visible
+/// text from the same foreground screen; model output is never an observation.
+public struct BeanBaoUberEatsObservation: Sendable {
+    public let url: URL
+    public let visibleText: String
+    public let bundleID: String
+    public let observedAt: Date
+
+    public init(url: URL, visibleText: String, bundleID: String, observedAt: Date) {
+        self.url = url
+        self.visibleText = visibleText
+        self.bundleID = bundleID
+        self.observedAt = observedAt
+    }
+}
+
+/// Versioned screen contract for the first delivery site. Unrecognized screens
+/// stop the workflow; the adapter does not infer a payable total from a menu.
+public enum BeanBaoUberEatsAdapter {
+    public static let version = 1
+
+    public static func page(_ observation: BeanBaoUberEatsObservation) -> BeanBaoUberEatsPage {
+        guard observation.url.scheme?.lowercased() == "https",
+              let host = observation.url.host?.lowercased() else { return .unsupported }
+        if host == "auth.uber.com" && observation.url.path.hasPrefix("/v2") {
+            return .loginRequired
+        }
+        guard host == "www.ubereats.com" else { return .unsupported }
+        let path = observation.url.path
+        if path == "/feed" || path == "/" { return .feed }
+        if path == "/search" { return .search }
+        if path == "/checkout" || path == "/checkout/" { return .checkout }
+        guard path.hasPrefix("/store/") else { return .unsupported }
+        let text = observation.visibleText
+        if text.contains("Go to checkout") { return .cart }
+        if text.range(of: "Add \\d+ to order", options: .regularExpression) != nil {
+            return .itemConfiguration
+        }
+        return text.contains("Search Uber Eats") ? .merchant : .unsupported
+    }
+
+    public static func checkoutEvidence(_ observation: BeanBaoUberEatsObservation,
+                                        cart: BeanBaoDeliveryCart) throws -> BeanBaoDeliveryScreenEvidence {
+        switch page(observation) {
+        case .loginRequired: throw BeanBaoUberEatsAdapterError.loginRequired
+        case .checkout: break
+        default: throw BeanBaoUberEatsAdapterError.unsupportedPage
+        }
+        try cart.validate()
+        guard cart.service == "Uber Eats",
+              ["com.apple.mobilesafari", "dev.beanbao.app"].contains(observation.bundleID) else {
+            throw BeanBaoUberEatsAdapterError.incompleteCheckout
+        }
+        let text = observation.visibleText.split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ").lowercased()
+        var required = [cart.merchantName, cart.address,
+                        "subtotal \(money(cart.subtotalMinor, currency: cart.currency))"]
+        for item in cart.items {
+            required.append(item.name)
+            required.append(money(item.lineTotalMinor, currency: cart.currency))
+            required.append(contentsOf: item.options)
+        }
+        let standardCharges: [(String, Int)] = [
+            ("tax", cart.taxMinor), ("delivery fee", cart.deliveryFeeMinor),
+            ("service fee", cart.serviceFeeMinor), ("tip", cart.tipMinor)
+        ]
+        for (name, amount) in standardCharges where amount != 0 {
+            required.append("\(name) \(money(amount, currency: cart.currency))")
+        }
+        for adjustment in cart.adjustments {
+            required.append("\(adjustment.name) \(money(adjustment.amountMinor, currency: cart.currency))")
+        }
+        let totalLine = "total \(money(cart.totalMinor, currency: cart.currency))"
+        guard required.allSatisfy({ text.contains($0.lowercased()) }),
+              text.contains("place order"),
+              (text.hasPrefix(totalLine) || text.contains(" \(totalLine)")),
+              cart.currency == "USD" else {
+            throw BeanBaoUberEatsAdapterError.incompleteCheckout
+        }
+        let fingerprintInput = "v\(version)\n\(observation.url.absoluteString)\n\(text)"
+        let fingerprint = SHA256.hash(data: Data(fingerprintInput.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return .init(bundleID: observation.bundleID,
+                     checkoutFingerprint: fingerprint, observedAt: observation.observedAt)
+    }
+
+    private static func money(_ minor: Int, currency: String) -> String {
+        // The first adapter is for Uber Eats in the US. Unknown currencies
+        // require a separate formatter and screen contract before approval.
+        guard currency == "USD" else { return "<unsupported-currency>" }
+        return minor < 0 ? String(format: "-$%d.%02d", -minor / 100, -minor % 100) :
+            String(format: "$%d.%02d", minor / 100, minor % 100)
+    }
+}
