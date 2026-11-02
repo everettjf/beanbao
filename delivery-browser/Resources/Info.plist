@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>BeanBaoDelivery</string>
+<key>CFBundleIdentifier</key><string>dev.beanbao.deliverybrowser</string>
+<key>CFBundleName</key><string>BeanBaoDelivery</string>
+<key>CFBundleDisplayName</key><string>BeanBao Delivery</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIcons</key><dict><key>CFBundlePrimaryIcon</key><dict>
+<key>CFBundleIconFiles</key><array><string>BeanBaoIcon29</string><string>BeanBaoIcon60</string></array>
+</dict></dict>
+<key>CFBundleShortVersionString</key><string>0.1.1</string>
+<key>CFBundleVersion</key><string>2</string>
+<key>LSRequiresIPhoneOS</key><true/>
+<key>UIDeviceFamily</key><array><integer>1</integer></array>
+<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
+<key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleURLName</key><string>dev.beanbao.deliverybrowser</string>
+<key>CFBundleURLSchemes</key><array><string>beanbaodelivery</string></array>
+</dict></array>
+</dict></plist>

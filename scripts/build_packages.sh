@@ -14,7 +14,7 @@ python3 -m unittest discover -s "$repo_root/agent" -p 'test_*.py' -q
 python3 "$repo_root/tests/test_delivery_browser_js.py" -q
 swift test --package-path "$repo_root"
 
-for component in bridge agent-native app; do
+for component in bridge agent-native delivery-browser app; do
     make -C "$repo_root/$component" package FINALPACKAGE=1 THEOS="$THEOS"
 done
 
@@ -25,8 +25,9 @@ version_of() {
 bridge_deb="$repo_root/bridge/packages/dev.beanbao.bridge_$(version_of bridge)_iphoneos-arm64e.deb"
 agent_deb="$repo_root/agent-native/packages/dev.beanbao.agent_$(version_of agent-native)_iphoneos-arm64e.deb"
 app_deb="$repo_root/app/packages/dev.beanbao.app_$(version_of app)_iphoneos-arm64e.deb"
+browser_deb="$repo_root/delivery-browser/packages/dev.beanbao.deliverybrowser_$(version_of delivery-browser)_iphoneos-arm64e.deb"
 
-for package in "$bridge_deb" "$agent_deb" "$app_deb"; do
+for package in "$bridge_deb" "$agent_deb" "$app_deb" "$browser_deb"; do
     test -f "$package" || {
         echo "Missing package: $package" >&2
         exit 1
@@ -34,6 +35,6 @@ for package in "$bridge_deb" "$agent_deb" "$app_deb"; do
 done
 
 python3 "$repo_root/scripts/audit_bridge_package.py" "$bridge_deb"
-python3 "$repo_root/scripts/audit_release_packages.py" "$bridge_deb" "$agent_deb" "$app_deb"
+python3 "$repo_root/scripts/audit_release_packages.py" "$bridge_deb" "$agent_deb" "$app_deb" "$browser_deb"
 echo "Built packages (SHA-256):"
-shasum -a 256 "$bridge_deb" "$agent_deb" "$app_deb"
+shasum -a 256 "$bridge_deb" "$agent_deb" "$app_deb" "$browser_deb"

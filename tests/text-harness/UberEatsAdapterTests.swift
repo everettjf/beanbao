@@ -6,7 +6,7 @@ final class UberEatsAdapterTests: XCTestCase {
     private let now = Date()
 
     private func observed(_ url: String, _ text: String,
-                          bundle: String = "com.apple.mobilesafari") -> BeanBaoUberEatsObservation {
+                          bundle: String = "dev.beanbao.deliverybrowser") -> BeanBaoUberEatsObservation {
         BeanBaoUberEatsObservation(url: URL(string: url)!, visibleText: text,
                                    bundleID: bundle, observedAt: now)
     }
@@ -47,7 +47,7 @@ final class UberEatsAdapterTests: XCTestCase {
     func testOnlyCompleteCheckoutSnapshotProducesReviewEvidence() async throws {
         let observation = observed("https://www.ubereats.com/checkout", checkout)
         let evidence = try BeanBaoUberEatsAdapter.checkoutEvidence(observation, cart: cart())
-        XCTAssertEqual(evidence.bundleID, "com.apple.mobilesafari")
+        XCTAssertEqual(evidence.bundleID, "dev.beanbao.deliverybrowser")
         XCTAssertEqual(evidence.checkoutFingerprint.count, 64)
 
         let gate = BeanBaoDeliveryReviewGate()
@@ -60,6 +60,8 @@ final class UberEatsAdapterTests: XCTestCase {
         for observation in [
             observed("https://auth.uber.com/v2/", checkout),
             observed("https://www.ubereats.com/store/example/id", checkout),
+            observed("https://www.ubereats.com/checkout", checkout, bundle: "dev.beanbao.app"),
+            observed("https://www.ubereats.com/checkout", checkout, bundle: "com.apple.mobilesafari"),
             observed("https://www.ubereats.com/checkout", checkout.replacingOccurrences(of: "Total $26.49", with: "Total $27.49")),
             observed("https://www.ubereats.com/checkout", checkout.replacingOccurrences(of: "200 E Santa Clara St", with: "201 E Santa Clara St"))
         ] {
@@ -71,7 +73,7 @@ final class UberEatsAdapterTests: XCTestCase {
         let snapshot: [String: Any] = [
             "url": "https://www.ubereats.com/store/example/id",
             "visible_text": "Go to checkout",
-            "bundle_id": "dev.beanbao.app",
+            "bundle_id": "dev.beanbao.deliverybrowser",
             "observed_at": Date().timeIntervalSince1970
         ]
         let input = String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self)
@@ -82,7 +84,14 @@ final class UberEatsAdapterTests: XCTestCase {
         XCTAssertEqual(response, "{\"ok\":true,\"page\":\"cart\",\"adapter_version\":1}")
         XCTAssertFalse(response.contains("checkout"))
 
-        let old = "{\"url\":\"https://www.ubereats.com/checkout\",\"visible_text\":\"Place order\",\"bundle_id\":\"dev.beanbao.app\",\"observed_at\":0}"
+        var impersonated = snapshot
+        impersonated["bundle_id"] = "dev.beanbao.app"
+        let rejectedInput = String(decoding: try JSONSerialization.data(withJSONObject: impersonated), as: UTF8.self)
+        let rejected = rejectedInput.withCString { BBUberEatsClassifySnapshot($0) }
+        defer { free(rejected) }
+        XCTAssertTrue(String(cString: try XCTUnwrap(rejected)).contains("Invalid delivery snapshot"))
+
+        let old = "{\"url\":\"https://www.ubereats.com/checkout\",\"visible_text\":\"Place order\",\"bundle_id\":\"dev.beanbao.deliverybrowser\",\"observed_at\":0}"
         let stale = old.withCString { BBUberEatsClassifySnapshot($0) }
         defer { free(stale) }
         XCTAssertTrue(String(cString: try XCTUnwrap(stale)).contains("Delivery page changed"))

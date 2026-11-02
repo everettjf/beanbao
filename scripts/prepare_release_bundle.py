@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 COMPONENTS = (
     ("bridge", "dev.beanbao.bridge"),
     ("agent-native", "dev.beanbao.agent"),
+    ("delivery-browser", "dev.beanbao.deliverybrowser"),
     ("app", "dev.beanbao.app"),
 )
 
@@ -42,19 +43,18 @@ def audit(packages: list[Path]) -> None:
     subprocess.run([sys.executable, str(ROOT / "scripts/audit_bridge_package.py"),
                     str(packages[0])], check=True)
     subprocess.run([sys.executable, str(ROOT / "scripts/audit_release_packages.py"),
-                    *(str(package) for package in packages)], check=True)
+                    *(str(packages[index]) for index in (0, 1, 3, 2))], check=True)
 
 
 def install_notes(packages: list[Path], versions: list[str]) -> bytes:
     names = [package.name for package in packages]
     return (f"# BeanBao RootHide release candidate\n\n"
-            f"Bridge {versions[0]} / Agent {versions[1]} / App {versions[2]}. "
+            f"Bridge {versions[0]} / Agent {versions[1]} / Delivery Browser {versions[2]} / App {versions[3]}. "
             "Package contents passed the build audit and offline tests. Research PDF generation and "
             "App Store listing handoff passed on one device. Mail composition needs an Apple Mail account. "
-            "The delivery browser has an experimental Palmino-driven multi-step Run control. "
-            "One phone completed search and restaurant opening in three verified steps. "
-            "An item page was reached and classified; option selection, cart construction, "
-            "and exact checkout review remain unverified; "
+            "The sandboxed delivery browser has an experimental Palmino-driven multi-step Run control. "
+            "One phone completed visible search, restaurant, and item-opening actions through to item options. "
+            "Option selection, cart construction, and exact checkout review still need acceptance; "
             "order placement is unavailable. "
             "See docs/complex-workflows.md. "
             "Test other devices separately. A compatible Relaxin / RootHide environment is required.\n\n"
@@ -62,9 +62,9 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             "With a root shell on the device, install in this order:\n\n"
             "```sh\n"
             + "\n".join(f"dpkg -i {name}" for name in names)
-            + "\ndpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app\n```\n\n"
+            + "\ndpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app\n```\n\n"
             "After installing or updating Bridge, reload SpringBoard to enable injection. "
-            "The phone may lock; unlock it yourself. Agent or App updates do not require a SpringBoard reload. "
+            "The phone may lock; unlock it yourself. Agent, browser, or App updates do not require a SpringBoard reload. "
             "Confirm launchd is running Agent as mobile, then unlock the phone and open BeanBao. "
             "Choose Claude under Model services and enter your own key for research and App Store workflows. "
             "The older bounded UI tasks also support OpenAI or a Compatible API. "
@@ -89,7 +89,7 @@ def main() -> None:
     args = parser.parse_args()
     packages, versions = package_paths()
     audit(packages)
-    name = f"BeanBao-RootHide-b{versions[0]}-a{versions[1]}-app{versions[2]}.tar.gz"
+    name = f"BeanBao-RootHide-b{versions[0]}-a{versions[1]}-browser{versions[2]}-app{versions[3]}.tar.gz"
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / name

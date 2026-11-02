@@ -7,7 +7,7 @@ Target: the paired iPhone 11 running iOS 26.0.1 with Relaxin / RootHide. BeanBao
 1. Connect USB, unlock the phone, and confirm Xcode CoreDevice can see it.
 2. Through copyapp's USB iCTRL channel, open the installed Relaxin app and inspect its current screen. Run Jailbreak, then wait for `jailbreakd` and `hookd` to return. Do not reuse button coordinates from an old screenshot.
 3. In the copyapp environment, run `pymobiledevice3 usbmux forward <local-port> 22 --serial <device-UDID>`. Use its paired SSH identity and fixed `known_hosts` file, with `IdentitiesOnly` and strict host-key checking.
-4. As mobile, run `beanbaoagentctl status`. As root, check `dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app` and `launchctl print user/501/dev.beanbao.agent`.
+4. As mobile, run `beanbaoagentctl status`. As root, check `dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app` and `launchctl print user/501/dev.beanbao.agent`.
 5. With the phone unlocked and screen on, run **Open Settings** from BeanBao. Require Agent phase `done` and foreground bundle ID `com.apple.Preferences`. For a Maps search, start from a screen without possible credentials.
 
 RootHide's SSH shell and app/launchd see different `/var/mobile` paths. `beanbaoagentctl` checks both Agent socket paths. Do not reinstall packages just because the first socket path is invisible from SSH. The audit file appears in the SSH view at `/rootfs/private/var/mobile/Library/Application Support/BeanBao/audit.jsonl`. If the Agent is not running, inspect `launchctl print user/501/dev.beanbao.agent` before considering `launchctl kickstart -k user/501/dev.beanbao.agent`.

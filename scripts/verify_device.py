@@ -2,6 +2,7 @@
 """Read-only G1 smoke check after the user installs the BeanBao deb."""
 import argparse
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -10,6 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 COMPONENTS = (
     ("bridge", "dev.beanbao.bridge"),
     ("agent-native", "dev.beanbao.agent"),
+    ("delivery-browser", "dev.beanbao.deliverybrowser"),
     ("app", "dev.beanbao.app"),
 )
 
@@ -45,18 +47,22 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True, help="paired device SSH host or USB-forwarded localhost")
     parser.add_argument("--port", type=int, default=22)
+    parser.add_argument("--ssh-user", choices=("mobile", "root"), default="mobile",
+                        help="SSH account; root is used only to enter the mobile account for checks")
     parser.add_argument("--identity", required=True, help="private key path; never stored in this repo")
     parser.add_argument("--known-hosts", help="paired device known_hosts file")
     parser.add_argument("--expect-bundle", action="store_true",
-                        help="require installed Bridge/Agent/App versions and Agent protocol to match this checkout")
+                        help="require installed Bridge/Agent/Browser/App versions and Agent protocol to match this checkout")
     args = parser.parse_args()
     ssh = ["ssh", "-i", args.identity, "-p", str(args.port), "-o", "IdentitiesOnly=yes",
            "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes",
-           f"mobile@{args.host}"]
+           f"{args.ssh_user}@{args.host}"]
     if args.known_hosts:
         ssh[1:1] = ["-o", f"UserKnownHostsFile={args.known_hosts}"]
 
     def remote(command: str) -> str:
+        if args.ssh_user == "root":
+            command = "su mobile -c " + shlex.quote(command)
         return subprocess.check_output([*ssh, command], text=True, timeout=20)
 
     package = remote("dpkg-query -W -f='${Status} ${Version}' dev.beanbao.bridge")

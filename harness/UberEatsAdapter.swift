@@ -71,7 +71,7 @@ public enum BeanBaoUberEatsAdapter {
         }
         try cart.validate()
         guard cart.service == "Uber Eats",
-              ["com.apple.mobilesafari", "dev.beanbao.app"].contains(observation.bundleID) else {
+              observation.bundleID == "dev.beanbao.deliverybrowser" else {
             throw BeanBaoUberEatsAdapterError.incompleteCheckout
         }
         let text = observation.visibleText.split(whereSeparator: { $0.isWhitespace })
@@ -124,7 +124,7 @@ public func BBUberEatsClassifySnapshot(_ pointer: UnsafePointer<CChar>?) -> Unsa
           let fields = try? JSONSerialization.jsonObject(with: Data(String(cString: pointer).utf8)) as? [String: Any],
           let urlString = fields["url"] as? String, let url = URL(string: urlString),
           let visibleText = fields["visible_text"] as? String, visibleText.count <= 20_000,
-          let bundleID = fields["bundle_id"] as? String, bundleID == "dev.beanbao.app",
+          let bundleID = fields["bundle_id"] as? String, bundleID == "dev.beanbao.deliverybrowser",
           let timestamp = fields["observed_at"] as? NSNumber else {
         return "{\"ok\":false,\"error\":\"Invalid delivery snapshot\"}".withCString { strdup($0) }
     }

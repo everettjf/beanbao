@@ -1,5 +1,8 @@
 #import <Foundation/Foundation.h>
 #import <sys/socket.h>
+#import <sys/select.h>
+#import <netinet/in.h>
+#import <arpa/inet.h>
 #import <sys/stat.h>
 #import <sys/un.h>
 #import <sys/wait.h>
@@ -29,6 +32,8 @@ extern int32_t BBDeliveryActionFinish(const char *workflowID, const char *action
                                      const char *snapshotJSON);
 
 static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.sock";
+static const uint16_t BBBrowserPort = 47813;
+static NSString *BBBrowserPairingToken;
 static NSString *BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";
 
 @interface BBServiceState : NSObject
@@ -948,6 +953,8 @@ static NSDictionary *BBDeliveryActionResult(NSDictionary *request) {
 static NSDictionary *BBHandle(NSDictionary *request) {
     NSString *op = request[@"op"];
     if ([op isEqualToString:@"status"]) return BBStatus();
+    if ([op isEqualToString:@"pair_delivery"])
+        return @{@"ok": @YES, @"token": BBBrowserPairingToken ?: @""};
     if ([op isEqualToString:@"start"]) return BBStart(request);
     if ([op isEqualToString:@"stop"]) return BBStop(request);
     if ([op isEqualToString:@"mail_result"]) return BBMailResult(request);
@@ -964,10 +971,34 @@ static NSDictionary *BBHandle(NSDictionary *request) {
     return @{@"ok": @NO, @"error": @"Unknown operation"};
 }
 
-static void BBClient(int fd) {
+static int BBOpenBrowserListener(void) {
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    if (listener < 0) return -1;
+    struct sockaddr_in address = {0};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(BBBrowserPort);
+    if (bind(listener, (struct sockaddr *)&address, sizeof(address)) || listen(listener, 4)) {
+        close(listener);
+        return -1;
+    }
+    return listener;
+}
+
+static BOOL BBPairingTokenMatches(NSString *candidate) {
+    if (![candidate isKindOfClass:NSString.class] || candidate.length != 64 ||
+        BBBrowserPairingToken.length != 64) return NO;
+    const char *left = candidate.UTF8String;
+    const char *right = BBBrowserPairingToken.UTF8String;
+    uint8_t difference = 0;
+    for (NSUInteger i = 0; i < 64; i++) difference |= (uint8_t)(left[i] ^ right[i]);
+    return difference == 0;
+}
+
+static void BBClient(int fd, BOOL browserOnly) {
     uid_t uid = (uid_t)-1;
     gid_t gid = (gid_t)-1;
-    if (getpeereid(fd, &uid, &gid) || uid != 501) return;
+    if (!browserOnly && (getpeereid(fd, &uid, &gid) || uid != 501)) return;
     struct timeval timeout = {.tv_sec = 3};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     NSMutableData *data = [NSMutableData data];
@@ -987,8 +1018,22 @@ static void BBClient(int fd) {
     if (data.length >= 4096 && ![@[@"delivery_observe", @"delivery_plan",
                                   @"delivery_verify_action", @"delivery_action_result"] containsObject:request[@"op"]])
         request = nil;
-    NSDictionary *reply = [request isKindOfClass:NSDictionary.class] ? BBHandle(request) :
-        @{@"ok": @NO, @"error": @"Invalid request"};
+    BOOL allowed = !browserOnly || [@[@"status", @"stop", @"delivery_observe",
+        @"delivery_plan", @"delivery_verify_action", @"delivery_action_result"]
+        containsObject:request[@"op"]];
+    if (browserOnly && [request[@"op"] isEqualToString:@"stop"]) {
+        allowed = allowed && [request[@"task_id"] isKindOfClass:NSString.class] &&
+            [request[@"service_id"] isKindOfClass:NSString.class] &&
+            [BBState.app isEqualToString:@"DeliveryPlan"];
+    }
+    if (browserOnly) {
+        allowed = allowed && BBPairingTokenMatches(request[@"delivery_token"]);
+        NSMutableDictionary *sanitized = [request mutableCopy];
+        [sanitized removeObjectForKey:@"delivery_token"];
+        request = sanitized;
+    }
+    NSDictionary *reply = [request isKindOfClass:NSDictionary.class] && allowed ?
+        BBHandle(request) : @{@"ok": @NO, @"error": @"Invalid request"};
     NSData *encoded = [NSJSONSerialization dataWithJSONObject:reply options:0 error:nil];
     if (encoded) {
         NSMutableData *line = [encoded mutableCopy];
@@ -1011,6 +1056,12 @@ int BBServe(void) {
         BBState.serviceID = NSUUID.UUID.UUIDString;
         BBState.phase = @"idle";
         BBState.message = @"Waiting for a task";
+        uint8_t randomBytes[32];
+        arc4random_buf(randomBytes, sizeof(randomBytes));
+        NSMutableString *token = [NSMutableString stringWithCapacity:64];
+        for (NSUInteger i = 0; i < sizeof(randomBytes); i++)
+            [token appendFormat:@"%02x", randomBytes[i]];
+        BBBrowserPairingToken = token;
         BBRestoreRecentWorkflow();
         signal(SIGPIPE, SIG_IGN);
         umask(077);
@@ -1025,11 +1076,32 @@ int BBServe(void) {
         strlcpy(address.sun_path, BBServiceSocket, sizeof(address.sun_path));
         if (bind(listener, (struct sockaddr *)&address, sizeof(address)) || chmod(BBServiceSocket, 0600) ||
             listen(listener, 4)) { close(listener); return 1; }
+        int browserListener = BBOpenBrowserListener();
         for (;;) {
-            int client = accept(listener, NULL, NULL);
-            if (client < 0) { if (errno == EINTR) continue; break; }
-            @autoreleasepool { BBClient(client); close(client); }
+            @autoreleasepool {
+                if (browserListener < 0)
+                    browserListener = BBOpenBrowserListener();
+                fd_set ready;
+                FD_ZERO(&ready);
+                FD_SET(listener, &ready);
+                if (browserListener >= 0) FD_SET(browserListener, &ready);
+                struct timeval waitTime = {.tv_sec = 1};
+                int maximum = MAX(listener, browserListener);
+                int count = select(maximum + 1, &ready, NULL, NULL, &waitTime);
+                if (count < 0) { if (errno == EINTR) continue; break; }
+                if (count && FD_ISSET(listener, &ready)) {
+                    int client = accept(listener, NULL, NULL);
+                    if (client >= 0) { BBClient(client, NO); close(client); }
+                    else if (errno != EINTR) break;
+                }
+                if (browserListener >= 0 && count && FD_ISSET(browserListener, &ready)) {
+                    int client = accept(browserListener, NULL, NULL);
+                    if (client >= 0) { BBClient(client, YES); close(client); }
+                    else if (errno != EINTR) { close(browserListener); browserListener = -1; }
+                }
+            }
         }
+        if (browserListener >= 0) close(browserListener);
         close(listener);
         unlink(BBServiceSocket);
         return 1;

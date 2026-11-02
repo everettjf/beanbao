@@ -7,25 +7,27 @@ Updated November 2, 2026. This is a developer installation procedure for a compa
 Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
-2. `dev.beanbao.agent` 0.3.72: on-device task service, model interpretation, resumable research and App Store workflows, and a bounded delivery planner with durable action attempts.
-3. `dev.beanbao.app` 0.3.47: native text, Apple voice transcription, Sessions, App Store review, a food-delivery browser with page checks and an experimental multi-step Run control, Activity, shortcut, and model settings UI.
+2. `dev.beanbao.agent` 0.3.73: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
+3. `dev.beanbao.deliverybrowser` 0.1.1: sandboxed Uber Eats browser with visible page checks and a bounded Palmino-driven multi-step Run control.
+4. `dev.beanbao.app` 0.3.48: native text, Apple voice transcription, Sessions, App Store review, Activity, shortcut, and model settings UI.
 
-The packages are under `bridge/packages/`, `agent-native/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
+The packages are under `bridge/packages/`, `agent-native/packages/`, `delivery-browser/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
 
 ```sh
 THEOS=/absolute/path/to/roothide-theos ./scripts/build_packages.sh
 python3 scripts/prepare_release_bundle.py
 ```
 
-The build script runs native policy, Python, and Swift Harness tests and audits package contents, dependencies, architectures, signatures, and launch identity. The bundle script creates a portable archive with the three `.deb` files, `SHA256SUMS`, and an English `INSTALL.md`. It contains no model keys, SSH credentials, or device data.
+The build script runs native policy, Python, and Swift Harness tests and audits package contents, dependencies, architectures, signatures, and launch identity. The bundle script creates a portable archive with the four `.deb` files, `SHA256SUMS`, and an English `INSTALL.md`. It contains no model keys, SSH credentials, or device data.
 
 With a root shell on the jailbroken phone, copy over the packages and install them in this order:
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.72_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.47_iphoneos-arm64e.deb
-dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app
+dpkg -i dev.beanbao.agent_0.3.73_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.deliverybrowser_0.1.1_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.48_iphoneos-arm64e.deb
+dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app
 ```
 
 After installing or updating Bridge, reload SpringBoard to enable its injection, then unlock the phone. Updating only Agent or App does not require a SpringBoard reload. BeanBao does not provide an installer for other apps. A public software source and one-tap installer are not available yet.
@@ -41,7 +43,7 @@ To check the connected development device, run `python3 scripts/verify_device.py
 5. Tap **Voice input**, speak an English request, then tap **Stop recording**. Check or edit the transcript before tapping **Start**. iOS 26 uses on-device English dictation where available and may download a language asset on first use. Audio is removed after transcription. Recording stops automatically after 30 seconds.
 6. For a multi-step research test, enter **Research on-device speech recognition on iOS, create a PDF with sources**. Open **Sessions** to revisit the result and **View PDF report** to inspect it. The current Claude workflow can also prepare an email draft addressed to an explicit recipient. Apple Mail must have an account configured before **Review email draft** can open its native composer; review the recipient and attachment there before sending.
 7. For an App Store handoff, enter **Find app Apple Pages**. Review the exact name, developer, product ID, bundle ID, and price before opening the official listing. Installing is a separate user action in the App Store. After that, **Check installation** verifies the matching bundle; simply closing the listing leaves the workflow pending.
-8. Tap **Browse food delivery** to open Uber Eats inside BeanBao. The browser keeps its own website session. Tap **Check** to classify the visible page through the on-device Agent. Set a delivery address on Uber Eats before tapping **Run**; the browser has an experimental goal field for bounded, model-planned search and cart steps. The connected phone completed a real three-step run through search and restaurant opening; item configuration and cart construction remain unverified. The flow pauses at sign-in and item options, and stops at checkout without placing an order. Exact checkout totals and approval are still in development.
+8. Tap **Browse food delivery** to open the separate delivery browser. It keeps its own website session and pairs with the Agent for this launch. Tap **Check** to classify the visible page. Set a delivery address on Uber Eats before tapping **Run**; the browser has an experimental goal field for bounded, model-planned search and cart steps. The connected phone reached the visible Chicken Pho options page through search, restaurant selection, and item selection. The current option-review request still ends with a generic incomplete message; choose an option manually before another run. Cart construction remains unverified. The flow pauses at sign-in and stops at checkout without placing an order. Exact checkout totals and approval are still in development.
 
 The **Quick launch** Volume Down triple-press switch is off by default. A normal press still changes volume. Triple press opens the quick overlay and asks the BeanBao app to start recording. On the tested phone, a real spoken request completed from both an app and the unlocked Home screen. From Home, the overlay started recording and **Open Settings** brought Settings to the foreground.
 
@@ -49,4 +51,4 @@ The **Quick launch** Volume Down triple-press switch is off by default. A normal
 
 Keys and settings stay on the phone. The Agent audit file records a limited set of task events and results, without request text, note content, screenshots, model replies, or keys. On the tested RootHide device, the SSH view of this file is `/rootfs/private/var/mobile/Library/Application Support/BeanBao/audit.jsonl`.
 
-BeanBao cannot silently install apps or send email without the user's action in the system interface. It cannot make payments, place orders, or delete content. The delivery review gate and Uber Eats page contract exist, but the site is not yet driven by the workflow coordinator. BeanBao runs on the phone without a Mac, iCTRL, or Frida; those tools are used for development and verification. One previous version passed a physical USB-disconnect test. The current version still needs that test, a reboot recovery test, and validation on other devices. See [device tests](build-and-test.md) and [human acceptance](human-acceptance.md).
+BeanBao cannot silently install apps or send email without the user's action in the system interface. It cannot make payments, place orders, or delete content. The delivery browser uses the workflow coordinator for bounded page actions; cart and checkout acceptance remain open. BeanBao runs on the phone without a Mac, iCTRL, or Frida; those tools are used for development and verification. One previous version passed a physical USB-disconnect test. The current version still needs that test, a reboot recovery test, and validation on other devices. See [device tests](build-and-test.md) and [human acceptance](human-acceptance.md).

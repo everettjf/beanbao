@@ -90,14 +90,24 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
                          {"result": {"ok": False, "error": "Search control not unique"},
                           "clicks": 0})
 
-    def test_merchant_link_dedupes_same_destination_beyond_viewport(self):
+    def test_merchant_link_dedupes_visible_destination_and_rejects_offscreen(self):
         payload = {"url": "https://www.ubereats.com/search?q=rice",
                    "text": "Yoshinoya", "action": "open_merchant", "target": "Yoshinoya"}
         link = {"text": "Yoshinoya", "tagName": "A",
-                "href": "https://www.ubereats.com/store/yoshinoya/id", "top": 1200}
+                "href": "https://www.ubereats.com/store/yoshinoya/id", "top": 400}
         result = self.run_fixture(payload, [link, link])
         self.assertEqual(result["result"], {"ok": True})
         self.assertEqual(result["clicks"], 1)
+        search_button = {"text": "Yoshinoya", "tagName": "BUTTON", "top": 120}
+        self.assertEqual(self.run_fixture(payload, [search_button, link]),
+                         {"result": {"ok": True}, "clicks": 1})
+        tracked = dict(link, href="https://www.ubereats.com/store/yoshinoya/id?tracking=second")
+        self.assertEqual(self.run_fixture(payload, [link, tracked])["result"],
+                         {"ok": True})
+        hidden = dict(link, top=1200)
+        self.assertEqual(self.run_fixture(payload, [hidden, hidden]),
+                         {"result": {"ok": False, "error": "Action target not unique"},
+                          "clicks": 0})
 
     def test_item_link_dedupes_same_destination_but_not_distinct_items(self):
         payload = {"url": "https://www.ubereats.com/store/example/id",

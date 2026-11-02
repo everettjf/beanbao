@@ -15,7 +15,6 @@
 #import "ActivityStore.h"
 #import "ActivityViewController.h"
 #import "WorkflowSessionsViewController.h"
-#import "DeliveryBrowserViewController.h"
 #import "VoiceIPC.h"
 
 @interface BBLocalDictation : NSObject
@@ -465,7 +464,21 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
 
 - (void)deliveryBrowseTapped {
     [self.taskField resignFirstResponder];
-    [self.navigationController pushViewController:[BBDeliveryBrowserViewController new] animated:YES];
+    NSDictionary *pairing = BBAgentRequest(@{@"op": @"pair_delivery"});
+    NSString *token = pairing[@"token"];
+    if (![pairing[@"ok"] boolValue] || ![token isKindOfClass:NSString.class] ||
+        token.length != 64) {
+        self.detailLabel.text = @"Could not connect to the delivery service.";
+        return;
+    }
+    NSURLComponents *parts = [NSURLComponents new];
+    parts.scheme = @"beanbaodelivery";
+    parts.host = @"open";
+    parts.queryItems = @[[NSURLQueryItem queryItemWithName:@"token" value:token]];
+    [UIApplication.sharedApplication openURL:parts.URL options:@{}
+                              completionHandler:^(BOOL opened) {
+        if (!opened) self.detailLabel.text = @"Install BeanBao Delivery Browser to browse food delivery.";
+    }];
 }
 
 - (void)showReply:(NSDictionary *)reply {

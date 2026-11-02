@@ -30,7 +30,7 @@ public struct BeanBaoDeliveryProposal: Codable, Equatable, Sendable {
 public enum BeanBaoDeliveryObservationContract {
     public static func identifier(_ observation: BeanBaoUberEatsObservation,
                                   now: Date = Date()) throws -> String {
-        guard observation.bundleID == "dev.beanbao.app",
+        guard observation.bundleID == "dev.beanbao.deliverybrowser",
               observation.url.scheme?.lowercased() == "https",
               observation.url.host?.lowercased() == "www.ubereats.com",
               (1...20_000).contains(observation.visibleText.count) else {
@@ -222,7 +222,7 @@ public enum BeanBaoDeliveryPlanner {
             throw BeanBaoWorkflowError.outcomeUnconfirmed("delivery step")
         }
         let now = Date()
-        guard after.bundleID == "dev.beanbao.app", after.observedAt <= now,
+        guard after.bundleID == "dev.beanbao.deliverybrowser", after.observedAt <= now,
               now.timeIntervalSince(after.observedAt) <= 15 else {
             throw BeanBaoDeliveryPlanError.staleObservation
         }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the three RootHide packages form the intended BeanBao release."""
+"""Verify the four RootHide packages form the intended BeanBao release."""
 
 import argparse
 import gzip
@@ -10,6 +10,7 @@ import re
 import struct
 import subprocess
 import tarfile
+import tempfile
 from pathlib import Path
 
 
@@ -32,12 +33,15 @@ ICON_SIZES = {
 }
 APP_BASE = "Applications/BeanBao.app/"
 APP_FILES = {APP_BASE + name for name in ("BeanBao", "Info.plist", *ICON_SIZES)}
+BROWSER_BASE = "Applications/BeanBaoDelivery.app/"
+BROWSER_FILES = {BROWSER_BASE + name for name in ("BeanBaoDelivery", "Info.plist", *ICON_SIZES)}
 MACHO_FILES = {
     "Library/MobileSubstrate/DynamicLibraries/BeanBaoBridge.dylib": 6,
     "usr/bin/beanbaoctl": 2,
     "usr/bin/beanbaod": 2,
     "usr/bin/beanbaoagentctl": 2,
     APP_BASE + "BeanBao": 2,
+    BROWSER_BASE + "BeanBaoDelivery": 2,
 }
 
 
@@ -103,7 +107,10 @@ def audit_package(package: Path, source_control: Path, expected_name: str,
 
 
 def minimum_dependency(metadata: dict[str, str], name: str) -> tuple[int, ...]:
-    match = re.fullmatch(rf"{re.escape(name)} \(>= (\d+(?:\.\d+)*)\)", metadata.get("Depends", ""))
+    dependencies = [item.strip() for item in metadata.get("Depends", "").split(",")]
+    matches = [re.fullmatch(rf"{re.escape(name)} \(>= (\d+(?:\.\d+)*)\)", item)
+               for item in dependencies]
+    match = next((item for item in matches if item), None)
     if not match:
         fail(f"{metadata.get('Package')}: unexpected dependency")
     return tuple(map(int, match.group(1).split(".")))
@@ -162,18 +169,23 @@ def main() -> None:
     parser.add_argument("bridge", type=Path)
     parser.add_argument("agent", type=Path)
     parser.add_argument("app", type=Path)
+    parser.add_argument("browser", type=Path)
     args = parser.parse_args()
     bridge, bridge_files = audit_package(args.bridge, ROOT / "bridge/control", "dev.beanbao.bridge", None)
     agent, agent_files = audit_package(args.agent, ROOT / "agent-native/control",
                                        "dev.beanbao.agent", AGENT_FILES)
     app, app_files = audit_package(args.app, ROOT / "app/control",
                                    "dev.beanbao.app", APP_FILES)
+    browser, browser_files = audit_package(args.browser, ROOT / "delivery-browser/control",
+        "dev.beanbao.deliverybrowser", BROWSER_FILES)
     for path in ("usr/bin/beanbaod", "usr/bin/beanbaoagentctl"):
         if not agent_files[path][0].mode & 0o111:
             fail(f"{path}: Agent executable bit is missing")
     if not app_files[APP_BASE + "BeanBao"][0].mode & 0o111:
         fail("BeanBao app executable bit is missing")
-    binaries = {**bridge_files, **agent_files, **app_files}
+    if not browser_files[BROWSER_BASE + "BeanBaoDelivery"][0].mode & 0o111:
+        fail("Delivery browser executable bit is missing")
+    binaries = {**bridge_files, **agent_files, **app_files, **browser_files}
     for path, file_type in MACHO_FILES.items():
         if path not in binaries:
             fail(f"Missing Mach-O file {path}")
@@ -182,6 +194,9 @@ def main() -> None:
         fail("Agent does not require this Bridge version")
     if version(agent) < minimum_dependency(app, "dev.beanbao.agent"):
         fail("App requires a newer Agent than this bundle provides")
+    if version(agent) < minimum_dependency(browser, "dev.beanbao.agent") or \
+            version(browser) < minimum_dependency(app, "dev.beanbao.deliverybrowser"):
+        fail("Delivery browser dependencies do not match this bundle")
     launch = plistlib.loads(agent_files["Library/LaunchDaemons/dev.beanbao.agent.plist"][1])
     if launch.get("Label") != "dev.beanbao.agent" or launch.get("UserName") != "mobile" or \
             launch.get("GroupName") != "mobile" or launch.get("RunAtLoad") is not True or \
@@ -197,7 +212,21 @@ def main() -> None:
         fail("App Info.plist does not match its package or icon files")
     for name, size in ICON_SIZES.items():
         check_icon(name, app_files[APP_BASE + name][1], size)
-    print("PASS: release manifests, dependencies, mobile service, icons, arm64e Mach-O/signature structures, and no maintainer scripts")
+        check_icon(name, browser_files[BROWSER_BASE + name][1], size)
+    browser_info = plistlib.loads(browser_files[BROWSER_BASE + "Info.plist"][1])
+    if browser_info.get("CFBundleIdentifier") != "dev.beanbao.deliverybrowser" or \
+            browser_info.get("CFBundleExecutable") != "BeanBaoDelivery" or \
+            browser_info.get("CFBundleShortVersionString") != browser["Version"] or \
+            browser_info.get("CFBundleURLTypes", [{}])[0].get("CFBundleURLSchemes") != ["beanbaodelivery"]:
+        fail("Delivery browser identity or URL scheme is invalid")
+    with tempfile.TemporaryDirectory() as directory:
+        executable = Path(directory) / "BeanBaoDelivery"
+        executable.write_bytes(browser_files[BROWSER_BASE + "BeanBaoDelivery"][1])
+        entitlements = subprocess.run(["ldid", "-e", str(executable)], capture_output=True, check=True).stdout
+        signed = plistlib.loads(entitlements)
+        if signed != {"application-identifier": "dev.beanbao.deliverybrowser"}:
+            fail("Delivery browser has unexpected signing privileges")
+    print("PASS: four release packages, dependencies, service, sandboxed browser, icons, Mach-O/signatures, and no maintainer scripts")
 
 
 if __name__ == "__main__":

@@ -355,9 +355,12 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         "if(p.action==='open_checkout')wanted='Go to checkout';"
         "const matches=new Map();"
         "for(const e of document.querySelectorAll('a,button,[role=button],label,span,h1,h2,h3,p,div')){"
-        "if(!(p.action==='open_item'?visible(e):rendered(e)))continue;const t=clean(e.textContent);"
+        "if(!visible(e))continue;const t=clean(e.textContent);"
         "if(wanted==='ADD_TO_CART'?!/^Add \\d+ to order$/.test(t):t!==wanted)continue;"
-        "const control=e.closest('a,button,[role=button],label');if(control&&(p.action==='open_item'?visible(control):rendered(control))){const key=['open_merchant','open_item'].includes(p.action)&&control.tagName==='A'?control.href:control;matches.set(key,control)}}"
+        "const control=e.closest('a,button,[role=button],label');if(!control||!visible(control))continue;"
+        "if(p.action==='open_merchant'&&(control.tagName!=='A'||!control.href||!new URL(control.href,location.href).pathname.startsWith('/store/')))continue;"
+        "const key=p.action==='open_merchant'&&control.tagName==='A'?new URL(control.href,location.href).pathname:"
+        "p.action==='open_item'&&control.tagName==='A'?control.href:control;matches.set(key,control)}"
         "if(matches.size!==1)return {ok:false,error:'Action target not unique'};"
         "const control=[...matches.values()][0];"
         "if(control.tagName==='A'){const link=new URL(control.href,location.href);if(link.protocol!=='https:'||!['www.ubereats.com','ubereats.com'].includes(link.host))return {ok:false,error:'Link outside Uber Eats'};}"
@@ -394,7 +397,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         if ([url.host.lowercaseString isEqualToString:@"auth.uber.com"]) {
             NSDictionary *login = @{@"url": url.absoluteString ?: @"",
                                     @"visible_text": @"",
-                                    @"bundle_id": @"dev.beanbao.app",
+                                    @"bundle_id": @"dev.beanbao.deliverybrowser",
                                     @"observed_at": @(NSDate.date.timeIntervalSince1970)};
             [self finishVerifiedDeliverySnapshot:login login:YES];
             return;
@@ -556,7 +559,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         self.captureFailure = nil;
         completion(@{@"url": expectedURL,
                      @"visible_text": text,
-                     @"bundle_id": @"dev.beanbao.app",
+                     @"bundle_id": @"dev.beanbao.deliverybrowser",
                      @"observed_at": @(NSDate.date.timeIntervalSince1970)});
     }];
 }

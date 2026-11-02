@@ -26,7 +26,7 @@ private struct DeliveryScriptModel: PHKModelClient {
 
 final class DeliveryPlannerTests: XCTestCase {
     private func observation(_ url: String, _ text: String) -> BeanBaoUberEatsObservation {
-        .init(url: URL(string: url)!, visibleText: text, bundleID: "dev.beanbao.app",
+        .init(url: URL(string: url)!, visibleText: text, bundleID: "dev.beanbao.deliverybrowser",
               observedAt: Date())
     }
 
@@ -136,7 +136,7 @@ final class DeliveryPlannerTests: XCTestCase {
         XCTAssertThrowsError(try BeanBaoDeliveryObservationContract.identifier(login))
         let old = BeanBaoUberEatsObservation(
             url: URL(string: "https://www.ubereats.com/feed")!, visibleText: "Search Uber Eats",
-            bundleID: "dev.beanbao.app", observedAt: Date(timeIntervalSinceNow: -30))
+            bundleID: "dev.beanbao.deliverybrowser", observedAt: Date(timeIntervalSinceNow: -30))
         XCTAssertThrowsError(try BeanBaoDeliveryObservationContract.identifier(old))
     }
 
