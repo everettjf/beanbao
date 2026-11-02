@@ -12,6 +12,7 @@
 #import <mach-o/dyld.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <dlfcn.h>
 #import "BBAudit.h"
 #import "ModelConfig.h"
 
@@ -162,6 +163,13 @@ static NSDictionary *BBReadAppCandidate(NSString *identity) {
 
 static BOOL BBInstalledBundleVerified(NSString *bundleID) {
     Class cls = objc_getClass("LSApplicationProxy");
+    if (!cls) {
+        // The Agent is a Foundation-only launchd process. Load the framework
+        // that owns LaunchServices proxies before querying installed apps.
+        dlopen("/System/Library/Frameworks/MobileCoreServices.framework/MobileCoreServices",
+               RTLD_LAZY | RTLD_LOCAL);
+        cls = objc_getClass("LSApplicationProxy");
+    }
     SEL proxySelector = @selector(applicationProxyForIdentifier:);
     if (!cls || ![cls respondsToSelector:proxySelector]) return NO;
     @try {
