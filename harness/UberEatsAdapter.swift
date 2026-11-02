@@ -3,6 +3,7 @@ import CryptoKit
 
 public enum BeanBaoUberEatsPage: Equatable, Sendable {
     case feed
+    case searchSuggestions
     case search
     case merchant
     case itemConfiguration
@@ -48,6 +49,7 @@ public enum BeanBaoUberEatsAdapter {
         guard host == "www.ubereats.com" else { return .unsupported }
         let path = observation.url.path
         if path == "/feed" || path == "/" { return .feed }
+        if path == "/search-suggestions" { return .searchSuggestions }
         if path == "/search" { return .search }
         if path == "/checkout" || path == "/checkout/" { return .checkout }
         guard path.hasPrefix("/store/") else { return .unsupported }
@@ -56,7 +58,8 @@ public enum BeanBaoUberEatsAdapter {
         if text.range(of: "Add \\d+ to order", options: .regularExpression) != nil {
             return .itemConfiguration
         }
-        return text.contains("Search Uber Eats") ? .merchant : .unsupported
+        return text.contains("Search Uber Eats") || text.contains("Featured items") ?
+            .merchant : .unsupported
     }
 
     public static func checkoutEvidence(_ observation: BeanBaoUberEatsObservation,
@@ -135,6 +138,7 @@ public func BBUberEatsClassifySnapshot(_ pointer: UnsafePointer<CChar>?) -> Unsa
     let page: String
     switch BeanBaoUberEatsAdapter.page(observation) {
     case .feed: page = "feed"
+    case .searchSuggestions: page = "search_suggestions"
     case .search: page = "search"
     case .merchant: page = "merchant"
     case .itemConfiguration: page = "item_configuration"

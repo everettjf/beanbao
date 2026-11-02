@@ -35,7 +35,9 @@ final class UberEatsAdapterTests: XCTestCase {
 
     func testPublicMenuCartAndLoginTransitionAreDistinct() {
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/feed", "Search Uber Eats")), .feed)
+        XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/search-suggestions", "Search Uber Eats")), .searchSuggestions)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/example/id", "Search Uber Eats")), .merchant)
+        XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/rice-junky/id", "Search Featured items CC Chicken Bowl")), .merchant)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/example/id?mod=quickView", "Add 1 to order")), .itemConfiguration)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/example/id", "Go to checkout")), .cart)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://auth.uber.com/v2/?next_url=checkout", "Enter phone number or email")), .loginRequired)

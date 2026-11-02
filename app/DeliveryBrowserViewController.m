@@ -213,6 +213,12 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
             [self finishDeliveryRun:@"The current page cannot be planned safely."];
             return;
         }
+        NSString *pageText = snapshot[@"visible_text"];
+        if ([pageText containsString:@"Enter delivery address"] &&
+            ![pageText containsString:@"Search Uber Eats"]) {
+            [self finishDeliveryRun:@"Set a delivery address on Uber Eats, then tap Run again."];
+            return;
+        }
         NSMutableDictionary *request = [@{@"op": @"delivery_plan", @"task": self.deliveryGoal,
                                          @"snapshot": snapshot} mutableCopy];
         if (self.deliveryTaskID.length) request[@"workflow_id"] = self.deliveryTaskID;
@@ -323,12 +329,14 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         "if(location.href!==p.url || !document.body || document.body.innerText.slice(0,20000)!==p.text) return {ok:false,error:'Page changed'};"
         "if(document.querySelector('input[type=password],input[type=email],input[type=tel],input[autocomplete=one-time-code]')) return {ok:false,error:'Sign-in page'};"
         "const clean=s=>(s||'').replace(/\\s+/g,' ').trim();"
-        "const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0};"
+        "const rendered=e=>{const r=e.getBoundingClientRect();const s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)!==0};"
+        "const visible=e=>{const r=e.getBoundingClientRect();return rendered(e)&&r.top>=0&&r.left>=0&&r.top<window.innerHeight&&r.left<window.innerWidth};"
+        "if(p.action==='open_search'){const matches=new Set();for(const e of document.querySelectorAll('a,button,[role=button],label,span,div')){if(!visible(e)||clean(e.textContent)!=='Search Uber Eats')continue;const c=e.closest('a,button,[role=button],label')||e;if(visible(c))matches.add(c)}if(matches.size!==1)return {ok:false,error:'Search control not unique'};[...matches][0].click();return {ok:true};}"
         "if(p.action==='search'){"
-        "const inputs=[...document.querySelectorAll('input')].filter(e=>visible(e)&&['text','search'].includes(e.type)&&/search/i.test((e.placeholder||'')+' '+(e.getAttribute('aria-label')||'')));"
+        "const inputs=[...document.querySelectorAll('input')].filter(e=>['text','search'].includes(e.type)&&visible(e)&&clean(e.placeholder)==='Search Uber Eats'&&e.getAttribute('aria-hidden')!=='true'&&!e.disabled&&(()=>{const r=e.getBoundingClientRect();const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return hit===e||e.contains(hit)})());"
         "if(inputs.length!==1)return {ok:false,error:'Search field not unique'};"
         "const e=inputs[0];let formURL=null;"
-        "if(e.form){formURL=new URL(e.form.action||location.href,location.href);if(formURL.host!==location.host||!['/','/feed','/search'].includes(formURL.pathname))return {ok:false,error:'Search form changed'};}"
+        "if(e.form){formURL=new URL(e.form.action||location.href,location.href);if(formURL.host!==location.host||!['/','/feed','/search-suggestions','/search'].includes(formURL.pathname))return {ok:false,error:'Search form changed'};}"
         "const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;setter.call(e,p.target);"
         "e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));"
         "if(e.form)e.form.requestSubmit();else e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));"
@@ -337,20 +345,28 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         "let wanted=p.target;"
         "if(p.action==='add_to_cart')wanted='ADD_TO_CART';"
         "if(p.action==='open_checkout')wanted='Go to checkout';"
-        "const matches=new Set();"
+        "const matches=new Map();"
         "for(const e of document.querySelectorAll('a,button,[role=button],label,span,h1,h2,h3,p,div')){"
-        "if(!visible(e))continue;const t=clean(e.textContent);"
+        "if(!rendered(e))continue;const t=clean(e.textContent);"
         "if(wanted==='ADD_TO_CART'?!/^Add \\d+ to order$/.test(t):t!==wanted)continue;"
-        "const control=e.closest('a,button,[role=button],label');if(control&&visible(control))matches.add(control);}"
+        "const control=e.closest('a,button,[role=button],label');if(control&&rendered(control)){const key=p.action==='open_merchant'&&control.tagName==='A'?control.href:control;matches.set(key,control)}}"
         "if(matches.size!==1)return {ok:false,error:'Action target not unique'};"
-        "const control=[...matches][0];"
+        "const control=[...matches.values()][0];"
         "if(control.tagName==='A'){const link=new URL(control.href,location.href);if(link.protocol!=='https:'||!['www.ubereats.com','ubereats.com'].includes(link.host))return {ok:false,error:'Link outside Uber Eats'};}"
         "control.click();return {ok:true};})()", literal];
     self.statusLabel.text = [NSString stringWithFormat:@"Running %@…", action[@"action"]];
     [self.webView evaluateJavaScript:script completionHandler:^(id result, NSError *error) {
         if (!self.runningDelivery) return;
         if (error || ![result isKindOfClass:NSDictionary.class] || ![result[@"ok"] boolValue]) {
-            [self markDeliveryStepUncertain:@"The step may be incomplete. Check the page before retrying."];
+            NSString *reason = [result isKindOfClass:NSDictionary.class] ? result[@"error"] : nil;
+            NSSet *known = [NSSet setWithArray:@[@"Page changed", @"Sign-in page",
+                @"Search control not unique",
+                @"Search field not unique", @"Search form changed", @"Action target not unique",
+                @"Link outside Uber Eats", @"Unsupported action"]];
+            NSString *message = [reason isKindOfClass:NSString.class] && [known containsObject:reason] ?
+                [NSString stringWithFormat:@"Step paused: %@. Check the page before retrying.", reason] :
+                @"The step may be incomplete. Check the page before retrying.";
+            [self markDeliveryStepUncertain:message];
             return;
         }
         [self verifyDeliveryTransitionFrom:snapshot attempt:0];
@@ -436,8 +452,16 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                     return;
                 }
                 NSString *page = reply[@"page"];
+                if ([page isEqualToString:@"unsupported"] &&
+                    [NSURL URLWithString:checkedURL].host.lowercaseString.length) {
+                    NSURL *siteURL = [NSURL URLWithString:checkedURL];
+                    self.statusLabel.text = [NSString stringWithFormat:
+                        @"Unsupported Uber Eats page: %@", siteURL.path ?: @"/"];
+                    return;
+                }
                 NSDictionary<NSString *, NSString *> *messages = @{
                     @"feed": @"Uber Eats home. Search for a restaurant or item.",
+                    @"search_suggestions": @"Search input ready. Enter a restaurant or item.",
                     @"search": @"Search results. Choose a restaurant.",
                     @"merchant": @"Restaurant menu. Choose an item.",
                     @"item_configuration": @"Item options are open. Review them before adding.",

@@ -25,12 +25,17 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         script = browser_action_script(payload)
         fixture = f"""
         const controls = {json.dumps(controls)}.map(value => ({{
-          textContent: value, tagName: 'BUTTON', clicked: false,
-          getBoundingClientRect() {{ return {{ width: 80, height: 30 }}; }},
+          textContent: typeof value === 'string' ? value : value.text,
+          tagName: typeof value === 'string' ? 'BUTTON' : value.tagName,
+          href: typeof value === 'string' ? undefined : value.href,
+          clicked: false,
+          getBoundingClientRect() {{ return {{ width: 80, height: 30, top: typeof value === 'string' ? 200 : value.top, left: 20 }}; }},
           closest() {{ return this; }},
           click() {{ this.clicked = true; }}
         }}));
         globalThis.location = {{ href: {json.dumps(payload['url'])}, host: 'www.ubereats.com' }};
+        globalThis.window = {{ innerWidth: 414, innerHeight: 896 }};
+        globalThis.getComputedStyle = () => ({{ display: 'block', visibility: 'visible', opacity: '1' }});
         globalThis.document = {{
           body: {{ innerText: {json.dumps(page_text if page_text is not None else payload['text'])} }},
           querySelector() {{ return null; }},
@@ -65,8 +70,26 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         self.assertEqual(self.run_fixture(payload, ["Add 1 to order", "Place order"])["clicks"], 1)
         self.assertEqual(self.run_fixture(payload, ["Place order"])["clicks"], 0)
 
-    def test_search_only_submits_the_visible_search_form(self):
+    def test_open_search_clicks_one_visible_control(self):
         payload = {"url": "https://www.ubereats.com/feed",
+                   "text": "Search Uber Eats", "action": "open_search", "target": ""}
+        self.assertEqual(self.run_fixture(payload, ["Search Uber Eats"]),
+                         {"result": {"ok": True}, "clicks": 1})
+        self.assertEqual(self.run_fixture(payload, ["Search Uber Eats", "Search Uber Eats"]),
+                         {"result": {"ok": False, "error": "Search control not unique"},
+                          "clicks": 0})
+
+    def test_merchant_link_dedupes_same_destination_beyond_viewport(self):
+        payload = {"url": "https://www.ubereats.com/search?q=rice",
+                   "text": "Yoshinoya", "action": "open_merchant", "target": "Yoshinoya"}
+        link = {"text": "Yoshinoya", "tagName": "A",
+                "href": "https://www.ubereats.com/store/yoshinoya/id", "top": 1200}
+        result = self.run_fixture(payload, [link, link])
+        self.assertEqual(result["result"], {"ok": True})
+        self.assertEqual(result["clicks"], 1)
+
+    def test_search_only_submits_the_visible_search_form(self):
+        payload = {"url": "https://www.ubereats.com/search-suggestions",
                    "text": "Search Uber Eats", "action": "search", "target": "rice bowl"}
         script = browser_action_script(payload)
         fixture = f"""
@@ -77,16 +100,29 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         const input = new HTMLInputElement();
         input.type = 'search'; input.placeholder = 'Search Uber Eats';
         input.getAttribute = () => '';
-        input.getBoundingClientRect = () => ({{width: 120, height: 35}});
+        input.contains = value => value === input;
+        input.getBoundingClientRect = () => ({{width: 120, height: 35, top: 250, left: 20}});
         input.dispatchEvent = () => true;
         input.form = {{ action: 'https://www.ubereats.com/search',
                         requestSubmit() {{ this.submissions = (this.submissions || 0) + 1; }} }};
+        const offscreen = new HTMLInputElement();
+        offscreen.type = 'search'; offscreen.placeholder = 'Search Uber Eats';
+        offscreen.getAttribute = () => '';
+        offscreen.getBoundingClientRect = () => ({{width: 120, height: 35, top: 1200, left: 20}});
+        const covered = new HTMLInputElement();
+        covered.type = 'search'; covered.placeholder = 'Search Uber Eats';
+        covered.getAttribute = () => '';
+        covered.getBoundingClientRect = () => ({{width: 120, height: 35, top: 300, left: 20}});
+        covered.contains = () => false;
         globalThis.Event = class {{ constructor() {{}} }};
         globalThis.KeyboardEvent = class {{ constructor() {{}} }};
+        globalThis.window = {{ innerWidth: 414, innerHeight: 896 }};
+        globalThis.getComputedStyle = () => ({{ display: 'block', visibility: 'visible', opacity: '1' }});
         globalThis.document = {{
           body: {{innerText: 'Search Uber Eats'}},
+          elementFromPoint() {{return input;}},
           querySelector() {{return null;}},
-          querySelectorAll() {{return [input];}}
+          querySelectorAll() {{return [input, offscreen, covered];}}
         }};
         const result = {script};
         process.stdout.write(JSON.stringify({{result, entered: input.entered,

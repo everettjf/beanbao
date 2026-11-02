@@ -44,6 +44,8 @@ final class DeliveryPlannerTests: XCTestCase {
         let (journal, file) = try store()
         let pages: [(String, String, String, String)] = [
             ("https://www.ubereats.com/feed", "Search Uber Eats private-page-marker",
+             "open_search", ""),
+            ("https://www.ubereats.com/search-suggestions", "Search Uber Eats private-page-marker",
              "search", "rice bowl"),
             ("https://www.ubereats.com/search?q=rice", "Example Kitchen private-page-marker",
              "open_merchant", "Example Kitchen"),
@@ -111,6 +113,22 @@ final class DeliveryPlannerTests: XCTestCase {
         let saved = await journal.snapshot()
         XCTAssertTrue(saved.operations.isEmpty)
         XCTAssertEqual(saved.phase, .failed)
+    }
+
+    func testFeedMustOpenSearchBeforeSubmittingAQuery() throws {
+        let feed = observation("https://www.ubereats.com/feed", "Search Uber Eats")
+        let feedID = try BeanBaoDeliveryObservationContract.identifier(feed)
+        XCTAssertTrue(try BeanBaoDeliveryObservationContract.allowed(
+            .init(action: "open_search", target: "", observationID: feedID),
+            observation: feed))
+        XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(
+            .init(action: "search", target: "rice bowl", observationID: feedID),
+            observation: feed))
+        let input = observation("https://www.ubereats.com/search-suggestions", "Search Uber Eats")
+        let inputID = try BeanBaoDeliveryObservationContract.identifier(input)
+        XCTAssertTrue(try BeanBaoDeliveryObservationContract.allowed(
+            .init(action: "search", target: "rice bowl", observationID: inputID),
+            observation: input))
     }
 
     func testLoginAndStalePagesCannotBePlanned() throws {

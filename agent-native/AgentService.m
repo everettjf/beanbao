@@ -442,7 +442,7 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
             NSString *action = candidate[@"action"];
             NSString *target = candidate[@"target"];
             NSString *identity = candidate[@"observationID"];
-            if ([@[@"search", @"open_merchant", @"open_item", @"choose_option",
+            if ([@[@"open_search", @"search", @"open_merchant", @"open_item", @"choose_option",
                    @"add_to_cart", @"open_checkout", @"review_checkout"] containsObject:action] &&
                 [target isKindOfClass:NSString.class] && target.length <= 120 &&
                 [identity isKindOfClass:NSString.class] && identity.length == 64)
@@ -773,7 +773,7 @@ static NSDictionary *BBDeliveryPlan(NSDictionary *request) {
     NSDictionary *observed = BBDeliveryObserve(@{@"snapshot": snapshot});
     NSString *page = observed[@"page"];
     if (![observed[@"ok"] boolValue] ||
-        ![@[@"feed", @"search", @"merchant", @"item_configuration", @"cart", @"checkout"] containsObject:page])
+        ![@[@"feed", @"search_suggestions", @"search", @"merchant", @"item_configuration", @"cart", @"checkout"] containsObject:page])
         return @{@"ok": @NO, @"error": @"Check a current Uber Eats page before planning"};
     NSData *snapshotData = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
     if (!snapshotData || snapshotData.length >= 65536)
