@@ -7,7 +7,10 @@
 NSDictionary *BBAgentRequest(NSDictionary *request) {
     if (![NSJSONSerialization isValidJSONObject:request]) return @{@"ok": @NO, @"error": @"Invalid request format"};
     NSData *json = [NSJSONSerialization dataWithJSONObject:request options:0 error:nil];
-    NSUInteger requestLimit = [request[@"op"] isEqualToString:@"delivery_observe"] ? 65536 : 4096;
+    NSUInteger requestLimit = [@[@"delivery_observe", @"delivery_plan",
+                                 @"delivery_verify_action", @"delivery_action_result"]
+        containsObject:request[@"op"]] ?
+        65536 : 4096;
     if (json.length >= requestLimit) return @{@"ok": @NO, @"error": @"Request is too long"};
     // RootHide's SSH shell has a different /var/mobile view from launchd and
     // SpringBoard. The app can use the first path; its CLI can use /rootfs.

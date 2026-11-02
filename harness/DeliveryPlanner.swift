@@ -131,6 +131,14 @@ public enum BeanBaoDeliveryPlanner {
         let key = "delivery-plan-v1-\(id)"
         let record = await store.snapshot()
         guard record.request == request else { throw BeanBaoWorkflowError.invalidRecord }
+        if record.operations.values.contains(where: {
+            $0.tool == "delivery_execute" && $0.state != .completed
+        }) {
+            throw BeanBaoWorkflowError.outcomeUnconfirmed("delivery step")
+        }
+        if record.operations["delivery-execute-v1-\(id)"] != nil {
+            throw BeanBaoWorkflowError.outcomeUnconfirmed("delivery step")
+        }
         if let saved = record.operations[key], saved.state == .completed,
            let result = saved.result, let proposal = Self.proposal(from: result) {
             return proposal
@@ -188,4 +196,231 @@ public enum BeanBaoDeliveryPlanner {
               case .string(let id)? = fields["observation_id"] else { return nil }
         return .init(action: action, target: target, observationID: id)
     }
+
+    public static func begin(_ proposal: BeanBaoDeliveryProposal,
+                             store: BeanBaoWorkflowStore) async throws {
+        let saved = await store.snapshot()
+        let planKey = "delivery-plan-v1-\(proposal.observationID)"
+        guard let planned = saved.operations[planKey], planned.state == .completed,
+              let result = planned.result, Self.proposal(from: result) == proposal,
+              proposal.action != "review_checkout" else { throw BeanBaoWorkflowError.invalidRecord }
+        let key = "delivery-execute-v1-\(proposal.observationID)"
+        switch try await store.claim(key: key, tool: "delivery_execute", effect: .localMutation) {
+        case .execute: return
+        case .cached: throw BeanBaoWorkflowError.outcomeUnconfirmed("delivery step")
+        }
+    }
+
+    public static func finish(_ proposal: BeanBaoDeliveryProposal,
+                              after: BeanBaoUberEatsObservation,
+                              store: BeanBaoWorkflowStore) async throws -> BeanBaoUberEatsPage {
+        let key = "delivery-execute-v1-\(proposal.observationID)"
+        let saved = await store.snapshot()
+        guard saved.operations[key]?.state == .running else {
+            throw BeanBaoWorkflowError.outcomeUnconfirmed("delivery step")
+        }
+        let now = Date()
+        guard after.bundleID == "dev.beanbao.app", after.observedAt <= now,
+              now.timeIntervalSince(after.observedAt) <= 15 else {
+            throw BeanBaoDeliveryPlanError.staleObservation
+        }
+        let page = BeanBaoUberEatsAdapter.page(after)
+        let expected: Bool
+        switch proposal.action {
+        case "search": expected = page == .search
+        case "open_merchant": expected = page == .merchant
+        case "open_item": expected = page == .itemConfiguration
+        case "add_to_cart": expected = page == .cart
+        case "open_checkout": expected = page == .checkout || page == .loginRequired
+        default: expected = false
+        }
+        guard expected else { throw BeanBaoDeliveryPlanError.invalidObservation }
+        if page != .loginRequired {
+            guard try BeanBaoDeliveryObservationContract.identifier(after) != proposal.observationID else {
+                throw BeanBaoDeliveryPlanError.invalidObservation
+            }
+        }
+        try await store.finish(key: key, result: .object(["transition_verified": .bool(true),
+            "page": .string(String(describing: page))]))
+        try await store.setPhase(.waitingForUser)
+        return page
+    }
 }
+
+/// A second observation is mandatory immediately before a browser action.
+/// The Agent only returns a Boolean receipt; the page body stays in memory.
+@_cdecl("BBUberEatsValidateAction")
+public func BBUberEatsValidateAction(_ snapshotPointer: UnsafePointer<CChar>?,
+                                     _ actionPointer: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
+    guard let snapshotPointer, let actionPointer,
+          strlen(snapshotPointer) < 65_536, strlen(actionPointer) < 1024,
+          let fields = try? JSONSerialization.jsonObject(with: Data(String(cString: snapshotPointer).utf8)) as? [String: Any],
+          let urlString = fields["url"] as? String, let url = URL(string: urlString),
+          let text = fields["visible_text"] as? String,
+          let bundle = fields["bundle_id"] as? String,
+          let timestamp = fields["observed_at"] as? NSNumber,
+          let proposal = try? JSONDecoder().decode(BeanBaoDeliveryProposal.self,
+                from: Data(String(cString: actionPointer).utf8)) else {
+        return "{\"ok\":false,\"valid\":false}".withCString { strdup($0) }
+    }
+    let observation = BeanBaoUberEatsObservation(
+        url: url, visibleText: text, bundleID: bundle,
+        observedAt: Date(timeIntervalSince1970: timestamp.doubleValue))
+    let valid = (try? BeanBaoDeliveryObservationContract.allowed(
+        proposal, observation: observation)) == true
+    return (valid ? "{\"ok\":true,\"valid\":true}" :
+                    "{\"ok\":true,\"valid\":false}").withCString { strdup($0) }
+}
+
+#if os(iOS)
+@_silgen_name("BBWorkflowClaudeConfigJSON")
+private func BBDeliveryClaudeConfigJSON() -> UnsafeMutablePointer<CChar>?
+@_silgen_name("BBBridgeFreeJSON")
+private func BBFreeDeliveryConfig(_ pointer: UnsafeMutablePointer<CChar>)
+
+private final class DeliveryPlanOutcome: @unchecked Sendable {
+    private let lock = NSLock()
+    private var proposal: BeanBaoDeliveryProposal?
+    func set(_ value: BeanBaoDeliveryProposal) {
+        lock.lock(); proposal = value; lock.unlock()
+    }
+    func get() -> BeanBaoDeliveryProposal? {
+        lock.lock(); defer { lock.unlock() }; return proposal
+    }
+}
+
+private final class DeliveryActionOutcome: @unchecked Sendable {
+    private let lock = NSLock()
+    private var succeeded = false
+    func set() { lock.lock(); succeeded = true; lock.unlock() }
+    func get() -> Bool { lock.lock(); defer { lock.unlock() }; return succeeded }
+}
+
+private func deliveryStoreURL(_ id: UUID) -> URL {
+    URL(fileURLWithPath: "/var/mobile/Library/Application Support/BeanBao/workflows",
+        isDirectory: true).appendingPathComponent(id.uuidString, isDirectory: true)
+        .appendingPathComponent("session.json")
+}
+
+@_cdecl("BBDeliveryActionBegin")
+public func BBDeliveryActionBegin(_ idPointer: UnsafePointer<CChar>?,
+                                  _ actionPointer: UnsafePointer<CChar>?) -> Int32 {
+    guard let idPointer, let actionPointer, strlen(actionPointer) < 1024,
+          let id = UUID(uuidString: String(cString: idPointer)),
+          let proposal = try? JSONDecoder().decode(BeanBaoDeliveryProposal.self,
+              from: Data(String(cString: actionPointer).utf8)) else { return 2 }
+    let outcome = DeliveryActionOutcome()
+    let done = DispatchSemaphore(value: 0)
+    Task.detached {
+        do {
+            let store = try BeanBaoWorkflowStore(existingURL: deliveryStoreURL(id))
+            try await BeanBaoDeliveryPlanner.begin(proposal, store: store)
+            outcome.set()
+        } catch { }
+        done.signal()
+    }
+    return done.wait(timeout: .now() + .seconds(10)) == .success && outcome.get() ? 0 : 1
+}
+
+@_cdecl("BBDeliveryActionFinish")
+public func BBDeliveryActionFinish(_ idPointer: UnsafePointer<CChar>?,
+                                   _ actionPointer: UnsafePointer<CChar>?,
+                                   _ snapshotPointer: UnsafePointer<CChar>?) -> Int32 {
+    guard let idPointer, let actionPointer, let snapshotPointer,
+          strlen(actionPointer) < 1024, strlen(snapshotPointer) < 65_536,
+          let id = UUID(uuidString: String(cString: idPointer)),
+          let proposal = try? JSONDecoder().decode(BeanBaoDeliveryProposal.self,
+              from: Data(String(cString: actionPointer).utf8)),
+          let fields = try? JSONSerialization.jsonObject(
+              with: Data(String(cString: snapshotPointer).utf8)) as? [String: Any],
+          let urlString = fields["url"] as? String, let url = URL(string: urlString),
+          let text = fields["visible_text"] as? String,
+          let bundle = fields["bundle_id"] as? String,
+          let timestamp = fields["observed_at"] as? NSNumber else { return 2 }
+    let observation = BeanBaoUberEatsObservation(
+        url: url, visibleText: text, bundleID: bundle,
+        observedAt: Date(timeIntervalSince1970: timestamp.doubleValue))
+    let outcome = DeliveryActionOutcome()
+    let done = DispatchSemaphore(value: 0)
+    Task.detached {
+        do {
+            let store = try BeanBaoWorkflowStore(existingURL: deliveryStoreURL(id))
+            _ = try await BeanBaoDeliveryPlanner.finish(proposal, after: observation, store: store)
+            outcome.set()
+        } catch { }
+        done.signal()
+    }
+    return done.wait(timeout: .now() + .seconds(10)) == .success && outcome.get() ? 0 : 1
+}
+
+@_cdecl("BBRunHarnessDeliveryPlan")
+public func BBRunHarnessDeliveryPlan(_ taskPointer: UnsafePointer<CChar>?,
+                                     _ idPointer: UnsafePointer<CChar>?) -> Int32 {
+    guard let taskPointer, let idPointer,
+          let id = UUID(uuidString: String(cString: idPointer)),
+          let configPointer = BBDeliveryClaudeConfigJSON() else { return 2 }
+    defer { BBFreeDeliveryConfig(configPointer) }
+    let task = String(cString: taskPointer)
+    guard (2...220).contains(task.count) else { return 2 }
+    let configData = Data(String(cString: configPointer).utf8)
+    guard let config = try? JSONSerialization.jsonObject(with: configData) as? [String: String],
+          let model = config["model"], let key = config["key"],
+          !model.isEmpty, !key.isEmpty else { return 2 }
+    var input = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while input.count <= 65_536 {
+        let count = buffer.withUnsafeMutableBytes { raw in
+            read(STDIN_FILENO, raw.baseAddress, raw.count)
+        }
+        if count < 0 && errno == EINTR { continue }
+        if count < 0 { return 2 }
+        if count == 0 { break }
+        input.append(contentsOf: buffer.prefix(count))
+    }
+    guard input.count < 65_536,
+          let fields = try? JSONSerialization.jsonObject(with: input) as? [String: Any],
+          let urlString = fields["url"] as? String, let url = URL(string: urlString),
+          let text = fields["visible_text"] as? String,
+          let bundle = fields["bundle_id"] as? String,
+          let timestamp = fields["observed_at"] as? NSNumber else { return 2 }
+    let observation = BeanBaoUberEatsObservation(
+        url: url, visibleText: text, bundleID: bundle,
+        observedAt: Date(timeIntervalSince1970: timestamp.doubleValue))
+    guard (try? BeanBaoDeliveryObservationContract.identifier(observation)) != nil else { return 2 }
+    let root = URL(fileURLWithPath: "/var/mobile/Library/Application Support/BeanBao/workflows",
+                   isDirectory: true)
+    do {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        var info = stat()
+        guard lstat(root.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR,
+              info.st_uid == getuid(), info.st_mode & 0o077 == 0 else { return 2 }
+    } catch { return 2 }
+    let folder = root.appendingPathComponent(id.uuidString, isDirectory: true)
+    let outcome = DeliveryPlanOutcome()
+    let done = DispatchSemaphore(value: 0)
+    Task.detached {
+        do {
+            let store = try BeanBaoWorkflowStore(
+                url: folder.appendingPathComponent("session.json"), request: task, id: id)
+            let proposal = try await BeanBaoDeliveryPlanner.choose(
+                request: task, observation: observation, store: store,
+                client: BeanBaoClaudeWorkflowClient(apiKey: key), model: model)
+            outcome.set(proposal)
+        } catch { }
+        done.signal()
+    }
+    guard done.wait(timeout: .now() + .seconds(135)) == .success,
+          let proposal = outcome.get(),
+          let encoded = try? JSONEncoder().encode(proposal),
+          let json = String(data: encoded, encoding: .utf8), json.utf8.count < 1024 else {
+        fputs("Delivery planning incomplete\n", stderr)
+        return 1
+    }
+    fputs("BB_INTENT=DeliveryPlan\n", stdout)
+    fputs("BB_DELIVERY_ACTION=", stdout)
+    _ = json.withCString { fputs($0, stdout) }
+    fputs("\n", stdout)
+    return 0
+}
+#endif

@@ -11,6 +11,7 @@ test -f "$THEOS/makefiles/common.mk" || {
 sh "$repo_root/scripts/test_native_policy.sh"
 sh "$repo_root/scripts/test_activity_store.sh"
 python3 -m unittest discover -s "$repo_root/agent" -p 'test_*.py' -q
+python3 "$repo_root/tests/test_delivery_browser_js.py" -q
 swift test --package-path "$repo_root"
 
 for component in bridge agent-native app; do

@@ -121,6 +121,7 @@ extern int32_t BBRunHarnessNote(const char *task);
 extern int32_t BBRunHarnessMap(const char *task);
 extern int32_t BBRunHarnessResearch(const char *task, const char *workflowID);
 extern int32_t BBRunHarnessAppStore(const char *task, const char *workflowID);
+extern int32_t BBRunHarnessDeliveryPlan(const char *task, const char *workflowID);
 extern NSString *BBAllowedTarget(NSString *task);
 static NSString *BBNoteText(NSString *task);
 static NSString *BBMapQuery(NSString *task);
@@ -1665,6 +1666,14 @@ int main(int argc, const char *argv[]) {
                 return 2;
             }
             return BBRunHarnessAppStore(argv[2], argv[3]);
+        }
+        if (argc == 4 && !strcmp(argv[1], "--workflow-delivery-plan")) {
+            NSString *request = [NSString stringWithUTF8String:argv[2]];
+            if (!request.length || request.length > 220 || BBHasSecret(request)) {
+                fputs("Unsupported delivery request\n", stderr);
+                return 2;
+            }
+            return BBRunHarnessDeliveryPlan(argv[2], argv[3]);
         }
         if (argc == 4 && !strcmp(argv[1], "--resolve-task"))
             return BBResolveAndRunTask([NSString stringWithUTF8String:argv[2]],

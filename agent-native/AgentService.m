@@ -23,6 +23,10 @@ extern void BBReleaseWakeLease(void);
 extern int32_t BBMarkResearchMailQueued(const char *workflowID);
 extern int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID);
 extern char *BBUberEatsClassifySnapshot(const char *snapshotJSON);
+extern char *BBUberEatsValidateAction(const char *snapshotJSON, const char *actionJSON);
+extern int32_t BBDeliveryActionBegin(const char *workflowID, const char *actionJSON);
+extern int32_t BBDeliveryActionFinish(const char *workflowID, const char *actionJSON,
+                                     const char *snapshotJSON);
 
 static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.sock";
 static NSString *BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";
@@ -38,6 +42,7 @@ static NSString *BBWorkflowRoot = @"/var/mobile/Library/Application Support/Bean
 @property(nonatomic, copy) NSString *reportPath;
 @property(nonatomic, copy) NSString *mailDraftPath;
 @property(nonatomic, copy) NSString *appCandidatePath;
+@property(nonatomic, strong) NSDictionary *deliveryAction;
 @property(nonatomic) BOOL stopping;
 @end
 @implementation BBServiceState
@@ -191,6 +196,24 @@ static BOOL BBInstalledBundleVerified(NSString *bundleID) {
     } @catch (__unused NSException *exception) { return NO; }
 }
 
+static BOOL BBIsDeliveryRecord(NSDictionary *record) {
+    NSDictionary *operations = record[@"operations"];
+    if (![operations isKindOfClass:NSDictionary.class]) return NO;
+    for (NSString *key in operations)
+        if ([key isKindOfClass:NSString.class] && [key hasPrefix:@"delivery-plan-v1-"]) return YES;
+    return NO;
+}
+
+static BOOL BBDeliveryHasUnfinishedAction(NSDictionary *record) {
+    NSDictionary *operations = record[@"operations"];
+    if (![operations isKindOfClass:NSDictionary.class]) return NO;
+    for (NSDictionary *operation in operations.allValues)
+        if ([operation isKindOfClass:NSDictionary.class] &&
+            [operation[@"tool"] isEqualToString:@"delivery_execute"] &&
+            ![operation[@"state"] isEqualToString:@"completed"]) return YES;
+    return NO;
+}
+
 static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
     struct stat root = {0};
     if (lstat(BBWorkflowRoot.fileSystemRepresentation, &root) ||
@@ -205,7 +228,8 @@ static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
             record[@"updatedAt"] : @0;
         NSString *request = record[@"request"];
         if (request.length > 220) continue;
-        NSString *kind = BBReadAppCandidate(identity) ? @"app_store" : @"research";
+        NSString *kind = BBIsDeliveryRecord(record) ? @"delivery" :
+            (BBReadAppCandidate(identity) ? @"app_store" : @"research");
         [items addObject:@{@"id": identity, @"request": request, @"kind": kind,
                            @"phase": record[@"phase"],
                            @"updated_at": @([updated doubleValue] + 978307200.0)}];
@@ -226,6 +250,7 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
     BBState.reportPath = nil;
     BBState.mailDraftPath = nil;
     BBState.appCandidatePath = nil;
+    BBState.deliveryAction = nil;
     NSString *phase = record[@"phase"];
     NSString *pdfPath = [folder stringByAppendingPathComponent:@"report.pdf"];
     NSString *draftPath = [folder stringByAppendingPathComponent:@"mail-draft.json"];
@@ -233,10 +258,18 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
     BOOL hasPDF = BBPrivateWorkflowFile(pdfPath, 100, 20 * 1024 * 1024);
     BOOL hasDraft = BBPrivateWorkflowFile(draftPath, 1, 16 * 1024);
     BOOL hasCandidate = BBPrivateWorkflowFile(candidatePath, 1, 16 * 1024);
-    BBState.app = hasCandidate ? @"AppStoreReview" :
-        (hasDraft ? @"ResearchMailDraft" : @"ResearchPDF");
+    BOOL hasDelivery = BBIsDeliveryRecord(record);
+    BBState.app = hasDelivery ? @"DeliveryPlan" :
+        (hasCandidate ? @"AppStoreReview" :
+         (hasDraft ? @"ResearchMailDraft" : @"ResearchPDF"));
     BBState.reportPath = hasPDF ? pdfPath : nil;
-    if ([phase isEqualToString:@"waitingForUser"] && hasCandidate) {
+    if (hasDelivery && BBDeliveryHasUnfinishedAction(record)) {
+        BBState.phase = @"needs_reconciliation";
+        BBState.message = @"A delivery step may have changed the cart. Check Uber Eats before continuing.";
+    } else if ([phase isEqualToString:@"waitingForUser"] && hasDelivery) {
+        BBState.phase = @"waiting_for_user";
+        BBState.message = @"Open food delivery to continue";
+    } else if ([phase isEqualToString:@"waitingForUser"] && hasCandidate) {
         BBState.phase = @"waiting_for_user";
         BBState.message = @"Review the App Store listing";
         BBState.appCandidatePath = candidatePath;
@@ -344,6 +377,7 @@ static NSDictionary *BBStatus(void) {
         if (BBState.reportPath) status[@"report_path"] = BBState.reportPath;
         if (BBState.mailDraftPath) status[@"mail_draft_path"] = BBState.mailDraftPath;
         if (BBState.appCandidatePath) status[@"app_candidate_path"] = BBState.appCandidatePath;
+        if (BBState.deliveryAction) status[@"delivery_action"] = BBState.deliveryAction;
         return status;
     }
 }
@@ -399,12 +433,24 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
     NSString *summary = [[NSString alloc] initWithData:output encoding:NSUTF8StringEncoding];
     summary = [summary stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     NSString *resolvedApp = nil;
+    NSDictionary *deliveryAction = nil;
     for (NSString *line in [summary componentsSeparatedByString:@"\n"])
-        if ([line hasPrefix:@"BB_INTENT="]) {
+        if ([line hasPrefix:@"BB_DELIVERY_ACTION="]) {
+            NSData *data = [[line substringFromIndex:@"BB_DELIVERY_ACTION=".length]
+                dataUsingEncoding:NSUTF8StringEncoding];
+            NSDictionary *candidate = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSString *action = candidate[@"action"];
+            NSString *target = candidate[@"target"];
+            NSString *identity = candidate[@"observationID"];
+            if ([@[@"search", @"open_merchant", @"open_item", @"choose_option",
+                   @"add_to_cart", @"open_checkout", @"review_checkout"] containsObject:action] &&
+                [target isKindOfClass:NSString.class] && target.length <= 120 &&
+                [identity isKindOfClass:NSString.class] && identity.length == 64)
+                deliveryAction = candidate;
+        } else if ([line hasPrefix:@"BB_INTENT="]) {
             NSString *candidate = [line substringFromIndex:@"BB_INTENT=".length];
-            if ([@[@"Settings", @"Maps", @"Contacts", @"Notes", @"MapsSearch", @"NoteCreate", @"ResearchPDF", @"ResearchMailDraft", @"AppStoreReview"]
+            if ([@[@"Settings", @"Maps", @"Contacts", @"Notes", @"MapsSearch", @"NoteCreate", @"ResearchPDF", @"ResearchMailDraft", @"AppStoreReview", @"DeliveryPlan"]
                     containsObject:candidate]) resolvedApp = candidate;
-            break;
         }
     if (resolvedApp) {
         app = [resolvedApp isEqualToString:@"MapsSearch"] ? @"Maps" :
@@ -413,7 +459,8 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
             ([resolvedApp isEqualToString:@"NoteCreate"] ? @"Note created" :
              ([resolvedApp isEqualToString:@"ResearchPDF"] ? @"PDF report created" :
               ([resolvedApp isEqualToString:@"ResearchMailDraft"] ? @"Review the email draft" :
-               ([resolvedApp isEqualToString:@"AppStoreReview"] ? @"Review the App Store listing" : @"Target app is in the foreground"))));
+               ([resolvedApp isEqualToString:@"AppStoreReview"] ? @"Review the App Store listing" :
+                ([resolvedApp isEqualToString:@"DeliveryPlan"] ? @"Review next delivery step" : @"Target app is in the foreground")))));
     }
     NSString *auditAction = nil, *auditResult = nil;
     @synchronized (BBState) {
@@ -422,11 +469,15 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
         BBState.child = 0;
         BBState.app = app;
         BBState.stopping = NO;
-        BOOL succeeded = waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        BOOL succeeded = waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0 &&
+            (![resolvedApp isEqualToString:@"DeliveryPlan"] || deliveryAction != nil);
         BBState.phase = stopped ? @"stopped" :
             (succeeded ? (([resolvedApp isEqualToString:@"ResearchMailDraft"] ||
-                           [resolvedApp isEqualToString:@"AppStoreReview"]) ?
+                           [resolvedApp isEqualToString:@"AppStoreReview"] ||
+                           [resolvedApp isEqualToString:@"DeliveryPlan"]) ?
                           @"waiting_for_user" : @"done") : @"error");
+        BBState.deliveryAction = succeeded && [resolvedApp isEqualToString:@"DeliveryPlan"] ?
+            deliveryAction : nil;
         BOOL reportReady = succeeded &&
             ([@[@"ResearchPDF", @"ResearchMailDraft"] containsObject:resolvedApp]);
         BBState.reportPath = reportReady ?
@@ -476,7 +527,8 @@ static NSDictionary *BBStart(NSDictionary *request) {
     BOOL noteTask = BBIsNoteTask(task);
     NSString *completionMessage = BBCompletionMessage(task);
     @synchronized (BBState) {
-        if (BBState.child > 0) return @{@"ok": @NO, @"error": @"A task is already running"};
+        if (BBState.child > 0 || [BBState.phase isEqualToString:@"executing"])
+            return @{@"ok": @NO, @"error": @"A task is already running"};
         int outputPipe[2];
         if (pipe(outputPipe)) return @{@"ok": @NO, @"error": @"Could not create the task pipe"};
         posix_spawn_file_actions_t actions;
@@ -521,6 +573,7 @@ static NSDictionary *BBStart(NSDictionary *request) {
         BBState.reportPath = nil;
         BBState.mailDraftPath = nil;
         BBState.appCandidatePath = nil;
+        BBState.deliveryAction = nil;
         BBState.child = child;
         BBState.stopping = NO;
         BBState.phase = @"running";
@@ -546,7 +599,8 @@ static NSDictionary *BBSelectWorkflow(NSDictionary *request) {
     if (!BBReadWorkflowRecord(identity))
         return @{@"ok": @NO, @"error": @"Workflow not found"};
     @synchronized (BBState) {
-        if (BBState.child > 0) return @{@"ok": @NO, @"error": @"A task is already running"};
+        if (BBState.child > 0 || [BBState.phase isEqualToString:@"executing"])
+            return @{@"ok": @NO, @"error": @"A task is already running"};
         BBRestoreWorkflowIdentity(identity);
         return BBStatus();
     }
@@ -554,10 +608,12 @@ static NSDictionary *BBSelectWorkflow(NSDictionary *request) {
 
 static NSDictionary *BBDeleteWorkflow(NSDictionary *request) {
     NSString *identity = request[@"workflow_id"];
-    if (!BBReadWorkflowRecord(identity))
+    NSDictionary *record = BBReadWorkflowRecord(identity);
+    if (!record)
         return @{@"ok": @NO, @"error": @"Workflow not found"};
     @synchronized (BBState) {
-        if (BBState.child > 0) return @{@"ok": @NO, @"error": @"A task is already running"};
+        if (BBState.child > 0 || [BBState.phase isEqualToString:@"executing"])
+            return @{@"ok": @NO, @"error": @"A task is already running"};
         NSString *folder = BBWorkflowFolder(identity);
         NSSet<NSString *> *known = [NSSet setWithArray:
             @[@"session.json", @"report.json", @"report.pdf", @"mail-draft.json",
@@ -584,10 +640,12 @@ static NSDictionary *BBDeleteWorkflow(NSDictionary *request) {
             BBState.reportPath = nil;
             BBState.mailDraftPath = nil;
             BBState.appCandidatePath = nil;
+            BBState.deliveryAction = nil;
             BBState.phase = @"idle";
             BBState.message = @"Waiting for a task";
         }
-        BBAudit(@"workflow", @"ResearchPDF", @"delete", @"ok");
+        BBAudit(@"workflow", BBIsDeliveryRecord(record) ?
+            @"DeliveryPlan" : @"ResearchPDF", @"delete", @"ok");
         return @{@"ok": @YES};
     }
 }
@@ -602,6 +660,11 @@ static NSDictionary *BBStop(NSDictionary *request) {
         if (requestedTask && (![requestedTask isKindOfClass:NSString.class] ||
                               ![requestedTask isEqualToString:BBState.taskID ?: @""]))
             return @{@"ok": @NO, @"error": @"The task changed. No other task was stopped."};
+        if (BBState.child <= 0 && [BBState.phase isEqualToString:@"executing"]) {
+            BBState.phase = @"needs_reconciliation";
+            BBState.message = @"The delivery step may have changed the cart. Check Uber Eats.";
+            return BBStatus();
+        }
         if (BBState.child <= 0) return BBStatus();
         BBState.stopping = YES;
         BBState.phase = @"stopping";
@@ -698,6 +761,190 @@ static NSDictionary *BBDeliveryObserve(NSDictionary *request) {
         @{@"ok": @NO, @"error": @"Delivery observation failed"};
 }
 
+static NSDictionary *BBDeliveryPlan(NSDictionary *request) {
+    NSString *task = request[@"task"];
+    NSString *resumeID = request[@"workflow_id"];
+    NSDictionary *snapshot = request[@"snapshot"];
+    if (![task isKindOfClass:NSString.class] || task.length < 2 || task.length > 220 ||
+        [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location != NSNotFound ||
+        ![snapshot isKindOfClass:NSDictionary.class] ||
+        (resumeID && ![resumeID isKindOfClass:NSString.class]))
+        return @{@"ok": @NO, @"error": @"Invalid delivery request"};
+    NSDictionary *observed = BBDeliveryObserve(@{@"snapshot": snapshot});
+    NSString *page = observed[@"page"];
+    if (![observed[@"ok"] boolValue] ||
+        ![@[@"feed", @"search", @"merchant", @"item_configuration", @"cart", @"checkout"] containsObject:page])
+        return @{@"ok": @NO, @"error": @"Check a current Uber Eats page before planning"};
+    NSData *snapshotData = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
+    if (!snapshotData || snapshotData.length >= 65536)
+        return @{@"ok": @NO, @"error": @"Delivery page is too large"};
+    if (![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
+        return @{@"ok": @NO, @"error": @"Delivery planning currently requires Claude"};
+    if (resumeID) {
+        NSDictionary *saved = BBReadWorkflowRecord(resumeID);
+        NSDictionary *operations = saved[@"operations"];
+        BOOL hasDeliveryStep = NO;
+        for (NSString *key in operations)
+            if ([key hasPrefix:@"delivery-plan-v1-"]) { hasDeliveryStep = YES; break; }
+        if (!saved || ![saved[@"request"] isEqualToString:task] || !hasDeliveryStep ||
+            BBDeliveryHasUnfinishedAction(saved))
+            return @{@"ok": @NO, @"error": @"Delivery session could not be resumed"};
+    }
+    @synchronized (BBState) {
+        if (BBState.child > 0 || [BBState.phase isEqualToString:@"executing"] ||
+            ([BBState.phase isEqualToString:@"needs_reconciliation"] &&
+             [BBState.app isEqualToString:@"DeliveryPlan"]))
+            return @{@"ok": @NO, @"error": @"A task is already running or needs review"};
+        int inputPipe[2], outputPipe[2];
+        if (pipe(inputPipe)) return @{@"ok": @NO, @"error": @"Could not create the task pipe"};
+        if (pipe(outputPipe)) {
+            close(inputPipe[0]); close(inputPipe[1]);
+            return @{@"ok": @NO, @"error": @"Could not create the task pipe"};
+        }
+        posix_spawn_file_actions_t actions;
+        posix_spawn_file_actions_init(&actions);
+        posix_spawn_file_actions_addclose(&actions, inputPipe[1]);
+        posix_spawn_file_actions_addclose(&actions, outputPipe[0]);
+        posix_spawn_file_actions_adddup2(&actions, inputPipe[0], STDIN_FILENO);
+        posix_spawn_file_actions_adddup2(&actions, outputPipe[1], STDOUT_FILENO);
+        posix_spawn_file_actions_adddup2(&actions, outputPipe[1], STDERR_FILENO);
+        posix_spawn_file_actions_addclose(&actions, inputPipe[0]);
+        posix_spawn_file_actions_addclose(&actions, outputPipe[1]);
+        char executable[PATH_MAX] = {0};
+        uint32_t executableSize = sizeof(executable);
+        if (_NSGetExecutablePath(executable, &executableSize)) {
+            posix_spawn_file_actions_destroy(&actions);
+            close(inputPipe[0]); close(inputPipe[1]);
+            close(outputPipe[0]); close(outputPipe[1]);
+            return @{@"ok": @NO, @"error": @"Could not locate the task executable"};
+        }
+        NSString *taskID = resumeID ?: NSUUID.UUID.UUIDString;
+        const char *argv[] = {executable, "--workflow-delivery-plan", task.UTF8String,
+                              taskID.UTF8String, NULL};
+        pid_t child = 0;
+        int spawned = posix_spawn(&child, executable, &actions, NULL, (char *const *)argv, environ);
+        posix_spawn_file_actions_destroy(&actions);
+        close(inputPipe[0]); close(outputPipe[1]);
+        if (spawned) {
+            close(inputPipe[1]); close(outputPipe[0]);
+            return @{@"ok": @NO, @"error": @"Could not start delivery planning"};
+        }
+        const uint8_t *cursor = snapshotData.bytes;
+        NSUInteger remaining = snapshotData.length;
+        while (remaining) {
+            ssize_t written = write(inputPipe[1], cursor, remaining);
+            if (written < 0 && errno == EINTR) continue;
+            if (written <= 0) break;
+            cursor += written; remaining -= (NSUInteger)written;
+        }
+        close(inputPipe[1]);
+        if (remaining) {
+            kill(child, SIGTERM);
+            close(outputPipe[0]);
+            waitpid(child, NULL, 0);
+            return @{@"ok": @NO, @"error": @"Could not send the delivery page"};
+        }
+        BBState.generation++;
+        NSUInteger generation = BBState.generation;
+        BBState.child = child;
+        BBState.taskID = taskID;
+        BBState.app = @"DeliveryPlan";
+        BBState.phase = @"running";
+        BBState.message = @"Planning next delivery step";
+        BBState.stopping = NO;
+        BBState.deliveryAction = nil;
+        BBState.reportPath = nil;
+        BBState.mailDraftPath = nil;
+        BBState.appCandidatePath = nil;
+        BBAudit(@"task", @"DeliveryPlan", @"start", @"accepted");
+        int readFD = outputPipe[0];
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            BBWaitForChild(child, readFD, generation, @"Review next delivery step", @"DeliveryPlan");
+        });
+        return BBStatus();
+    }
+}
+
+static NSDictionary *BBDeliveryVerifyAction(NSDictionary *request) {
+    NSString *taskID = request[@"task_id"];
+    NSString *serviceID = request[@"service_id"];
+    NSDictionary *snapshot = request[@"snapshot"];
+    if (![taskID isKindOfClass:NSString.class] ||
+        ![serviceID isKindOfClass:NSString.class] ||
+        ![snapshot isKindOfClass:NSDictionary.class])
+        return @{@"ok": @NO, @"error": @"Invalid delivery action check"};
+    @synchronized (BBState) {
+        if (![taskID isEqualToString:BBState.taskID] ||
+            ![serviceID isEqualToString:BBState.serviceID] ||
+            ![BBState.app isEqualToString:@"DeliveryPlan"] ||
+            ![BBState.phase isEqualToString:@"waiting_for_user"] ||
+            !BBState.deliveryAction)
+            return @{@"ok": @NO, @"error": @"The delivery step changed"};
+        NSData *snapshotData = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
+        NSData *actionData = [NSJSONSerialization dataWithJSONObject:BBState.deliveryAction
+                                                              options:0 error:nil];
+        if (!snapshotData || snapshotData.length >= 65536 ||
+            !actionData || actionData.length >= 1024)
+            return @{@"ok": @NO, @"error": @"Invalid delivery action check"};
+        NSString *snapshotJSON = [[NSString alloc] initWithData:snapshotData encoding:NSUTF8StringEncoding];
+        NSString *actionJSON = [[NSString alloc] initWithData:actionData encoding:NSUTF8StringEncoding];
+        char *receipt = BBUberEatsValidateAction(snapshotJSON.UTF8String, actionJSON.UTF8String);
+        if (!receipt) return @{@"ok": @NO, @"error": @"Delivery action check failed"};
+        NSData *data = [NSData dataWithBytes:receipt length:strlen(receipt)];
+        free(receipt);
+        NSDictionary *result = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (![result isKindOfClass:NSDictionary.class] || ![result[@"valid"] boolValue])
+            return [result isKindOfClass:NSDictionary.class] ? result :
+                @{@"ok": @NO, @"error": @"Delivery action check failed"};
+        if ([BBState.deliveryAction[@"action"] isEqualToString:@"review_checkout"])
+            return result;
+        if (BBDeliveryActionBegin(taskID.UTF8String, actionJSON.UTF8String) != 0) {
+            BBState.phase = @"needs_reconciliation";
+            BBState.message = @"A delivery step may already have run. Check Uber Eats.";
+            return @{@"ok": @NO, @"error": @"Delivery step outcome needs review"};
+        }
+        BBState.phase = @"executing";
+        BBState.message = @"Checking delivery step result";
+        return result;
+    }
+}
+
+static NSDictionary *BBDeliveryActionResult(NSDictionary *request) {
+    NSString *taskID = request[@"task_id"];
+    NSString *serviceID = request[@"service_id"];
+    NSDictionary *snapshot = request[@"snapshot"];
+    if (![taskID isKindOfClass:NSString.class] ||
+        ![serviceID isKindOfClass:NSString.class] ||
+        ![snapshot isKindOfClass:NSDictionary.class])
+        return @{@"ok": @NO, @"error": @"Invalid delivery result"};
+    @synchronized (BBState) {
+        if (![taskID isEqualToString:BBState.taskID] ||
+            ![serviceID isEqualToString:BBState.serviceID] ||
+            ![BBState.app isEqualToString:@"DeliveryPlan"] ||
+            ![@[@"executing", @"needs_reconciliation"] containsObject:BBState.phase] ||
+            !BBState.deliveryAction)
+            return @{@"ok": @NO, @"error": @"The delivery step changed"};
+        NSData *snapshotData = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
+        NSData *actionData = [NSJSONSerialization dataWithJSONObject:BBState.deliveryAction
+                                                              options:0 error:nil];
+        if (!snapshotData || snapshotData.length >= 65536 ||
+            !actionData || actionData.length >= 1024)
+            return @{@"ok": @NO, @"error": @"Invalid delivery result"};
+        NSString *snapshotJSON = [[NSString alloc] initWithData:snapshotData encoding:NSUTF8StringEncoding];
+        NSString *actionJSON = [[NSString alloc] initWithData:actionData encoding:NSUTF8StringEncoding];
+        if (BBDeliveryActionFinish(taskID.UTF8String, actionJSON.UTF8String,
+                                   snapshotJSON.UTF8String) != 0) {
+            BBState.phase = @"needs_reconciliation";
+            BBState.message = @"The delivery step result needs review in Uber Eats.";
+            return @{@"ok": @NO, @"error": @"Delivery step result could not be verified"};
+        }
+        BBState.phase = @"waiting_for_user";
+        BBState.message = @"Delivery step verified";
+        BBState.deliveryAction = nil;
+        return BBStatus();
+    }
+}
+
 static NSDictionary *BBHandle(NSDictionary *request) {
     NSString *op = request[@"op"];
     if ([op isEqualToString:@"status"]) return BBStatus();
@@ -706,6 +953,9 @@ static NSDictionary *BBHandle(NSDictionary *request) {
     if ([op isEqualToString:@"mail_result"]) return BBMailResult(request);
     if ([op isEqualToString:@"verify_app_install"]) return BBVerifyAppInstall(request);
     if ([op isEqualToString:@"delivery_observe"]) return BBDeliveryObserve(request);
+    if ([op isEqualToString:@"delivery_plan"]) return BBDeliveryPlan(request);
+    if ([op isEqualToString:@"delivery_verify_action"]) return BBDeliveryVerifyAction(request);
+    if ([op isEqualToString:@"delivery_action_result"]) return BBDeliveryActionResult(request);
     if ([op isEqualToString:@"list_workflows"])
         return @{@"ok": @YES, @"workflows": BBWorkflowSummaries()};
     if ([op isEqualToString:@"resume_workflow"]) return BBResumeWorkflow(request);
@@ -734,7 +984,8 @@ static void BBClient(int fd) {
     }
     NSDictionary *request = complete ?
         [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-    if (data.length >= 4096 && ![request[@"op"] isEqualToString:@"delivery_observe"])
+    if (data.length >= 4096 && ![@[@"delivery_observe", @"delivery_plan",
+                                  @"delivery_verify_action", @"delivery_action_result"] containsObject:request[@"op"]])
         request = nil;
     NSDictionary *reply = [request isKindOfClass:NSDictionary.class] ? BBHandle(request) :
         @{@"ok": @NO, @"error": @"Invalid request"};

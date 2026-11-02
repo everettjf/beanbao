@@ -18,6 +18,9 @@ int32_t BBRunHarnessResearch(const char *task, const char *workflowID) {
 int32_t BBRunHarnessAppStore(const char *task, const char *workflowID) {
     (void)task; (void)workflowID; return 1;
 }
+int32_t BBRunHarnessDeliveryPlan(const char *task, const char *workflowID) {
+    (void)task; (void)workflowID; return 1;
+}
 int32_t BBMarkResearchMailQueued(const char *workflowID) { (void)workflowID; return 0; }
 int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID) {
     (void)workflowID; (void)bundleID; return 0;
@@ -25,6 +28,18 @@ int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID) {
 char *BBUberEatsClassifySnapshot(const char *snapshotJSON) {
     if (!snapshotJSON || !strstr(snapshotJSON, "Go to checkout")) return NULL;
     return strdup("{\"ok\":true,\"page\":\"cart\",\"adapter_version\":1}");
+}
+char *BBUberEatsValidateAction(const char *snapshotJSON, const char *actionJSON) {
+    if (!snapshotJSON || !actionJSON) return NULL;
+    return strdup("{\"ok\":true,\"valid\":true}");
+}
+static int DeliveryBeginCalls = 0;
+int32_t BBDeliveryActionBegin(const char *workflowID, const char *actionJSON) {
+    (void)workflowID; (void)actionJSON; DeliveryBeginCalls++; return 0;
+}
+int32_t BBDeliveryActionFinish(const char *workflowID, const char *actionJSON,
+                               const char *snapshotJSON) {
+    (void)workflowID; (void)actionJSON; (void)snapshotJSON; return 0;
 }
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
@@ -73,6 +88,11 @@ int main(void) {
                    !delivery[@"visible_text"] &&
                    ![BBHandle(@{@"op": @"delivery_observe"})[@"ok"] boolValue],
                    "delivery observation returns only bounded page status")) return 1;
+        if (!Check(![BBHandle(@{@"op": @"delivery_plan", @"task": @"Find lunch"})[@"ok"] boolValue],
+                   "delivery planning requires a current observed page")) return 1;
+        if (!Check(![BBHandle(@{@"op": @"delivery_verify_action", @"task_id": @"old",
+                               @"service_id": @"old", @"snapshot": @{}})[@"ok"] boolValue],
+                   "delivery action requires the active planned step")) return 1;
         BBState.serviceID = @"service-A";
         BBState.taskID = @"task-A";
         BBState.phase = @"done";
@@ -84,7 +104,29 @@ int main(void) {
                    "stop refuses a different task identity") ||
             !Check(![BBStop(@{@"service_id": @"service-B"})[@"ok"] boolValue],
                    "stop refuses a different service identity")) return 1;
+        BBState.app = @"DeliveryPlan";
         BBState.phase = @"waiting_for_user";
+        BBState.deliveryAction = @{@"action": @"review_checkout", @"target": @"",
+                                   @"observationID": @"1234567890123456789012345678901234567890123456789012345678901234"};
+        NSDictionary *deliveryCheck = BBDeliveryVerifyAction(@{@"task_id": @"task-A",
+            @"service_id": @"service-A", @"snapshot": @{@"visible_text": @"Place order"}});
+        if (!Check([deliveryCheck[@"valid"] boolValue] && DeliveryBeginCalls == 0 &&
+                   [BBState.phase isEqualToString:@"waiting_for_user"],
+                   "checkout review never claims a browser mutation")) return 1;
+        BBState.deliveryAction = @{@"action": @"open_checkout", @"target": @"",
+                                   @"observationID": @"1234567890123456789012345678901234567890123456789012345678901234"};
+        deliveryCheck = BBDeliveryVerifyAction(@{@"task_id": @"task-A",
+            @"service_id": @"service-A", @"snapshot": @{@"visible_text": @"Go to checkout"}});
+        if (!Check([deliveryCheck[@"valid"] boolValue] && DeliveryBeginCalls == 1 &&
+                   [BBState.phase isEqualToString:@"executing"],
+                   "browser mutation is durably claimed before a click")) return 1;
+        NSDictionary *deliveryResult = BBDeliveryActionResult(@{@"task_id": @"task-A",
+            @"service_id": @"service-A", @"snapshot": @{@"visible_text": @"Place order"}});
+        if (!Check([deliveryResult[@"phase"] isEqualToString:@"waiting_for_user"] &&
+                   BBState.deliveryAction == nil,
+                   "verified next page clears the pending browser action")) return 1;
+        BBState.phase = @"waiting_for_user";
+        BBState.app = @"ResearchMailDraft";
         BBState.mailDraftPath = @"/tmp/test-draft.json";
         if (!Check(![BBMailResult(@{@"task_id": @"task-B", @"service_id": @"service-A",
                                    @"result": @"sent"})[@"ok"] boolValue],
@@ -160,6 +202,35 @@ int main(void) {
                    "closing a listing cannot claim an uninstalled app succeeded") ||
             !Check([BBDeleteWorkflow(@{@"workflow_id": appID})[@"ok"] boolValue],
                    "App Store candidate and search files are user-deletable")) return 1;
+        NSString *deliveryID = NSUUID.UUID.UUIDString;
+        NSString *deliveryFolder = [workflowRoot stringByAppendingPathComponent:deliveryID];
+        [NSFileManager.defaultManager createDirectoryAtPath:deliveryFolder withIntermediateDirectories:NO
+                                  attributes:@{NSFilePosixPermissions: @0700} error:nil];
+        NSDictionary *deliveryRecord = @{@"id": deliveryID, @"request": @"Find a rice bowl",
+            @"phase": @"waitingForUser", @"updatedAt": @1200,
+            @"operations": @{@"delivery-plan-v1-abc":
+                @{@"tool": @"delivery_choose", @"state": @"completed"}}};
+        NSString *deliverySession = [deliveryFolder stringByAppendingPathComponent:@"session.json"];
+        [[NSJSONSerialization dataWithJSONObject:deliveryRecord options:0 error:nil]
+            writeToFile:deliverySession atomically:YES];
+        chmod(deliverySession.fileSystemRepresentation, 0600);
+        NSDictionary *deliveryStatus = BBSelectWorkflow(@{@"workflow_id": deliveryID});
+        if (!Check([BBWorkflowSummaries().firstObject[@"kind"] isEqualToString:@"delivery"] &&
+                   [deliveryStatus[@"app"] isEqualToString:@"DeliveryPlan"] &&
+                   [deliveryStatus[@"phase"] isEqualToString:@"waiting_for_user"],
+                   "delivery session is listed and restores as a delivery task")) return 1;
+        NSMutableDictionary *unfinished = [deliveryRecord mutableCopy];
+        unfinished[@"operations"] = @{@"delivery-plan-v1-abc":
+            @{@"tool": @"delivery_choose", @"state": @"completed"},
+            @"delivery-execute-v1-abc": @{@"tool": @"delivery_execute", @"state": @"running"}};
+        [[NSJSONSerialization dataWithJSONObject:unfinished options:0 error:nil]
+            writeToFile:deliverySession atomically:YES];
+        chmod(deliverySession.fileSystemRepresentation, 0600);
+        deliveryStatus = BBSelectWorkflow(@{@"workflow_id": deliveryID});
+        if (!Check([deliveryStatus[@"phase"] isEqualToString:@"needs_reconciliation"],
+                   "unfinished delivery action survives a service restart as uncertain") ||
+            !Check([BBDeleteWorkflow(@{@"workflow_id": deliveryID})[@"ok"] boolValue],
+                   "delivery session remains user-deletable after review")) return 1;
         rmdir(workflowRoot.fileSystemRepresentation);
         BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";
         for (NSString *task in @[@"打开设置", @"打开备忘录", @"打开地图", @"打开通讯录"])

@@ -121,4 +121,65 @@ final class DeliveryPlannerTests: XCTestCase {
             bundleID: "dev.beanbao.app", observedAt: Date(timeIntervalSinceNow: -30))
         XCTAssertThrowsError(try BeanBaoDeliveryObservationContract.identifier(old))
     }
+
+    func testActionReceiptRequiresTheSameFreshVisiblePage() throws {
+        let seen = observation("https://www.ubereats.com/store/example/id", "Go to checkout")
+        let id = try BeanBaoDeliveryObservationContract.identifier(seen)
+        let proposal = BeanBaoDeliveryProposal(action: "open_checkout", target: "",
+                                                observationID: id)
+        let action = String(decoding: try JSONEncoder().encode(proposal), as: UTF8.self)
+        func receipt(_ text: String) throws -> [String: Any] {
+            let snapshot: [String: Any] = [
+                "url": seen.url.absoluteString, "visible_text": text,
+                "bundle_id": seen.bundleID,
+                "observed_at": Date().timeIntervalSince1970
+            ]
+            let json = String(decoding: try JSONSerialization.data(withJSONObject: snapshot),
+                              as: UTF8.self)
+            let pointer = json.withCString { snapshotPointer in
+                action.withCString { actionPointer in
+                    BBUberEatsValidateAction(snapshotPointer, actionPointer)
+                }
+            }
+            defer { free(pointer) }
+            return try XCTUnwrap(JSONSerialization.jsonObject(
+                with: Data(String(cString: XCTUnwrap(pointer)).utf8)) as? [String: Any])
+        }
+        XCTAssertEqual(try receipt("Go to checkout")["valid"] as? Bool, true)
+        XCTAssertEqual(try receipt("Go to checkout Total $99.99")["valid"] as? Bool, false)
+    }
+
+    func testCartMutationNeedsOneDurableAttemptAndVerifiedNextPage() async throws {
+        let (journal, _) = try store()
+        let cart = observation("https://www.ubereats.com/store/example/id", "Go to checkout")
+        let id = try BeanBaoDeliveryObservationContract.identifier(cart)
+        let proposal = try await BeanBaoDeliveryPlanner.choose(
+            request: "Find a rice bowl", observation: cart, store: journal,
+            client: DeliveryScriptModel(action: "open_checkout", target: "", observationID: id),
+            model: "scripted")
+        try await BeanBaoDeliveryPlanner.begin(proposal, store: journal)
+        do {
+            try await BeanBaoDeliveryPlanner.begin(proposal, store: journal)
+            XCTFail("A possibly clicked step cannot run twice")
+        } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
+        let wrong = observation("https://www.ubereats.com/search", "Restaurant results")
+        do {
+            _ = try await BeanBaoDeliveryPlanner.finish(proposal, after: wrong, store: journal)
+            XCTFail("A search page cannot prove checkout navigation")
+        } catch BeanBaoDeliveryPlanError.invalidObservation { }
+        let checkout = observation("https://www.ubereats.com/checkout", "Place order Total $30.00")
+        let confirmedPage = try await BeanBaoDeliveryPlanner.finish(
+            proposal, after: checkout, store: journal)
+        XCTAssertEqual(confirmedPage, .checkout)
+        let saved = await journal.snapshot()
+        XCTAssertEqual(saved.phase, .waitingForUser)
+        XCTAssertEqual(saved.operations["delivery-execute-v1-\(id)"]?.state, .completed)
+        do {
+            _ = try await BeanBaoDeliveryPlanner.choose(
+                request: "Find a rice bowl", observation: cart, store: journal,
+                client: DeliveryScriptModel(action: "open_checkout", target: "", observationID: id),
+                model: "scripted")
+            XCTFail("Returning to the old page must not replay the old action")
+        } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
+    }
 }
