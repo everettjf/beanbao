@@ -12,6 +12,8 @@ A real spoken sample was then captured through the overlay. The owner said “Op
 
 The first real triple press on Bridge 0.2.9 opened the overlay above Settings, but it stayed at microphone startup and timed out without a recording-ready marker. The same voice-session route started recording when triggered by the authenticated `show_voice` command, including after terminating the BeanBao app for a cold-start test. Bridge 0.2.10 delays launch until 350 ms after the volume-button release to avoid overlapping the hardware event and LaunchServices transition. Its package built, passed the Bridge audit, and was installed with one SpringBoard reload. On that installed build, an authenticated `show_voice` request displayed **Listening…** above Settings, with the microphone indicator active; closing the overlay removed the indicator. This verifies the voice-session route but not the physical button timing, which still needs a real triple-press retest.
 
+The owner reported that the 0.2.10 physical shortcut felt slow, the overlay could appear more than once, and its high placement was hard to reach. Bridge 0.2.11 adds a three-second trigger cooldown, rejects a new voice session while the overlay is already visible, positions the panel above the keyboard or bottom safe area, and moves LaunchServices calls to a serial background queue so the panel's main thread stays responsive. The package built, passed the Bridge audit, and was installed with one SpringBoard reload. Runtime placement, responsiveness, and actual button behavior still require unlocked-phone checks.
+
 ## Earlier English build
 
 Bridge 0.2.4 / Agent 0.3.56 / App 0.3.21 were the first English release and UI update. Intermediate English builds were installed and tested on the connected phone. The app, model settings, status and error messages, permission descriptions, release archive instructions, and default command examples are in English. English typed requests are normalized into the same restricted internal task set; legacy Chinese requests remain accepted. Speech is configured for `en-US` dictation; a later build captured a real spoken sample as described above.
@@ -33,7 +35,7 @@ Earlier supervised tests established that Claude could complete several Maps sea
 ## Remaining acceptance
 
 - Repeat a complete real spoken request through the overlay, from Apple transcription through **Run** and foreground verification, on the installed build.
-- Repeat the real Volume Down triple-press recording test with Bridge 0.2.10; the first 0.2.9 attempt opened the overlay but timed out before recording.
+- Repeat the real Volume Down triple-press recording test with Bridge 0.2.11, including rapid extra presses and the panel's placement and responsiveness.
 - Repeat the physical USB-disconnect and full reboot recovery tests with the current versions.
 - Configure OpenAI and a compatible HTTPS service with their own keys, then perform live Maps tests. The current evidence covers request construction and parsing, not those providers' live responses.
 - Validate other iPhone models, iOS versions, and jailbreak environments separately. A public package source and one-tap installer do not exist yet.

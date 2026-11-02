@@ -6,7 +6,7 @@ Updated November 1, 2026. This is a developer installation procedure for a compa
 
 Install these RootHide `iphoneos-arm64e` packages in order:
 
-1. `dev.beanbao.bridge` 0.2.10: restricted SpringBoard observation, UI actions, and quick voice overlay.
+1. `dev.beanbao.bridge` 0.2.11: restricted SpringBoard observation, UI actions, and quick voice overlay.
 2. `dev.beanbao.agent` 0.3.59: on-device task service and model interpretation of natural requests.
 3. `dev.beanbao.app` 0.3.27: native text, Apple voice transcription, activity, shortcut, and model settings UI.
 
@@ -22,7 +22,7 @@ The build script runs native policy, Python, and Swift Harness tests and audits 
 With a root shell on the jailbroken phone, copy over the packages and install them in this order:
 
 ```sh
-dpkg -i dev.beanbao.bridge_0.2.10_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.bridge_0.2.11_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.agent_0.3.59_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.27_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.app

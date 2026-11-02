@@ -19,6 +19,15 @@
 @property(nonatomic) NSTimeInterval voiceReadyDeadline;
 @end
 
+static dispatch_queue_t BBAppLaunchQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("dev.beanbao.quick-overlay.launch", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
 @implementation BBQuickOverlay
 
 + (instancetype)shared {
@@ -121,7 +130,8 @@
         [backdrop.bottomAnchor constraintEqualToAnchor:root.view.bottomAnchor],
         [panel.leadingAnchor constraintEqualToAnchor:root.view.leadingAnchor constant:18],
         [panel.trailingAnchor constraintEqualToAnchor:root.view.trailingAnchor constant:-18],
-        [panel.topAnchor constraintEqualToAnchor:root.view.safeAreaLayoutGuide.topAnchor constant:74],
+        [panel.topAnchor constraintGreaterThanOrEqualToAnchor:root.view.safeAreaLayoutGuide.topAnchor constant:12],
+        [panel.bottomAnchor constraintEqualToAnchor:root.view.keyboardLayoutGuide.topAnchor constant:-18],
         [accent.leadingAnchor constraintEqualToAnchor:panel.leadingAnchor constant:20],
         [accent.topAnchor constraintEqualToAnchor:panel.topAnchor constant:22],
         [accent.widthAnchor constraintEqualToConstant:38],
@@ -157,22 +167,25 @@
 - (BOOL)show { return [self showFocused:YES]; }
 
 - (void)restorePreviousApp {
-    NSString *bundleID = self.returnBundle;
+    NSString *bundleID = [self.returnBundle copy];
     if (!bundleID.length || [bundleID isEqualToString:@"com.apple.springboard"] ||
         [bundleID isEqualToString:@"dev.beanbao.app"]) return;
-    Class cls = objc_getClass("LSApplicationWorkspace");
-    SEL workspaceSel = @selector(defaultWorkspace);
-    SEL openSel = @selector(openApplicationWithBundleID:);
-    if (!cls || ![cls respondsToSelector:workspaceSel]) return;
-    @try {
-        id workspace = ((id (*)(id, SEL))objc_msgSend)((id)cls, workspaceSel);
-        if ([workspace respondsToSelector:openSel])
-            ((BOOL (*)(id, SEL, NSString *))objc_msgSend)(workspace, openSel, bundleID);
-    } @catch (__unused NSException *exception) {}
+    dispatch_async(BBAppLaunchQueue(), ^{
+        Class cls = objc_getClass("LSApplicationWorkspace");
+        SEL workspaceSel = @selector(defaultWorkspace);
+        SEL openSel = @selector(openApplicationWithBundleID:);
+        if (!cls || ![cls respondsToSelector:workspaceSel]) return;
+        @try {
+            id workspace = ((id (*)(id, SEL))objc_msgSend)((id)cls, workspaceSel);
+            if ([workspace respondsToSelector:openSel])
+                ((BOOL (*)(id, SEL, NSString *))objc_msgSend)(workspace, openSel, bundleID);
+        } @catch (__unused NSException *exception) {}
+    });
 }
 
 - (BOOL)beginVoiceFromBundle:(NSString *)bundleID {
-    if (!NSThread.isMainThread || self.voiceSession || ![bundleID isKindOfClass:NSString.class] ||
+    if (!NSThread.isMainThread || self.window || self.voiceSession ||
+        ![bundleID isKindOfClass:NSString.class] ||
         !bundleID.length || [bundleID isEqualToString:@"com.apple.springboard"] ||
         [bundleID isEqualToString:@"dev.beanbao.app"] || ![self showFocused:NO]) return NO;
     NSString *session = NSUUID.UUID.UUIDString;
@@ -191,7 +204,7 @@
     NSUInteger generation = ++self.voiceGeneration;
     self.message.text = @"Starting microphone…";
     [self.runButton setTitle:@"Stop recording" forState:UIControlStateNormal];
-    BBOpenBeanBaoApp();
+    dispatch_async(BBAppLaunchQueue(), ^{ BBOpenBeanBaoApp(); });
     [self pollVoiceSession:generation];
     return YES;
 }

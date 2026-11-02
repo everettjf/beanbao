@@ -24,12 +24,15 @@ static BOOL BBHotkeyEnabled(void) {
 static void BBVolumeDownReleased(void) {
     static NSUInteger count = 0;
     static NSTimeInterval lastRelease = 0;
+    static NSTimeInterval lastTrigger = 0;
     if (!BBHotkeyEnabled()) { count = 0; return; }
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    if (now - lastTrigger < 3.0) { count = 0; return; }
     count = now - lastRelease <= 0.65 ? count + 1 : 1;
     lastRelease = now;
     if (count < 3) return;
     count = 0;
+    lastTrigger = now;
     // Let SpringBoard finish the volume-button event and dismiss its HUD before
     // asking LaunchServices to foreground the microphone owner app.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
