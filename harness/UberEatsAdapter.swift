@@ -24,15 +24,26 @@ public enum BeanBaoUberEatsAdapterError: Error, Equatable, Sendable {
 public struct BeanBaoUberEatsObservation: Sendable {
     public let url: URL
     public let visibleText: String
+    public let selectedOptions: [String]
     public let bundleID: String
     public let observedAt: Date
 
-    public init(url: URL, visibleText: String, bundleID: String, observedAt: Date) {
+    public init(url: URL, visibleText: String, bundleID: String, observedAt: Date,
+                selectedOptions: [String] = []) {
         self.url = url
         self.visibleText = visibleText
+        self.selectedOptions = selectedOptions
         self.bundleID = bundleID
         self.observedAt = observedAt
     }
+}
+
+func beanBaoSelectedOptions(_ fields: [String: Any]) -> [String]? {
+    guard let value = fields["selected_options"] else { return [] }
+    guard let labels = value as? [String], labels.count <= 30,
+          labels.allSatisfy({ (1...120).contains($0.count) &&
+              $0.rangeOfCharacter(from: .newlines) == nil }) else { return nil }
+    return labels
 }
 
 /// Versioned screen contract for the first delivery site. Unrecognized screens
@@ -124,6 +135,7 @@ public func BBUberEatsClassifySnapshot(_ pointer: UnsafePointer<CChar>?) -> Unsa
           let fields = try? JSONSerialization.jsonObject(with: Data(String(cString: pointer).utf8)) as? [String: Any],
           let urlString = fields["url"] as? String, let url = URL(string: urlString),
           let visibleText = fields["visible_text"] as? String, visibleText.count <= 20_000,
+          let selectedOptions = beanBaoSelectedOptions(fields),
           let bundleID = fields["bundle_id"] as? String, bundleID == "dev.beanbao.deliverybrowser",
           let timestamp = fields["observed_at"] as? NSNumber else {
         return "{\"ok\":false,\"error\":\"Invalid delivery snapshot\"}".withCString { strdup($0) }
@@ -134,7 +146,7 @@ public func BBUberEatsClassifySnapshot(_ pointer: UnsafePointer<CChar>?) -> Unsa
         return "{\"ok\":false,\"error\":\"Delivery page changed; check again\"}".withCString { strdup($0) }
     }
     let observation = BeanBaoUberEatsObservation(url: url, visibleText: visibleText,
-                                                  bundleID: bundleID, observedAt: observedAt)
+        bundleID: bundleID, observedAt: observedAt, selectedOptions: selectedOptions)
     let page: String
     switch BeanBaoUberEatsAdapter.page(observation) {
     case .feed: page = "feed"

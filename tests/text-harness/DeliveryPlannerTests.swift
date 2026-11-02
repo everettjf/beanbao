@@ -25,9 +25,10 @@ private struct DeliveryScriptModel: PHKModelClient {
 }
 
 final class DeliveryPlannerTests: XCTestCase {
-    private func observation(_ url: String, _ text: String) -> BeanBaoUberEatsObservation {
+    private func observation(_ url: String, _ text: String,
+                             selected: [String] = []) -> BeanBaoUberEatsObservation {
         .init(url: URL(string: url)!, visibleText: text, bundleID: "dev.beanbao.deliverybrowser",
-              observedAt: Date())
+              observedAt: Date(), selectedOptions: selected)
     }
 
     private func store(request: String = "Find a rice bowl") throws -> (BeanBaoWorkflowStore, URL) {
@@ -227,5 +228,31 @@ final class DeliveryPlannerTests: XCTestCase {
                 model: "scripted")
             XCTFail("Returning to the old page must not replay the old action")
         } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
+    }
+
+    func testOptionSelectionRequiresRadioStateChangeOnTheSameItemPage() async throws {
+        let (journal, _) = try store()
+        let url = "https://www.ubereats.com/store/example/id?mod=quickView"
+        let text = "Chicken Pho Rice Noodle Ramen Noodle Add 1 to order"
+        let before = observation(url, text)
+        let id = try BeanBaoDeliveryObservationContract.identifier(before)
+        let proposal = try await BeanBaoDeliveryPlanner.choose(
+            request: "Find a rice bowl", observation: before, store: journal,
+            client: DeliveryScriptModel(action: "choose_option", target: "Rice Noodle",
+                                        observationID: id), model: "scripted")
+        try await BeanBaoDeliveryPlanner.begin(proposal, store: journal)
+        do {
+            _ = try await BeanBaoDeliveryPlanner.finish(proposal, after: before, store: journal)
+            XCTFail("Unselected radio state cannot prove the option was chosen")
+        } catch BeanBaoDeliveryPlanError.invalidObservation { }
+        let after = observation(url, text, selected: ["Rice Noodle"])
+        XCTAssertNotEqual(try BeanBaoDeliveryObservationContract.identifier(before),
+                          try BeanBaoDeliveryObservationContract.identifier(after))
+        let page = try await BeanBaoDeliveryPlanner.finish(proposal, after: after, store: journal)
+        XCTAssertEqual(page, .itemConfiguration)
+        XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(proposal,
+                                                                      observation: after))
+        let saved = await journal.snapshot()
+        XCTAssertEqual(saved.operations["delivery-execute-v1-\(id)"]?.state, .completed)
     }
 }

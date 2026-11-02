@@ -12,6 +12,7 @@ SOURCE = Path(__file__).resolve().parent.parent / "app" / "DeliveryBrowserViewCo
 
 
 def browser_action_script(payload):
+    payload = {"selected": [], **payload}
     source = SOURCE.read_text()
     start = source.index('NSString *script = [NSString stringWithFormat:@"(() => {"')
     end = source.index(', literal];', start)
@@ -49,7 +50,9 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
           body: {{ innerText: {json.dumps(page_text if page_text is not None else payload['text'])} }},
           querySelector() {{ return null; }},
           querySelectorAll(selector) {{
-            return selector.includes('input[type=password]') ? [] : controls;
+            return selector.includes('input[type=password]') ||
+                   selector.includes('label[for]') || selector.includes('input[type=radio]') ||
+                   selector.includes('input[type=checkbox]') ? [] : controls;
           }}
         }};
         const result = {script};
@@ -80,6 +83,36 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
                    "text": "Rice bowl Add 1 to order", "action": "add_to_cart", "target": ""}
         self.assertEqual(self.run_fixture(payload, ["Add 1 to order", "Place order"])["clicks"], 1)
         self.assertEqual(self.run_fixture(payload, ["Place order"])["clicks"], 0)
+
+    def test_option_clicks_one_visible_radio_label(self):
+        payload = {"url": "https://www.ubereats.com/store/example/id?mod=quickView",
+                   "text": "Rice Noodle Add 1 to order", "selected": [],
+                   "action": "choose_option", "target": "Rice Noodle"}
+        script = browser_action_script(payload)
+        fixture = f"""
+        const radio = {{id:'option-one',type:'radio',name:'noodle',checked:false}};
+        const label = {{htmlFor:'option-one',textContent:'Rice Noodle',
+          getBoundingClientRect() {{return {{width:200,height:30,top:300,left:20}}}},
+          click() {{radio.checked=true}}}};
+        globalThis.location = {{href:{json.dumps(payload['url'])},host:'www.ubereats.com'}};
+        globalThis.window = {{innerWidth:414,innerHeight:896}};
+        globalThis.getComputedStyle = () =>
+          ({{display:'block',visibility:'visible',opacity:'1'}});
+        globalThis.document = {{body:{{innerText:{json.dumps(payload['text'])}}},
+          getElementById(id) {{return id==='option-one' ? radio : null}},
+          querySelectorAll(selector) {{
+            if(selector==='label[for]')return [label];
+            if(selector.includes('input[type=radio]:checked'))return radio.checked ? [radio] : [];
+            if(selector.includes('input[type=password]'))return [];
+            return [];
+          }}
+        }};
+        process.stdout.write(JSON.stringify({{result:{script},checked:radio.checked}}));
+        """
+        completed = subprocess.run([shutil.which("node"), "-e", fixture],
+                                   check=True, capture_output=True, text=True)
+        self.assertEqual(json.loads(completed.stdout),
+                         {"result": {"ok": True}, "checked": True})
 
     def test_open_search_clicks_one_visible_control(self):
         payload = {"url": "https://www.ubereats.com/feed",
@@ -160,7 +193,9 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
           elementFromPoint() {{return input;}},
           querySelector() {{return null;}},
           querySelectorAll(selector) {{
-            return selector.includes('input[type=password]') ? [] : [input, offscreen, covered];
+            return selector.includes('input[type=password]') ||
+                   selector.includes('label[for]') || selector.includes('input[type=radio]') ||
+                   selector.includes('input[type=checkbox]') ? [] : [input, offscreen, covered];
           }}
         }};
         const result = {script};
@@ -174,7 +209,7 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
 
     def test_capture_ignores_hidden_credentials_but_stops_on_visible_ones(self):
         script = browser_capture_script()
-        for credential_size, expected in [(0, {"text": "Featured items"}),
+        for credential_size, expected in [(0, {"text": "Featured items", "selected": []}),
                                           (40, {"reason": "credentials"})]:
             fixture = f"""
             const credential = {{
@@ -182,7 +217,8 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
             }};
             globalThis.document = {{
               body: {{innerText:'Featured items'}},
-              querySelectorAll() {{return [credential]}}
+              querySelectorAll(selector) {{return selector.includes('input[type=password]') ?
+                [credential] : []}}
             }};
             globalThis.getComputedStyle = () =>
               ({{display:'block',visibility:'visible',opacity:'1'}});
