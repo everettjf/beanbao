@@ -7,6 +7,7 @@ public enum BeanBaoUberEatsPage: Equatable, Sendable {
     case search
     case merchant
     case itemConfiguration
+    case cartHandoff
     case cart
     case loginRequired
     case checkout
@@ -25,14 +26,16 @@ public struct BeanBaoUberEatsObservation: Sendable {
     public let url: URL
     public let visibleText: String
     public let selectedOptions: [String]
+    public let availableOptions: [String]
     public let bundleID: String
     public let observedAt: Date
 
     public init(url: URL, visibleText: String, bundleID: String, observedAt: Date,
-                selectedOptions: [String] = []) {
+                selectedOptions: [String] = [], availableOptions: [String] = []) {
         self.url = url
         self.visibleText = visibleText
         self.selectedOptions = selectedOptions
+        self.availableOptions = availableOptions
         self.bundleID = bundleID
         self.observedAt = observedAt
     }
@@ -46,10 +49,18 @@ func beanBaoSelectedOptions(_ fields: [String: Any]) -> [String]? {
     return labels
 }
 
+func beanBaoAvailableOptions(_ fields: [String: Any]) -> [String]? {
+    guard let value = fields["available_options"] else { return [] }
+    guard let labels = value as? [String], labels.count <= 60,
+          labels.allSatisfy({ (1...120).contains($0.count) &&
+              $0.rangeOfCharacter(from: .newlines) == nil }) else { return nil }
+    return labels
+}
+
 /// Versioned screen contract for the first delivery site. Unrecognized screens
 /// stop the workflow; the adapter does not infer a payable total from a menu.
 public enum BeanBaoUberEatsAdapter {
-    public static let version = 1
+    public static let version = 3
 
     public static func page(_ observation: BeanBaoUberEatsObservation) -> BeanBaoUberEatsPage {
         guard observation.url.scheme?.lowercased() == "https",
@@ -62,13 +73,16 @@ public enum BeanBaoUberEatsAdapter {
         if path == "/feed" || path == "/" { return .feed }
         if path == "/search-suggestions" { return .searchSuggestions }
         if path == "/search" { return .search }
+        if path == "/cart" || path == "/cart/" {
+            return observation.visibleText.contains("Go to checkout") ? .cart : .unsupported
+        }
         if path == "/checkout" || path == "/checkout/" { return .checkout }
         guard path.hasPrefix("/store/") else { return .unsupported }
         let text = observation.visibleText
-        if text.contains("Go to checkout") { return .cart }
         if text.range(of: "Add \\d+ to order", options: .regularExpression) != nil {
             return .itemConfiguration
         }
+        if text.contains("View order") { return .cartHandoff }
         return text.contains("Search Uber Eats") || text.contains("Featured items") ?
             .merchant : .unsupported
     }
@@ -136,6 +150,7 @@ public func BBUberEatsClassifySnapshot(_ pointer: UnsafePointer<CChar>?) -> Unsa
           let urlString = fields["url"] as? String, let url = URL(string: urlString),
           let visibleText = fields["visible_text"] as? String, visibleText.count <= 20_000,
           let selectedOptions = beanBaoSelectedOptions(fields),
+          let availableOptions = beanBaoAvailableOptions(fields),
           let bundleID = fields["bundle_id"] as? String, bundleID == "dev.beanbao.deliverybrowser",
           let timestamp = fields["observed_at"] as? NSNumber else {
         return "{\"ok\":false,\"error\":\"Invalid delivery snapshot\"}".withCString { strdup($0) }
@@ -146,7 +161,8 @@ public func BBUberEatsClassifySnapshot(_ pointer: UnsafePointer<CChar>?) -> Unsa
         return "{\"ok\":false,\"error\":\"Delivery page changed; check again\"}".withCString { strdup($0) }
     }
     let observation = BeanBaoUberEatsObservation(url: url, visibleText: visibleText,
-        bundleID: bundleID, observedAt: observedAt, selectedOptions: selectedOptions)
+        bundleID: bundleID, observedAt: observedAt, selectedOptions: selectedOptions,
+        availableOptions: availableOptions)
     let page: String
     switch BeanBaoUberEatsAdapter.page(observation) {
     case .feed: page = "feed"
@@ -154,10 +170,11 @@ public func BBUberEatsClassifySnapshot(_ pointer: UnsafePointer<CChar>?) -> Unsa
     case .search: page = "search"
     case .merchant: page = "merchant"
     case .itemConfiguration: page = "item_configuration"
+    case .cartHandoff: page = "cart_handoff"
     case .cart: page = "cart"
     case .loginRequired: page = "login_required"
     case .checkout: page = "checkout"
     case .unsupported: page = "unsupported"
     }
-    return "{\"ok\":true,\"page\":\"\(page)\",\"adapter_version\":1}".withCString { strdup($0) }
+    return "{\"ok\":true,\"page\":\"\(page)\",\"adapter_version\":\(BeanBaoUberEatsAdapter.version)}".withCString { strdup($0) }
 }

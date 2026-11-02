@@ -340,12 +340,12 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     }
     NSString *script = [NSString stringWithFormat:@"(() => {"
         "const p=%@;"
-        "if(location.href!==p.url || !document.body || document.body.innerText.slice(0,20000)!==p.text) return {ok:false,error:'Page changed'};"
+        "if(location.href!==p.url || !document.body || (p.action!=='open_cart'&&document.body.innerText.slice(0,20000)!==p.text)) return {ok:false,error:'Page changed'};"
         "const clean=s=>(s||'').replace(/\\s+/g,' ').trim();"
         "const rendered=e=>{const r=e.getBoundingClientRect();const s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)!==0};"
         "const visible=e=>{const r=e.getBoundingClientRect();return rendered(e)&&r.top>=0&&r.left>=0&&r.top<window.innerHeight&&r.left<window.innerWidth};"
         "const reachable=e=>{if(!visible(e))return false;const r=e.getBoundingClientRect(),x=Math.max(0,Math.min(window.innerWidth-1,r.left+r.width/2)),y=Math.max(0,Math.min(window.innerHeight-1,r.top+r.height/2)),hit=document.elementFromPoint(x,y);return hit&&(hit===e||e.contains(hit))};"
-        "const selected=()=>{const labels=[...document.querySelectorAll('label[for]')];return [...document.querySelectorAll('input[type=radio]:checked,input[type=checkbox]:checked')].map(e=>labels.find(l=>l.htmlFor===e.id)).filter(l=>l&&rendered(l)).map(l=>clean(l.textContent)).filter(Boolean)};"
+        "const selected=()=>{const labels=[...document.querySelectorAll('label[for]')];return [...new Set([...document.querySelectorAll('input[type=radio]:checked,input[type=checkbox]:checked')].map(e=>labels.find(l=>l.htmlFor===e.id)).filter(l=>l&&rendered(l)).map(l=>clean(l.textContent)).filter(Boolean))]};"
         "if(JSON.stringify(selected())!==JSON.stringify(p.selected))return {ok:false,error:'Page changed'};"
         "if([...document.querySelectorAll('input[type=password],input[type=email],input[type=tel],input[autocomplete=one-time-code]')].some(rendered))return {ok:false,error:'Sign-in page'};"
         "if(p.action==='open_search'){const matches=new Set();for(const e of document.querySelectorAll('a,button,[role=button],label,span,div')){if(!visible(e)||clean(e.textContent)!=='Search Uber Eats')continue;const c=e.closest('a,button,[role=button],label')||e;if(visible(c))matches.add(c)}if(matches.size!==1)return {ok:false,error:'Search control not unique'};[...matches][0].click();return {ok:true};}"
@@ -358,21 +358,21 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         "e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));"
         "if(e.form)e.form.requestSubmit();else e.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true}));"
         "return {ok:true};}"
-        "if(p.action==='choose_option'){const candidates=[...document.querySelectorAll('label[for]')].filter(e=>visible(e)&&clean(e.textContent)===p.target).map(e=>({label:e,input:document.getElementById(e.htmlFor)})).filter(x=>x.input&&x.input.type==='radio'&&!x.input.checked&&x.input.name);"
+        "if(p.action==='choose_option'){const candidates=[...document.querySelectorAll('label[for]')].filter(e=>clean(e.textContent)===p.target).map(e=>({label:e,input:document.getElementById(e.htmlFor)})).filter(x=>x.input&&x.input.type==='radio'&&!x.input.checked&&x.input.name&&rendered(x.label));"
         "if(!candidates.length)return {ok:false,error:'Option changed'};"
-        "const top=candidates.filter(x=>reachable(x.label)),pool=top.length?top:candidates;"
-        "const unique=new Map(pool.map(x=>[x.input.id,x]));"
-        "if(unique.size!==1)return {ok:false,error:'Option target not unique'};"
-        "const e=[...unique.values()][0].label;"
+        "if(candidates.length!==1)return {ok:false,error:'Option target not unique'};"
+        "const e=candidates[0].label;if(!reachable(e))e.scrollIntoView({block:'center',behavior:'instant'});"
+        "if(!reachable(e))return {ok:false,error:'Option changed'};"
         "e.click();return {ok:true};}"
-        "if(!['open_merchant','open_item','add_to_cart','open_checkout'].includes(p.action))return {ok:false,error:'Unsupported action'};"
+        "if(!['open_merchant','open_item','add_to_cart','open_cart','open_checkout'].includes(p.action))return {ok:false,error:'Unsupported action'};"
+        "if(p.action==='add_to_cart'){const buttons=[...document.querySelectorAll('button[data-testid=add-to-cart-button]')].filter(e=>/^Add \\d+ to order$/.test(clean(e.getAttribute('aria-label')))&&reachable(e)&&!e.disabled);if(buttons.length!==1)return {ok:false,error:'Action target not unique'};buttons[0].click();return {ok:true}}"
+        "if(p.action==='open_cart'){const links=[...document.querySelectorAll('a[data-testid=view-cart-button]')].filter(e=>e.getAttribute('aria-label')==='VIEW CART'&&reachable(e)&&(()=>{const u=new URL(e.href,location.href);return u.protocol==='https:'&&u.host===location.host&&u.pathname==='/cart'})());if(links.length!==1)return {ok:false,error:'Action target not unique'};links[0].click();return {ok:true}}"
         "let wanted=p.target;"
-        "if(p.action==='add_to_cart')wanted='ADD_TO_CART';"
         "if(p.action==='open_checkout')wanted='Go to checkout';"
         "const matches=new Map();"
         "for(const e of document.querySelectorAll('a,button,[role=button],label,span,h1,h2,h3,p,div')){"
         "if(!visible(e))continue;const t=clean(e.textContent);"
-        "if(wanted==='ADD_TO_CART'?!/^Add \\d+ to order$/.test(t):t!==wanted)continue;"
+        "if(t!==wanted)continue;"
         "const control=e.closest('a,button,[role=button],label');if(!control||!visible(control))continue;"
         "if(p.action==='open_merchant'&&(control.tagName!=='A'||!control.href||!new URL(control.href,location.href).pathname.startsWith('/store/')))continue;"
         "const key=p.action==='open_merchant'&&control.tagName==='A'?new URL(control.href,location.href).pathname:"
@@ -385,6 +385,12 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     [self.webView evaluateJavaScript:script completionHandler:^(id result, NSError *error) {
         if (!self.runningDelivery) return;
         if (error || ![result isKindOfClass:NSDictionary.class] || ![result[@"ok"] boolValue]) {
+            if (error || ![result isKindOfClass:NSDictionary.class]) {
+                // A navigation may interrupt WebKit's callback after the click.
+                // Reconcile against the expected next page before calling it uncertain.
+                [self verifyDeliveryTransitionFrom:snapshot action:action attempt:0];
+                return;
+            }
             NSString *reason = [result isKindOfClass:NSDictionary.class] ? result[@"error"] : nil;
             NSSet *known = [NSSet setWithArray:@[@"Page changed", @"Sign-in page",
                 @"Search control not unique",
@@ -394,14 +400,34 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
             NSString *message = [reason isKindOfClass:NSString.class] && [known containsObject:reason] ?
                 [NSString stringWithFormat:@"Step paused: %@. Check the page before retrying.", reason] :
                 @"The step may be incomplete. Check the page before retrying.";
+            if (!error && self.deliveryTaskID.length && self.deliveryServiceID.length &&
+                [reason isKindOfClass:NSString.class] && [known containsObject:reason]) {
+                NSString *taskID = self.deliveryTaskID;
+                NSString *serviceID = self.deliveryServiceID;
+                dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                    NSDictionary *reply = BBAgentRequest(@{@"op": @"delivery_action_aborted",
+                        @"task_id": taskID, @"service_id": serviceID, @"reason": reason});
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if (!self.runningDelivery) return;
+                        if ([reply[@"ok"] boolValue]) {
+                            self.deliveryTaskID = nil;
+                            [self finishDeliveryRun:message];
+                        } else {
+                            [self markDeliveryStepUncertain:message];
+                        }
+                    });
+                });
+                return;
+            }
             [self markDeliveryStepUncertain:message];
             return;
         }
-        [self verifyDeliveryTransitionFrom:snapshot attempt:0];
+        [self verifyDeliveryTransitionFrom:snapshot action:action attempt:0];
     }];
 }
 
-- (void)verifyDeliveryTransitionFrom:(NSDictionary *)before attempt:(NSUInteger)attempt {
+- (void)verifyDeliveryTransitionFrom:(NSDictionary *)before action:(NSDictionary *)action
+                              attempt:(NSUInteger)attempt {
     if (!self.runningDelivery) return;
     if (attempt >= 8) {
         [self markDeliveryStepUncertain:@"The page did not confirm this step. Check the cart before retrying."];
@@ -425,8 +451,40 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                 (![after[@"url"] isEqualToString:before[@"url"]] ||
                  ![after[@"visible_text"] isEqualToString:before[@"visible_text"]] ||
                  ![after[@"selected_options"] isEqual:before[@"selected_options"]]);
-            if (!changed) {
-                [self verifyDeliveryTransitionFrom:before attempt:attempt + 1];
+            NSString *name = action[@"action"];
+            NSString *text = [after[@"visible_text"] isKindOfClass:NSString.class] ?
+                after[@"visible_text"] : @"";
+            NSString *path = [NSURL URLWithString:after[@"url"] ?: @""].path ?: @"";
+            BOOL expected = NO;
+            if ([name isEqualToString:@"open_search"]) {
+                expected = [path isEqualToString:@"/search-suggestions"];
+            } else if ([name isEqualToString:@"search"]) {
+                expected = [path isEqualToString:@"/search"];
+            } else if ([name isEqualToString:@"open_merchant"]) {
+                expected = [path hasPrefix:@"/store/"] &&
+                    [text containsString:@"Featured items"];
+            } else if ([name isEqualToString:@"open_item"] ||
+                       [name isEqualToString:@"choose_option"]) {
+                expected = [path hasPrefix:@"/store/"] &&
+                    [text rangeOfString:@"Add [0-9]+ to order"
+                                   options:NSRegularExpressionSearch].location != NSNotFound;
+                if ([name isEqualToString:@"choose_option"]) {
+                    expected = expected && [after[@"selected_options"]
+                        containsObject:action[@"target"]];
+                }
+            } else if ([name isEqualToString:@"add_to_cart"]) {
+                expected = [path hasPrefix:@"/store/"] &&
+                    [text containsString:@"View order"];
+            } else if ([name isEqualToString:@"open_cart"]) {
+                expected = ([path isEqualToString:@"/cart"] ||
+                            [path isEqualToString:@"/cart/"]) &&
+                    [text containsString:@"Go to checkout"];
+            } else if ([name isEqualToString:@"open_checkout"]) {
+                expected = [path isEqualToString:@"/checkout"] ||
+                    [path isEqualToString:@"/checkout/"];
+            }
+            if (!changed || !expected) {
+                [self verifyDeliveryTransitionFrom:before action:action attempt:attempt + 1];
                 return;
             }
             [self finishVerifiedDeliverySnapshot:after login:NO];
@@ -498,6 +556,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                     @"search": @"Search results. Choose a restaurant.",
                     @"merchant": @"Restaurant menu. Choose an item.",
                     @"item_configuration": @"Item options are open. Review them before adding.",
+                    @"cart_handoff": @"Item added. Open the cart to verify its options.",
                     @"cart": @"Cart detected. Review items before checkout.",
                     @"checkout": @"Checkout detected. BeanBao has not verified or placed this order.",
                     @"login_required": @"Sign in on Uber Eats to continue.",
@@ -562,16 +621,20 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         "if(sensitive)return {reason:'credentials'};"
         "const text=document.body.innerText;"
         "const clean=s=>(s||'').replace(/\\s+/g,' ').trim();"
+        "const rendered=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)!==0};"
         "const labels=[...document.querySelectorAll('label[for]')];"
-        "const selected=[...document.querySelectorAll('input[type=radio]:checked,input[type=checkbox]:checked')].map(e=>labels.find(l=>l.htmlFor===e.id)).filter(l=>{if(!l)return false;const r=l.getBoundingClientRect(),s=getComputedStyle(l);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)!==0}).map(l=>clean(l.textContent)).filter(Boolean);"
+        "const selected=[...new Set([...document.querySelectorAll('input[type=radio]:checked,input[type=checkbox]:checked')].map(e=>labels.find(l=>l.htmlFor===e.id)).filter(l=>l&&rendered(l)).map(l=>clean(l.textContent)).filter(Boolean))];"
+        "const available=[...new Set(labels.filter(rendered).map(e=>clean(e.textContent)).filter(Boolean))];"
         "if(selected.length>30||selected.some(s=>s.length>120))return {reason:'invalid'};"
-        "return typeof text==='string'&&text.length?{text:text.slice(0,20000),selected:selected}:{reason:'empty'}"
+        "if(available.length>60||available.some(s=>s.length>120))return {reason:'invalid'};"
+        "return typeof text==='string'&&text.length?{text:text.slice(0,20000),selected:selected,available:available}:{reason:'empty'}"
         "})()";
     [self.webView evaluateJavaScript:script completionHandler:^(id result, NSError *error) {
         NSDictionary *reply = [result isKindOfClass:NSDictionary.class] ? result : nil;
         NSString *text = [reply[@"text"] isKindOfClass:NSString.class] ? reply[@"text"] : nil;
         NSArray *selected = [reply[@"selected"] isKindOfClass:NSArray.class] ? reply[@"selected"] : nil;
-        if (error || !text.length || !selected ||
+        NSArray *available = [reply[@"available"] isKindOfClass:NSArray.class] ? reply[@"available"] : nil;
+        if (error || !text.length || !selected || !available ||
             ![self.webView.URL.absoluteString isEqualToString:expectedURL]) {
             self.captureFailure = ![self.webView.URL.absoluteString isEqualToString:expectedURL] ?
                 @"changed" : ([reply[@"reason"] isEqualToString:@"credentials"] ?
@@ -583,6 +646,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         completion(@{@"url": expectedURL,
                      @"visible_text": text,
                      @"selected_options": selected,
+                     @"available_options": available,
                      @"bundle_id": @"dev.beanbao.deliverybrowser",
                      @"observed_at": @(NSDate.date.timeIntervalSince1970)});
     }];

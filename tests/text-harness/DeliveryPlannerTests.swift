@@ -26,9 +26,11 @@ private struct DeliveryScriptModel: PHKModelClient {
 
 final class DeliveryPlannerTests: XCTestCase {
     private func observation(_ url: String, _ text: String,
-                             selected: [String] = []) -> BeanBaoUberEatsObservation {
+                             selected: [String] = [],
+                             available: [String] = []) -> BeanBaoUberEatsObservation {
         .init(url: URL(string: url)!, visibleText: text, bundleID: "dev.beanbao.deliverybrowser",
-              observedAt: Date(), selectedOptions: selected)
+              observedAt: Date(), selectedOptions: selected,
+              availableOptions: available)
     }
 
     private func store(request: String = "Find a rice bowl") throws -> (BeanBaoWorkflowStore, URL) {
@@ -54,7 +56,9 @@ final class DeliveryPlannerTests: XCTestCase {
              "open_item", "Rice bowl"),
             ("https://www.ubereats.com/store/example/id?mod=quickView", "Rice bowl Add 1 to order private-page-marker",
              "add_to_cart", ""),
-            ("https://www.ubereats.com/store/example/id", "Go to checkout private-page-marker",
+            ("https://www.ubereats.com/store/example/id", "View order private-page-marker",
+             "open_cart", ""),
+            ("https://www.ubereats.com/cart", "Go to checkout private-page-marker",
              "open_checkout", "")
         ]
         for (url, text, action, target) in pages {
@@ -90,9 +94,9 @@ final class DeliveryPlannerTests: XCTestCase {
     }
 
     func testChangedPageAndOrderPlacementAreRejectedBeforeBrowserAction() async throws {
-        let seen = observation("https://www.ubereats.com/store/example/id", "Go to checkout")
+        let seen = observation("https://www.ubereats.com/cart", "Go to checkout")
         let id = try BeanBaoDeliveryObservationContract.identifier(seen)
-        let changed = observation("https://www.ubereats.com/store/example/id", "Go to checkout New total $27.99")
+        let changed = observation("https://www.ubereats.com/cart", "Go to checkout New total $27.99")
         XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(
             .init(action: "open_checkout", target: "", observationID: id),
             observation: changed))
@@ -147,7 +151,7 @@ final class DeliveryPlannerTests: XCTestCase {
     func testCartReviewCompletesOnlyFromTheSameFreshCart() async throws {
         let request = "Add Chicken Pho to cart and review the cart"
         let (journal, file) = try store(request: request)
-        let cart = observation("https://www.ubereats.com/store/example/id",
+        let cart = observation("https://www.ubereats.com/cart",
                                "Chicken Pho Rice Noodle $27.99 Go to checkout private-cart-marker")
         let id = try BeanBaoDeliveryObservationContract.identifier(cart)
         let proposal = try await BeanBaoDeliveryPlanner.choose(
@@ -199,7 +203,7 @@ final class DeliveryPlannerTests: XCTestCase {
     }
 
     func testActionReceiptRequiresTheSameFreshVisiblePage() throws {
-        let seen = observation("https://www.ubereats.com/store/example/id", "Go to checkout")
+        let seen = observation("https://www.ubereats.com/cart", "Go to checkout")
         let id = try BeanBaoDeliveryObservationContract.identifier(seen)
         let proposal = BeanBaoDeliveryProposal(action: "open_checkout", target: "",
                                                 observationID: id)
@@ -227,7 +231,7 @@ final class DeliveryPlannerTests: XCTestCase {
 
     func testCartMutationNeedsOneDurableAttemptAndVerifiedNextPage() async throws {
         let (journal, _) = try store()
-        let cart = observation("https://www.ubereats.com/store/example/id", "Go to checkout")
+        let cart = observation("https://www.ubereats.com/cart", "Go to checkout")
         let id = try BeanBaoDeliveryObservationContract.identifier(cart)
         let proposal = try await BeanBaoDeliveryPlanner.choose(
             request: "Find a rice bowl", observation: cart, store: journal,
@@ -283,5 +287,103 @@ final class DeliveryPlannerTests: XCTestCase {
                                                                       observation: after))
         let saved = await journal.snapshot()
         XCTAssertEqual(saved.operations["delivery-execute-v1-\(id)"]?.state, .completed)
+    }
+
+    func testNamedOptionMustBeSelectedBeforeAddToCart() throws {
+        let url = "https://www.ubereats.com/store/example/id?mod=quickView"
+        let text = "Chicken Pho Rice Noodle Ramen Noodle Add 1 to order • $27.99"
+        let before = observation(url, text, available: ["Rice Noodle", "Ramen Noodle"])
+        let id = try BeanBaoDeliveryObservationContract.identifier(before)
+        let add = BeanBaoDeliveryProposal(action: "add_to_cart", target: "", observationID: id)
+        XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(
+            add, observation: before,
+            request: "Add Chicken Pho with Rice Noodle to the cart"))
+        let choose = BeanBaoDeliveryProposal(action: "choose_option", target: "Rice Noodle",
+                                             observationID: id)
+        XCTAssertTrue(try BeanBaoDeliveryObservationContract.allowed(
+            choose, observation: before,
+            request: "Add Chicken Pho with Rice Noodle to the cart"))
+        let after = observation(url, text, selected: ["Rice Noodle"],
+                                available: ["Rice Noodle", "Ramen Noodle"])
+        let afterID = try BeanBaoDeliveryObservationContract.identifier(after)
+        let ready = BeanBaoDeliveryProposal(action: "add_to_cart", target: "",
+                                            observationID: afterID)
+        XCTAssertTrue(try BeanBaoDeliveryObservationContract.allowed(
+            ready, observation: after,
+            request: "Add Chicken Pho with Rice Noodle to the cart"))
+    }
+
+    func testBrowserRejectBeforeClickClosesAttemptWithoutReplayingIt() async throws {
+        let (journal, _) = try store()
+        let page = observation("https://www.ubereats.com/store/example/id?mod=quickView",
+                               "Chicken Pho Rice Noodle Add 1 to order")
+        let id = try BeanBaoDeliveryObservationContract.identifier(page)
+        let proposal = try await BeanBaoDeliveryPlanner.choose(
+            request: "Find a rice bowl", observation: page, store: journal,
+            client: DeliveryScriptModel(action: "choose_option", target: "Rice Noodle",
+                                        observationID: id), model: "scripted")
+        try await BeanBaoDeliveryPlanner.begin(proposal, store: journal)
+        try await BeanBaoDeliveryPlanner.abortBeforeClick(proposal, store: journal)
+        let saved = await journal.snapshot()
+        XCTAssertEqual(saved.phase, .cancelled)
+        XCTAssertEqual(saved.operations["delivery-execute-v1-\(id)"]?.state, .completed)
+        do {
+            try await BeanBaoDeliveryPlanner.begin(proposal, store: journal)
+            XCTFail("A cancelled action must not be replayed")
+        } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
+    }
+
+    func testSelectedItemMovesThroughCartHandoffToVerifiedCartReview() async throws {
+        let request = "Add Chicken Pho with Rice Noodle to cart for review"
+        let (journal, _) = try store(request: request)
+        let item = observation("https://www.ubereats.com/store/phin/id?mod=quickView",
+                               "Chicken Pho Rice Noodle Add 1 to order • $27.99",
+                               selected: ["Rice Noodle"], available: ["Rice Noodle", "Ramen Noodle"])
+        let itemID = try BeanBaoDeliveryObservationContract.identifier(item)
+        let add = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: item, store: journal,
+            client: DeliveryScriptModel(action: "add_to_cart", target: "", observationID: itemID),
+            model: "scripted")
+        try await BeanBaoDeliveryPlanner.begin(add, store: journal)
+        let handoff = observation("https://www.ubereats.com/store/phin/id",
+                                  "Phin & Bowl Featured items View order Phin & Bowl 1")
+        let handoffPage = try await BeanBaoDeliveryPlanner.finish(add, after: handoff,
+                                                                  store: journal)
+        XCTAssertEqual(handoffPage, .cartHandoff)
+        let handoffID = try BeanBaoDeliveryObservationContract.identifier(handoff)
+        let open = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: handoff, store: journal,
+            client: DeliveryScriptModel(action: "open_cart", target: "", observationID: handoffID),
+            model: "scripted")
+        try await BeanBaoDeliveryPlanner.begin(open, store: journal)
+        let cart = observation("https://www.ubereats.com/cart",
+                               "Phin & Bowl Chicken Pho Noodle choice: Rice Noodle $27.99 Go to checkout")
+        let cartPage = try await BeanBaoDeliveryPlanner.finish(open, after: cart, store: journal)
+        XCTAssertEqual(cartPage, .cart)
+        let cartID = try BeanBaoDeliveryObservationContract.identifier(cart)
+        let review = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: cart, store: journal,
+            client: DeliveryScriptModel(action: "review_cart", target: "", observationID: cartID),
+            model: "scripted")
+        try await BeanBaoDeliveryPlanner.completeReadOnlyReview(review, on: cart, store: journal)
+        let saved = await journal.snapshot()
+        XCTAssertEqual(saved.phase, .completed)
+    }
+
+    func testCartHandoffIgnoresChangingMerchantCopyButNotStoreIdentity() throws {
+        let first = observation("https://www.ubereats.com/store/phin/id",
+                                "Phin & Bowl 11 min Featured items View order 1")
+        let changedCopy = observation("https://www.ubereats.com/store/phin/id",
+                                      "Phin & Bowl 12 min New promotion View order 1")
+        let otherStore = observation("https://www.ubereats.com/store/other/id",
+                                     "Other Kitchen Featured items View order 1")
+        let id = try BeanBaoDeliveryObservationContract.identifier(first)
+        XCTAssertEqual(id, try BeanBaoDeliveryObservationContract.identifier(changedCopy))
+        XCTAssertTrue(try BeanBaoDeliveryObservationContract.allowed(
+            .init(action: "open_cart", target: "", observationID: id),
+            observation: changedCopy))
+        XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(
+            .init(action: "open_cart", target: "", observationID: id),
+            observation: otherStore))
     }
 }

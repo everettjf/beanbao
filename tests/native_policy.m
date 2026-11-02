@@ -26,8 +26,10 @@ int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID) {
     (void)workflowID; (void)bundleID; return 0;
 }
 char *BBUberEatsClassifySnapshot(const char *snapshotJSON) {
+    if (snapshotJSON && strstr(snapshotJSON, "View order"))
+        return strdup("{\"ok\":true,\"page\":\"cart_handoff\",\"adapter_version\":3}");
     if (!snapshotJSON || !strstr(snapshotJSON, "Go to checkout")) return NULL;
-    return strdup("{\"ok\":true,\"page\":\"cart\",\"adapter_version\":1}");
+    return strdup("{\"ok\":true,\"page\":\"cart\",\"adapter_version\":3}");
 }
 char *BBUberEatsValidateAction(const char *snapshotJSON, const char *actionJSON) {
     if (!snapshotJSON || !actionJSON) return NULL;
@@ -41,6 +43,9 @@ int32_t BBDeliveryActionBegin(const char *workflowID, const char *actionJSON) {
 int32_t BBDeliveryActionFinish(const char *workflowID, const char *actionJSON,
                                const char *snapshotJSON) {
     (void)workflowID; (void)actionJSON; (void)snapshotJSON; return 0;
+}
+int32_t BBDeliveryActionAbort(const char *workflowID, const char *actionJSON) {
+    (void)workflowID; (void)actionJSON; return 0;
 }
 int32_t BBDeliveryReadOnlyReviewFinish(const char *workflowID, const char *actionJSON,
                                        const char *snapshotJSON) {
@@ -93,6 +98,11 @@ int main(void) {
                    !delivery[@"visible_text"] &&
                    ![BBHandle(@{@"op": @"delivery_observe"})[@"ok"] boolValue],
                    "delivery observation returns only bounded page status")) return 1;
+        NSDictionary *handoff = BBHandle(@{@"op": @"delivery_observe",
+            @"snapshot": @{@"url": @"https://www.ubereats.com/store/example/id",
+                            @"visible_text": @"View order Phin & Bowl 1"}});
+        if (!Check([handoff[@"page"] isEqualToString:@"cart_handoff"],
+                   "cart handoff is classified for the next planning step")) return 1;
         if (!Check(![BBHandle(@{@"op": @"delivery_plan", @"task": @"Find lunch"})[@"ok"] boolValue],
                    "delivery planning requires a current observed page")) return 1;
         if (!Check(![BBHandle(@{@"op": @"delivery_verify_action", @"task_id": @"old",
@@ -139,6 +149,14 @@ int main(void) {
         if (!Check([deliveryResult[@"phase"] isEqualToString:@"waiting_for_user"] &&
                    BBState.deliveryAction == nil,
                    "verified next page clears the pending browser action")) return 1;
+        BBState.phase = @"executing";
+        BBState.deliveryAction = @{@"action": @"choose_option", @"target": @"Rice Noodle",
+            @"observationID": @"1234567890123456789012345678901234567890123456789012345678901234"};
+        NSDictionary *aborted = BBDeliveryActionAbortBeforeClick(@{@"task_id": @"task-A",
+            @"service_id": @"service-A", @"reason": @"Option changed"});
+        if (!Check([aborted[@"phase"] isEqualToString:@"stopped"] &&
+                   BBState.deliveryAction == nil,
+                   "browser pre-click rejection closes the pending action")) return 1;
         BBState.phase = @"waiting_for_user";
         BBState.app = @"ResearchMailDraft";
         BBState.mailDraftPath = @"/tmp/test-draft.json";

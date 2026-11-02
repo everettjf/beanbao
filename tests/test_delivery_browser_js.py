@@ -38,9 +38,13 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
           textContent: typeof value === 'string' ? value : value.text,
           tagName: typeof value === 'string' ? 'BUTTON' : value.tagName,
           href: typeof value === 'string' ? undefined : value.href,
+          testID: typeof value === 'string' ? undefined : value.testID,
+          ariaLabel: typeof value === 'string' ? undefined : value.ariaLabel,
           clicked: false,
           getBoundingClientRect() {{ return {{ width: 80, height: 30, top: typeof value === 'string' ? 200 : value.top, left: 20 }}; }},
           closest() {{ return this; }},
+          contains(hit) {{ return hit === this; }},
+          getAttribute(name) {{ return name === 'aria-label' ? this.ariaLabel : null; }},
           click() {{ this.clicked = true; }}
         }}));
         globalThis.location = {{ href: {json.dumps(payload['url'])}, host: 'www.ubereats.com' }};
@@ -48,8 +52,11 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         globalThis.getComputedStyle = () => ({{ display: 'block', visibility: 'visible', opacity: '1' }});
         globalThis.document = {{
           body: {{ innerText: {json.dumps(page_text if page_text is not None else payload['text'])} }},
+          elementFromPoint(x,y) {{ return controls.find(e => {{ const r=e.getBoundingClientRect(); return y >= r.top && y < r.top+r.height; }}) || null; }},
           querySelector() {{ return null; }},
           querySelectorAll(selector) {{
+            if (selector === 'button[data-testid=add-to-cart-button]')
+              return controls.filter(e => e.tagName === 'BUTTON' && e.testID === 'add-to-cart-button');
             return selector.includes('input[type=password]') ||
                    selector.includes('label[for]') || selector.includes('input[type=radio]') ||
                    selector.includes('input[type=checkbox]') ? [] : controls;
@@ -81,8 +88,25 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
     def test_add_to_cart_only_matches_quantity_button(self):
         payload = {"url": "https://www.ubereats.com/store/example/id?mod=quickView",
                    "text": "Rice bowl Add 1 to order", "action": "add_to_cart", "target": ""}
-        self.assertEqual(self.run_fixture(payload, ["Add 1 to order", "Place order"])["clicks"], 1)
+        add = {"text": "Add 1 to order • $27.99", "tagName": "BUTTON",
+               "testID": "add-to-cart-button", "ariaLabel": "Add 1 to order", "top": 200}
+        self.assertEqual(self.run_fixture(payload, [add, "Place order"])["clicks"], 1)
         self.assertEqual(self.run_fixture(payload, ["Place order"])["clicks"], 0)
+        duplicate = dict(add, top=250)
+        self.assertEqual(self.run_fixture(payload, [add, duplicate])["clicks"], 0)
+
+    def test_open_cart_requires_the_unique_uber_eats_cart_link(self):
+        payload = {"url": "https://www.ubereats.com/store/phin/id",
+                   "text": "View order Phin & Bowl 1", "action": "open_cart", "target": ""}
+        cart = {"text": "View order Phin & Bowl 1", "tagName": "A",
+                "href": "https://www.ubereats.com/cart?diningMode=DELIVERY",
+                "ariaLabel": "VIEW CART", "top": 200}
+        self.assertEqual(self.run_fixture(payload, [cart])["clicks"], 1)
+        self.assertEqual(self.run_fixture(payload, [cart],
+                                          page_text="New promotion View order Phin & Bowl 1")["clicks"], 1)
+        outside = dict(cart, href="https://example.com/cart")
+        self.assertEqual(self.run_fixture(payload, [outside])["clicks"], 0)
+        self.assertEqual(self.run_fixture(payload, [cart, dict(cart, top=250)])["clicks"], 0)
 
     def test_option_clicks_one_visible_radio_label(self):
         payload = {"url": "https://www.ubereats.com/store/example/id?mod=quickView",
@@ -116,7 +140,56 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         self.assertEqual(json.loads(completed.stdout),
                          {"result": {"ok": True}, "checked": True})
 
-    def test_occluded_duplicate_option_does_not_block_visible_radio(self):
+    def test_uber_eats_required_option_is_scrolled_into_view_and_selected(self):
+        payload = {"url": "https://www.ubereats.com/store/example/id?mod=quickView",
+                   "text": "Chicken Pho Rice Noodle Add 1 to order • $27.99", "selected": [],
+                   "action": "choose_option", "target": "Rice Noodle"}
+        action = browser_action_script(payload)
+        capture = browser_capture_script()
+        fixture = f"""
+        const cardRadio = {{id:'',type:'radio',name:'0',value:'0',checked:false}};
+        const requiredRadio = {{id:'required-rice',type:'radio',name:'noodle',checked:false}};
+        const richText = {{textContent:'Rice Noodle'}};
+        const card = {{textContent:'#1, Ordered by 50+ others Rice Noodle',
+          getBoundingClientRect() {{return {{width:324,height:92,top:441,left:16}}}},
+          querySelector() {{return cardRadio}},
+          querySelectorAll() {{return [{{textContent:'#1, Ordered by 50+ others'}},richText]}},
+          contains(hit) {{return hit===this || hit===richText}},
+          click() {{cardRadio.checked=true;requiredRadio.checked=true}}}};
+        const paired = {{htmlFor:'required-rice',textContent:'Rice Noodle',
+          top:633,
+          getBoundingClientRect() {{return {{width:382,height:22,top:this.top,left:16}}}},
+          scrollIntoView() {{this.top=300}},
+          contains(hit) {{return hit===this}},
+          click() {{requiredRadio.checked=true}}}};
+        cardRadio.closest=()=>card;
+        requiredRadio.closest=()=>null;
+        globalThis.location={{href:{json.dumps(payload['url'])},host:'www.ubereats.com'}};
+        globalThis.window={{innerWidth:414,innerHeight:628}};
+        globalThis.getComputedStyle=()=>({{display:'block',visibility:'visible',opacity:'1'}});
+        globalThis.document={{body:{{innerText:{json.dumps(payload['text'])}}},
+          elementFromPoint(x,y) {{return y<350 ? paired : richText}},
+          getElementById(id) {{return id==='required-rice' ? requiredRadio : null}},
+          querySelectorAll(selector) {{
+            if(selector==='label[for]')return [paired];
+            if(selector==='li')return [card];
+            if(selector==='input[type=radio]:checked,input[type=checkbox]:checked')
+              return [cardRadio,requiredRadio].filter(e=>e.checked);
+            return [];
+          }}}};
+        const result={action};
+        const observed={capture};
+        process.stdout.write(JSON.stringify({{result,observed,cardChecked:cardRadio.checked}}));
+        """
+        completed = subprocess.run([shutil.which("node"), "-e", fixture],
+                                   check=True, capture_output=True, text=True)
+        self.assertEqual(json.loads(completed.stdout),
+                         {"result": {"ok": True}, "cardChecked": False,
+                          "observed": {"text": payload["text"],
+                                       "selected": ["Rice Noodle"],
+                                       "available": ["Rice Noodle"]}})
+
+    def test_unpaired_duplicate_label_does_not_block_required_option(self):
         payload = {"url": "https://www.ubereats.com/store/example/id?mod=quickView",
                    "text": "Rice Noodle Add 1 to order", "selected": [],
                    "action": "choose_option", "target": "Rice Noodle"}
@@ -166,7 +239,7 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         globalThis.getComputedStyle = () =>
           ({{display:'block',visibility:'visible',opacity:'1'}});
         globalThis.document = {{body:{{innerText:{json.dumps(payload['text'])}}},
-          elementFromPoint() {{return null}},
+          elementFromPoint(x,y) {{return y<350 ? labels[0] : labels[1]}},
           getElementById(id) {{return inputs.find(x=>x.id===id)||null}},
           querySelectorAll(selector) {{
             if(selector==='label[for]')return labels;
@@ -183,7 +256,7 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
                          {"result": {"ok": False, "error": "Option target not unique"},
                           "checked": [False, False]})
 
-    def test_unique_radio_can_be_chosen_when_hit_test_returns_an_ancestor(self):
+    def test_covered_radio_is_not_chosen(self):
         payload = {"url": "https://www.ubereats.com/store/example/id?mod=quickView",
                    "text": "Rice Noodle Add 1 to order", "selected": [],
                    "action": "choose_option", "target": "Rice Noodle"}
@@ -192,6 +265,7 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         const radio = {{id:'option-one',type:'radio',name:'noodle',checked:false}};
         const label = {{htmlFor:'option-one',textContent:'Rice Noodle',
           getBoundingClientRect() {{return {{width:200,height:30,top:300,left:20}}}},
+          scrollIntoView() {{}},
           contains() {{return false}},click() {{radio.checked=true}}}};
         globalThis.location = {{href:{json.dumps(payload['url'])},host:'www.ubereats.com'}};
         globalThis.window = {{innerWidth:414,innerHeight:896}};
@@ -212,7 +286,7 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
         completed = subprocess.run([shutil.which("node"), "-e", fixture],
                                    check=True, capture_output=True, text=True)
         self.assertEqual(json.loads(completed.stdout),
-                         {"result": {"ok": True}, "checked": True})
+                         {"result": {"ok": False, "error": "Option changed"}, "checked": False})
 
     def test_open_search_clicks_one_visible_control(self):
         payload = {"url": "https://www.ubereats.com/feed",
@@ -309,7 +383,7 @@ class DeliveryBrowserJavaScriptTests(unittest.TestCase):
 
     def test_capture_ignores_hidden_credentials_but_stops_on_visible_ones(self):
         script = browser_capture_script()
-        for credential_size, expected in [(0, {"text": "Featured items", "selected": []}),
+        for credential_size, expected in [(0, {"text": "Featured items", "selected": [], "available": []}),
                                           (40, {"reason": "credentials"})]:
             fixture = f"""
             const credential = {{

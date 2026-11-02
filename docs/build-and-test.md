@@ -2,6 +2,14 @@
 
 Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 2 delivery cart acceptance
+
+Bridge 0.2.13, Agent 0.3.83, Delivery Browser 0.1.12, and App 0.3.54 built successfully. The full build ran 61 Swift Harness tests, the browser JavaScript tests, native policy tests, and the four-package release audit. Agent and Delivery Browser updates were installed on the connected phone without reloading SpringBoard or locking it.
+
+On the real Uber Eats site using the public San Jose City Hall address, BeanBao's Claude-backed planner found Phin & Bowl, opened Chicken Pho, selected the actual required Rice Noodle radio, and added one item. The Agent journal recorded a verified `cartHandoff` transition. After a development Agent update, the browser opened the unique View order link; a new journal recorded a verified `cart` transition and a completed read-only `delivery_review_cart` receipt. The visible cart showed one Chicken Pho, Noodle choice: Rice Noodle, and a $27.99 subtotal. BeanBao displayed **Cart is ready for review. No checkout or order was started.** The Agent update split this into two task records, so a single uninterrupted fresh-install run remains unverified. The first cart review attempt paused when the page changed between planning and recheck; retrying on the stable cart completed. No checkout, payment, or order placement was attempted.
+
+Web Inspector was turned back off after the diagnostic session. The phone remained unlocked, with the reviewed cart visible.
+
 ## November 2 complex workflow acceptance
 
 The existing paired SSH identity did not match the public key in the device-key helper package. A helper package rebuilt with the current public key was transferred over USB and installed through the already-present Fila file manager. Root key authentication then succeeded. Agent 0.3.65 and App 0.3.30 were installed with `dpkg`; the Agent was restarted without a SpringBoard reload. Bridge 0.2.13 stayed installed, and the phone stayed unlocked throughout these tests.

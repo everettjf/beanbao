@@ -39,7 +39,8 @@ final class UberEatsAdapterTests: XCTestCase {
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/example/id", "Search Uber Eats")), .merchant)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/rice-junky/id", "Search Featured items CC Chicken Bowl")), .merchant)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/example/id?mod=quickView", "Add 1 to order")), .itemConfiguration)
-        XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/example/id", "Go to checkout")), .cart)
+        XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/example/id", "View order Phin & Bowl 1")), .cartHandoff)
+        XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/cart", "Chicken Pho Noodle choice: Rice Noodle Go to checkout")), .cart)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://auth.uber.com/v2/?next_url=checkout", "Enter phone number or email")), .loginRequired)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com.evil.example/checkout", checkout)), .unsupported)
     }
@@ -71,7 +72,7 @@ final class UberEatsAdapterTests: XCTestCase {
 
     func testAgentEntryReturnsOnlyBoundedPageStatus() throws {
         let snapshot: [String: Any] = [
-            "url": "https://www.ubereats.com/store/example/id",
+            "url": "https://www.ubereats.com/cart",
             "visible_text": "Go to checkout",
             "bundle_id": "dev.beanbao.deliverybrowser",
             "observed_at": Date().timeIntervalSince1970
@@ -81,7 +82,7 @@ final class UberEatsAdapterTests: XCTestCase {
         XCTAssertNotNil(pointer)
         defer { free(pointer) }
         let response = String(cString: try XCTUnwrap(pointer))
-        XCTAssertEqual(response, "{\"ok\":true,\"page\":\"cart\",\"adapter_version\":1}")
+        XCTAssertEqual(response, "{\"ok\":true,\"page\":\"cart\",\"adapter_version\":3}")
         XCTAssertFalse(response.contains("checkout"))
 
         var impersonated = snapshot

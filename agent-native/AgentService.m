@@ -30,6 +30,7 @@ extern char *BBUberEatsValidateAction(const char *snapshotJSON, const char *acti
 extern int32_t BBDeliveryActionBegin(const char *workflowID, const char *actionJSON);
 extern int32_t BBDeliveryActionFinish(const char *workflowID, const char *actionJSON,
                                      const char *snapshotJSON);
+extern int32_t BBDeliveryActionAbort(const char *workflowID, const char *actionJSON);
 extern int32_t BBDeliveryReadOnlyReviewFinish(const char *workflowID, const char *actionJSON,
                                              const char *snapshotJSON);
 
@@ -450,7 +451,7 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
             NSString *target = candidate[@"target"];
             NSString *identity = candidate[@"observationID"];
             if ([@[@"open_search", @"search", @"open_merchant", @"open_item", @"review_options", @"choose_option",
-                   @"add_to_cart", @"review_cart", @"open_checkout", @"review_checkout"] containsObject:action] &&
+                   @"add_to_cart", @"open_cart", @"review_cart", @"open_checkout", @"review_checkout"] containsObject:action] &&
                 [target isKindOfClass:NSString.class] && target.length <= 120 &&
                 [identity isKindOfClass:NSString.class] && identity.length == 64)
                 deliveryAction = candidate;
@@ -780,7 +781,8 @@ static NSDictionary *BBDeliveryPlan(NSDictionary *request) {
     NSDictionary *observed = BBDeliveryObserve(@{@"snapshot": snapshot});
     NSString *page = observed[@"page"];
     if (![observed[@"ok"] boolValue] ||
-        ![@[@"feed", @"search_suggestions", @"search", @"merchant", @"item_configuration", @"cart", @"checkout"] containsObject:page])
+        ![@[@"feed", @"search_suggestions", @"search", @"merchant",
+            @"item_configuration", @"cart_handoff", @"cart", @"checkout"] containsObject:page])
         return @{@"ok": @NO, @"error": @"Check a current Uber Eats page before planning"};
     NSData *snapshotData = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
     if (!snapshotData || snapshotData.length >= 65536)
@@ -931,6 +933,37 @@ static NSDictionary *BBDeliveryVerifyAction(NSDictionary *request) {
     }
 }
 
+static NSDictionary *BBDeliveryActionAbortBeforeClick(NSDictionary *request) {
+    NSString *taskID = request[@"task_id"];
+    NSString *serviceID = request[@"service_id"];
+    NSString *reason = request[@"reason"];
+    NSSet *known = [NSSet setWithArray:@[@"Page changed", @"Sign-in page",
+        @"Search control not unique", @"Search field not unique", @"Search form changed",
+        @"Action target not unique", @"Option target not unique", @"Option changed",
+        @"Link outside Uber Eats", @"Unsupported action"]];
+    if (![taskID isKindOfClass:NSString.class] ||
+        ![serviceID isKindOfClass:NSString.class] ||
+        ![reason isKindOfClass:NSString.class] || ![known containsObject:reason])
+        return @{@"ok": @NO, @"error": @"Invalid delivery abort"};
+    @synchronized (BBState) {
+        if (![taskID isEqualToString:BBState.taskID] ||
+            ![serviceID isEqualToString:BBState.serviceID] ||
+            ![BBState.app isEqualToString:@"DeliveryPlan"] ||
+            ![BBState.phase isEqualToString:@"executing"] || !BBState.deliveryAction)
+            return @{@"ok": @NO, @"error": @"The delivery step changed"};
+        NSData *data = [NSJSONSerialization dataWithJSONObject:BBState.deliveryAction
+                                                      options:0 error:nil];
+        NSString *action = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if (!action || data.length >= 1024 ||
+            BBDeliveryActionAbort(taskID.UTF8String, action.UTF8String) != 0)
+            return @{@"ok": @NO, @"error": @"Could not close the unstarted step"};
+        BBState.phase = @"stopped";
+        BBState.message = @"Delivery step did not start";
+        BBState.deliveryAction = nil;
+        return BBStatus();
+    }
+}
+
 static NSDictionary *BBDeliveryActionResult(NSDictionary *request) {
     NSString *taskID = request[@"task_id"];
     NSString *serviceID = request[@"service_id"];
@@ -979,6 +1012,7 @@ static NSDictionary *BBHandle(NSDictionary *request) {
     if ([op isEqualToString:@"delivery_observe"]) return BBDeliveryObserve(request);
     if ([op isEqualToString:@"delivery_plan"]) return BBDeliveryPlan(request);
     if ([op isEqualToString:@"delivery_verify_action"]) return BBDeliveryVerifyAction(request);
+    if ([op isEqualToString:@"delivery_action_aborted"]) return BBDeliveryActionAbortBeforeClick(request);
     if ([op isEqualToString:@"delivery_action_result"]) return BBDeliveryActionResult(request);
     if ([op isEqualToString:@"list_workflows"])
         return @{@"ok": @YES, @"workflows": BBWorkflowSummaries()};
@@ -1036,7 +1070,8 @@ static void BBClient(int fd, BOOL browserOnly) {
                                   @"delivery_verify_action", @"delivery_action_result"] containsObject:request[@"op"]])
         request = nil;
     BOOL allowed = !browserOnly || [@[@"status", @"stop", @"delivery_observe",
-        @"delivery_plan", @"delivery_verify_action", @"delivery_action_result"]
+        @"delivery_plan", @"delivery_verify_action", @"delivery_action_aborted",
+        @"delivery_action_result"]
         containsObject:request[@"op"]];
     if (browserOnly && [request[@"op"] isEqualToString:@"stop"]) {
         allowed = allowed && [request[@"task_id"] isKindOfClass:NSString.class] &&

@@ -1,6 +1,6 @@
 # Device acceptance checklist
 
-Updated November 1, 2026. The tested phone is an iPhone 11 with iOS 26.0.1, Relaxin 0.5.5, and RootHide. The owner has authorized device operation. Keep the phone unlocked and screen on during UI tests. Do not record API keys, private keys, contacts, or personal note contents.
+Updated November 2, 2026. The tested phone is an iPhone 11 with iOS 26.0.1, Relaxin 0.5.5, and RootHide. The owner has authorized device operation. Keep the phone unlocked and screen on during UI tests. Do not record API keys, private keys, contacts, or personal note contents.
 
 ## Verify the installed build
 
@@ -15,6 +15,14 @@ Run `scripts/verify_device.py --expect-bundle` with the paired SSH host, port, i
 5. Enter **Open Maps and send a message**. Require a clear rejection, no new task ID, and no message sent.
 
 The current test scripts are `scripts/accept_text_device.py` and `scripts/accept_app_text_device.py`. Check the app status, Agent task and service IDs, and actual UI together. A package audit or simulated Bridge test does not replace device acceptance.
+
+## Food delivery cart review
+
+1. Open **Browse food delivery** and set a non-personal test address on Uber Eats. Confirm **Check** identifies a supported page.
+2. Enter a request naming one merchant, item, and available required option, ending with “add it to the cart for review; do not check out.” Tap **Run**. Verify the visible merchant and option before any add action. If the site changes or asks for sign-in, stop and record the state.
+3. Require a cart with exactly the named item and option. BeanBao should report **Cart is ready for review. No checkout or order was started.** Match the Agent's completed `delivery_review_cart` receipt to the visible cart. Do not tap **Go to checkout** as part of this acceptance.
+
+The connected phone passed this sequence across a development Agent update; repeat it as one uninterrupted run after a fresh install.
 
 ## Voice and independent operation
 
