@@ -24,6 +24,7 @@ public enum BeanBaoReportPDFRenderer {
         let titleFont = CTFontCreateWithName("Helvetica-Bold" as CFString, 23, nil)
         let headingFont = CTFontCreateWithName("Helvetica-Bold" as CFString, 15, nil)
         let bodyFont = CTFontCreateWithName("Helvetica" as CFString, 11, nil)
+        var links: [(range: NSRange, url: URL)] = []
         func append(_ text: String, font: CTFont) {
             content.append(NSAttributedString(string: text, attributes: [
                 NSAttributedString.Key(kCTFontAttributeName as String): font
@@ -46,7 +47,13 @@ public enum BeanBaoReportPDFRenderer {
         }
         append("Sources\n", font: headingFont)
         for (index, source) in document.sources.enumerated() {
-            append("[\(index + 1)] \(source.title)\n\(source.url)\n\n", font: bodyFont)
+            append("[\(index + 1)] \(source.title)\n", font: bodyFont)
+            guard let url = URL(string: source.url), url.scheme?.lowercased() == "https",
+                  url.host != nil else { throw BeanBaoPDFError.renderFailed }
+            let start = content.length
+            append(source.url, font: bodyFont)
+            links.append((NSRange(location: start, length: content.length - start), url))
+            append("\n\n", font: bodyFont)
         }
 
         let mutable = CFDataCreateMutable(nil, 0)!
@@ -67,6 +74,30 @@ public enum BeanBaoReportPDFRenderer {
             context.textMatrix = .identity
             let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: index, length: 0), path, nil)
             CTFrameDraw(frame, context)
+            let lines = CTFrameGetLines(frame) as! [CTLine]
+            var origins = [CGPoint](repeating: .zero, count: lines.count)
+            origins.withUnsafeMutableBufferPointer { buffer in
+                guard let base = buffer.baseAddress else { return }
+                CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), base)
+            }
+            for (lineIndex, line) in lines.enumerated() {
+                let lineRange = CTLineGetStringRange(line)
+                let lineEnd = lineRange.location + lineRange.length
+                for link in links {
+                    let start = max(lineRange.location, link.range.location)
+                    let end = min(lineEnd, link.range.location + link.range.length)
+                    guard start < end else { continue }
+                    var ascent: CGFloat = 0, descent: CGFloat = 0
+                    _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+                    let left = CTLineGetOffsetForStringIndex(line, start, nil)
+                    let right = CTLineGetOffsetForStringIndex(line, end, nil)
+                    let origin = origins[lineIndex]
+                    let rect = CGRect(x: origin.x + min(left, right), y: origin.y - descent,
+                                      width: max(1, abs(right - left)),
+                                      height: max(1, ascent + descent))
+                    context.setURL(link.url as CFURL, for: rect)
+                }
+            }
             let visible = CTFrameGetVisibleStringRange(frame)
             context.endPDFPage()
             guard visible.length > 0 else { throw BeanBaoPDFError.renderFailed }

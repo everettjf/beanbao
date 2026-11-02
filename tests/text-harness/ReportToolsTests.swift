@@ -55,6 +55,10 @@ final class ReportToolsTests: XCTestCase {
         let text = pdf.string ?? ""
         XCTAssertTrue(text.contains("On-device speech recognition on iOS"))
         XCTAssertTrue(text.contains(source.url))
+        let linkURLs = (0..<pdf.pageCount).compactMap { pdf.page(at: $0) }
+            .flatMap(\.annotations)
+            .compactMap { ($0.action as? PDFActionURL)?.url?.absoluteString }
+        XCTAssertTrue(linkURLs.contains(source.url), "Source URL must be clickable in the PDF")
         let attributes = try FileManager.default.attributesOfItem(atPath: pdfURL.path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
