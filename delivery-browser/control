@@ -1,6 +1,6 @@
 Package: dev.beanbao.deliverybrowser
 Name: BeanBao Delivery Browser
-Version: 0.1.12
+Version: 0.1.14
 Architecture: iphoneos-arm
 Depends: dev.beanbao.agent (>= 0.3.83)
 Description: Sandboxed food-delivery browser for BeanBao.

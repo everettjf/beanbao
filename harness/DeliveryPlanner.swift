@@ -257,6 +257,26 @@ public enum BeanBaoDeliveryPlanner {
               let result = planned.result, Self.proposal(from: result) == proposal else {
             throw BeanBaoWorkflowError.invalidRecord
         }
+        if proposal.action == "review_cart" {
+            // A visible cart button alone is not evidence that the item just
+            // selected by this workflow is still in the cart. Match every
+            // successfully executed merchant, item, and option target against
+            // the fresh cart page before recording completion.
+            for (key, operation) in record.operations
+                where key.hasPrefix("delivery-plan-v1-") && operation.state == .completed {
+                guard let result = operation.result,
+                      let earlier = Self.proposal(from: result),
+                      ["open_merchant", "open_item", "choose_option"].contains(earlier.action),
+                      let execution = record.operations["delivery-execute-v1-\(earlier.observationID)"],
+                      execution.state == .completed,
+                      case .object(let fields)? = execution.result,
+                      case .bool(true)? = fields["transition_verified"] else { continue }
+                guard observation.visibleText.range(of: earlier.target,
+                    options: [.caseInsensitive, .diacriticInsensitive]) != nil else {
+                    throw BeanBaoDeliveryPlanError.invalidAction
+                }
+            }
+        }
         let key = "delivery-review-v1-\(proposal.observationID)"
         let tool = proposal.action == "review_cart" ? "delivery_review_cart" : "delivery_review_options"
         switch try await store.claim(key: key, tool: tool, effect: .readOnly) {

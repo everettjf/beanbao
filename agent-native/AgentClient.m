@@ -7,10 +7,10 @@
 
 static NSString *BBDeliveryPairingToken;
 
-static void BBConfigureAgentSocket(int fd) {
+static void BBConfigureAgentSocket(int fd, int timeoutSeconds) {
     int noSigpipe = 1;
     setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(noSigpipe));
-    struct timeval timeout = {.tv_sec = 3};
+    struct timeval timeout = {.tv_sec = timeoutSeconds};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 }
@@ -23,6 +23,11 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     if (![NSJSONSerialization isValidJSONObject:request]) return @{@"ok": @NO, @"error": @"Invalid request format"};
     BOOL deliveryBrowser = [NSBundle.mainBundle.bundleIdentifier
         isEqualToString:@"dev.beanbao.deliverybrowser"];
+    // Completing a journaled delivery action can outlast the ordinary status
+    // timeout on a busy phone. A lost reply must not masquerade as a failed
+    // click after the Agent has already verified and committed the step.
+    int timeoutSeconds = [@[@"delivery_verify_action", @"delivery_action_result",
+                            @"delivery_action_aborted"] containsObject:request[@"op"]] ? 15 : 3;
     if (deliveryBrowser) {
         NSString *token = nil;
         @synchronized(NSBundle.mainBundle) { token = BBDeliveryPairingToken; }
@@ -46,7 +51,7 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     if (deliveryBrowser) {
         fd = socket(AF_INET, SOCK_STREAM, 0);
         if (fd < 0) return @{@"ok": @NO, @"error": @"Could not create a connection"};
-        BBConfigureAgentSocket(fd);
+        BBConfigureAgentSocket(fd, timeoutSeconds);
         struct sockaddr_in address = {0};
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -58,7 +63,7 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     for (NSString *path in deliveryBrowser ? @[] : paths) {
         fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (fd < 0) return @{@"ok": @NO, @"error": @"Could not create a connection"};
-        BBConfigureAgentSocket(fd);
+        BBConfigureAgentSocket(fd, timeoutSeconds);
         struct sockaddr_un address = {0};
         address.sun_family = AF_UNIX;
         if (strlcpy(address.sun_path, path.fileSystemRepresentation,

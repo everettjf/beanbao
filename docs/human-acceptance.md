@@ -22,7 +22,7 @@ The current test scripts are `scripts/accept_text_device.py` and `scripts/accept
 2. Enter a request naming one merchant, item, and available required option, ending with “add it to the cart for review; do not check out.” Tap **Run**. Verify the visible merchant and option before any add action. If the site changes or asks for sign-in, stop and record the state.
 3. Require a cart with exactly the named item and option. BeanBao should report **Cart is ready for review. No checkout or order was started.** Match the Agent's completed `delivery_review_cart` receipt to the visible cart. Do not tap **Go to checkout** as part of this acceptance.
 
-The connected phone passed this sequence across a development Agent update; repeat it as one uninterrupted run after a fresh install.
+The connected phone passed two uninterrupted runs from an empty cart, including one with the final merchant, item, and option check. Other sites, accounts, and devices still require separate acceptance.
 
 ## Voice and independent operation
 

@@ -386,4 +386,87 @@ final class DeliveryPlannerTests: XCTestCase {
             .init(action: "open_cart", target: "", observationID: id),
             observation: otherStore))
     }
+
+    func testCartReviewRejectsAChangedSelectedOption() async throws {
+        let request = "Add Chicken Pho with Rice Noodle to cart for review"
+        let (journal, _) = try store(request: request)
+        let itemURL = "https://www.ubereats.com/store/phin/id?mod=quickView"
+        let item = observation(itemURL, "Chicken Pho Rice Noodle Add 1 to order",
+                               available: ["Rice Noodle", "Ramen Noodle"])
+        let optionID = try BeanBaoDeliveryObservationContract.identifier(item)
+        let choice = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: item, store: journal,
+            client: DeliveryScriptModel(action: "choose_option", target: "Rice Noodle",
+                                        observationID: optionID), model: "scripted")
+        try await BeanBaoDeliveryPlanner.begin(choice, store: journal)
+        let selected = observation(itemURL, "Chicken Pho Rice Noodle Add 1 to order",
+                                   selected: ["Rice Noodle"],
+                                   available: ["Rice Noodle", "Ramen Noodle"])
+        _ = try await BeanBaoDeliveryPlanner.finish(choice, after: selected, store: journal)
+        let wrongCart = observation("https://www.ubereats.com/cart",
+            "Phin & Bowl Chicken Pho Noodle choice: Ramen Noodle $27.99 Go to checkout")
+        let cartID = try BeanBaoDeliveryObservationContract.identifier(wrongCart)
+        let review = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: wrongCart, store: journal,
+            client: DeliveryScriptModel(action: "review_cart", target: "",
+                                        observationID: cartID), model: "scripted")
+        do {
+            try await BeanBaoDeliveryPlanner.completeReadOnlyReview(review,
+                on: wrongCart, store: journal)
+            XCTFail("A cart with a different option must not complete")
+        } catch BeanBaoDeliveryPlanError.invalidAction { }
+        let saved = await journal.snapshot()
+        XCTAssertNil(saved.operations["delivery-review-v1-\(cartID)"])
+    }
+
+    func testCartReviewRequiresPreviouslyOpenedMerchantAndItem() async throws {
+        let request = "Add Chicken Pho from Phin & Bowl to cart for review"
+        let (journal, _) = try store(request: request)
+        let search = observation("https://www.ubereats.com/search?q=phin", "Phin & Bowl")
+        let searchID = try BeanBaoDeliveryObservationContract.identifier(search)
+        let merchantChoice = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: search, store: journal,
+            client: DeliveryScriptModel(action: "open_merchant", target: "Phin & Bowl",
+                                        observationID: searchID), model: "scripted")
+        try await BeanBaoDeliveryPlanner.begin(merchantChoice, store: journal)
+        let menu = observation("https://www.ubereats.com/store/phin/id",
+                               "Phin & Bowl Featured items Chicken Pho")
+        _ = try await BeanBaoDeliveryPlanner.finish(merchantChoice, after: menu, store: journal)
+        let menuID = try BeanBaoDeliveryObservationContract.identifier(menu)
+        let itemChoice = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: menu, store: journal,
+            client: DeliveryScriptModel(action: "open_item", target: "Chicken Pho",
+                                        observationID: menuID), model: "scripted")
+        try await BeanBaoDeliveryPlanner.begin(itemChoice, store: journal)
+        let item = observation("https://www.ubereats.com/store/phin/id?mod=quickView",
+                               "Chicken Pho Add 1 to order")
+        _ = try await BeanBaoDeliveryPlanner.finish(itemChoice, after: item, store: journal)
+        for text in [
+            "Other Kitchen Chicken Pho $27.99 Go to checkout",
+            "Phin & Bowl Other Soup $27.99 Go to checkout"
+        ] {
+            let cart = observation("https://www.ubereats.com/cart", text)
+            let id = try BeanBaoDeliveryObservationContract.identifier(cart)
+            let review = try await BeanBaoDeliveryPlanner.choose(
+                request: request, observation: cart, store: journal,
+                client: DeliveryScriptModel(action: "review_cart", target: "",
+                                            observationID: id), model: "scripted")
+            do {
+                try await BeanBaoDeliveryPlanner.completeReadOnlyReview(
+                    review, on: cart, store: journal)
+                XCTFail("The wrong merchant or item must not complete")
+            } catch BeanBaoDeliveryPlanError.invalidAction { }
+        }
+        let correct = observation("https://www.ubereats.com/cart",
+                                   "Phin & Bowl Chicken Pho $27.99 Go to checkout")
+        let correctID = try BeanBaoDeliveryObservationContract.identifier(correct)
+        let review = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: correct, store: journal,
+            client: DeliveryScriptModel(action: "review_cart", target: "",
+                                        observationID: correctID), model: "scripted")
+        try await BeanBaoDeliveryPlanner.completeReadOnlyReview(
+            review, on: correct, store: journal)
+        let saved = await journal.snapshot()
+        XCTAssertEqual(saved.phase, .completed)
+    }
 }

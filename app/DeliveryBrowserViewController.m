@@ -11,6 +11,7 @@
 @property(nonatomic, copy) NSString *deliveryServiceID;
 @property(nonatomic, copy) NSString *deliveryGoal;
 @property(nonatomic) NSUInteger completedSteps;
+@property(nonatomic) NSUInteger pageReplans;
 @property(nonatomic) BOOL runningDelivery;
 @property(nonatomic, copy) NSString *captureFailure;
 @end
@@ -153,6 +154,20 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     self.statusLabel.text = message;
 }
 
+- (void)replanAfterPageChange {
+    if (!self.runningDelivery) return;
+    if (self.pageReplans >= 3) {
+        [self finishDeliveryRun:@"The page kept changing. Check it, then tap Run to continue."];
+        return;
+    }
+    self.pageReplans++;
+    self.statusLabel.text = @"Page updated. Rechecking before the next step…";
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (self.runningDelivery) [self planNextDeliveryStep];
+    });
+}
+
 - (void)markDeliveryStepUncertain:(NSString *)message {
     NSString *taskID = self.deliveryTaskID;
     NSString *serviceID = self.deliveryServiceID;
@@ -189,6 +204,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     if (![self.deliveryGoal isEqualToString:goal]) self.deliveryTaskID = nil;
     self.deliveryGoal = goal;
     self.completedSteps = 0;
+    self.pageReplans = 0;
     self.runningDelivery = YES;
     self.goalField.enabled = NO;
     [self.goalField resignFirstResponder];
@@ -211,6 +227,11 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     [self captureCurrentPageWithCompletion:^(NSDictionary *snapshot) {
         if (!self.runningDelivery) return;
         if (!snapshot) {
+            if ([self.captureFailure isEqualToString:@"empty"] ||
+                [self.captureFailure isEqualToString:@"changed"]) {
+                [self replanAfterPageChange];
+                return;
+            }
             NSString *message = [self.captureFailure isEqualToString:@"credentials"] ?
                 @"Sign-in fields are visible. Finish sign-in yourself, then tap Run." :
                 ([self.captureFailure isEqualToString:@"empty"] ?
@@ -286,7 +307,12 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     [self captureCurrentPageWithCompletion:^(NSDictionary *snapshot) {
         if (!self.runningDelivery) return;
         if (!snapshot) {
-            [self finishDeliveryRun:@"The page changed before this step. Run again to replan."];
+            if ([self.captureFailure isEqualToString:@"empty"] ||
+                [self.captureFailure isEqualToString:@"changed"]) {
+                [self replanAfterPageChange];
+            } else {
+                [self finishDeliveryRun:@"The page changed before this step. Check it before retrying."];
+            }
             return;
         }
         NSDictionary *request = @{@"op": @"delivery_verify_action",
@@ -297,8 +323,12 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
             NSDictionary *reply = BBAgentRequest(request);
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (!self.runningDelivery) return;
-                if (![reply[@"ok"] boolValue] || ![reply[@"valid"] boolValue]) {
-                    [self finishDeliveryRun:@"The page or step changed. Run again to replan."];
+                if (![reply[@"ok"] boolValue]) {
+                    [self finishDeliveryRun:reply[@"error"] ?: @"The step changed. Check it before retrying."];
+                    return;
+                }
+                if (![reply[@"valid"] boolValue]) {
+                    [self replanAfterPageChange];
                     return;
                 }
                 if ([name isEqualToString:@"review_options"]) {
@@ -503,19 +533,60 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!self.runningDelivery) return;
             if (![reply[@"ok"] boolValue]) {
-                [self finishDeliveryRun:@"The step outcome needs review. Check Uber Eats before retrying."];
+                [self reconcileDeliveryActionReceiptForTask:self.deliveryTaskID
+                                                      service:self.deliveryServiceID
+                                                        login:login attempt:0];
                 return;
             }
-            self.completedSteps++;
-            if (login) {
-                [self finishDeliveryRun:@"Sign in on Uber Eats, then tap Run to continue."];
-            } else if (self.completedSteps >= 8) {
-                [self finishDeliveryRun:@"Eight steps reached. Review the page, then tap Run to continue."];
+            [self continueAfterVerifiedDeliveryAction:login];
+        });
+    });
+}
+
+- (void)reconcileDeliveryActionReceiptForTask:(NSString *)taskID
+                                       service:(NSString *)serviceID
+                                         login:(BOOL)login attempt:(NSUInteger)attempt {
+    if (!self.runningDelivery) return;
+    if (attempt >= 3) {
+        [self finishDeliveryRun:@"The step outcome needs review. Check Uber Eats before retrying."];
+        return;
+    }
+    self.statusLabel.text = @"Checking the saved result of this step…";
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC)),
+                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSDictionary *status = BBAgentRequest(@{@"op": @"status"});
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!self.runningDelivery) return;
+            if ([status[@"ok"] boolValue] &&
+                [status[@"task_id"] isEqualToString:taskID] &&
+                [status[@"service_id"] isEqualToString:serviceID] &&
+                [status[@"phase"] isEqualToString:@"waiting_for_user"] &&
+                [status[@"message"] isEqualToString:@"Delivery step verified"] &&
+                !status[@"delivery_action"]) {
+                [self continueAfterVerifiedDeliveryAction:login];
+            } else if ([status[@"phase"] isEqualToString:@"executing"] &&
+                       [status[@"task_id"] isEqualToString:taskID] &&
+                       [status[@"service_id"] isEqualToString:serviceID]) {
+                [self reconcileDeliveryActionReceiptForTask:taskID service:serviceID
+                                                      login:login attempt:attempt + 1];
             } else {
-                [self planNextDeliveryStep];
+                [self finishDeliveryRun:@"The step outcome needs review. Check Uber Eats before retrying."];
             }
         });
     });
+}
+
+- (void)continueAfterVerifiedDeliveryAction:(BOOL)login {
+    if (!self.runningDelivery) return;
+    self.completedSteps++;
+    self.pageReplans = 0;
+    if (login) {
+        [self finishDeliveryRun:@"Sign in on Uber Eats, then tap Run to continue."];
+    } else if (self.completedSteps >= 8) {
+        [self finishDeliveryRun:@"Eight steps reached. Review the page, then tap Run to continue."];
+    } else {
+        [self planNextDeliveryStep];
+    }
 }
 
 - (void)checkPage {
