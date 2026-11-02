@@ -1,6 +1,7 @@
 #import "BBQuickOverlay.h"
 #import "AgentClient.h"
 #import "BeanBaoApp.h"
+#import "ScreenManager.h"
 #import "VoiceIPC.h"
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -13,6 +14,7 @@
 @property(nonatomic, strong) UIButton *runButton;
 @property(nonatomic, copy) NSString *voiceSession;
 @property(nonatomic, copy) NSString *returnBundle;
+@property(nonatomic, strong) UIImage *backgroundSnapshot;
 @property(nonatomic) BOOL voiceReady;
 @property(nonatomic) NSUInteger voiceGeneration;
 @property(nonatomic) NSTimeInterval voiceDeadline;
@@ -59,6 +61,20 @@ static dispatch_queue_t BBAppLaunchQueue(void) {
     UIViewController *root = [UIViewController new];
     root.view.backgroundColor = UIColor.clearColor;
     window.rootViewController = root;
+
+    if (self.backgroundSnapshot) {
+        UIImageView *snapshot = [[UIImageView alloc] initWithImage:self.backgroundSnapshot];
+        snapshot.translatesAutoresizingMaskIntoConstraints = NO;
+        snapshot.contentMode = UIViewContentModeScaleAspectFill;
+        snapshot.clipsToBounds = YES;
+        [root.view addSubview:snapshot];
+        [NSLayoutConstraint activateConstraints:@[
+            [snapshot.leadingAnchor constraintEqualToAnchor:root.view.leadingAnchor],
+            [snapshot.trailingAnchor constraintEqualToAnchor:root.view.trailingAnchor],
+            [snapshot.topAnchor constraintEqualToAnchor:root.view.topAnchor],
+            [snapshot.bottomAnchor constraintEqualToAnchor:root.view.bottomAnchor]
+        ]];
+    }
 
     UIControl *backdrop = [UIControl new];
     backdrop.translatesAutoresizingMaskIntoConstraints = NO;
@@ -187,7 +203,9 @@ static dispatch_queue_t BBAppLaunchQueue(void) {
     if (!NSThread.isMainThread || self.window || self.voiceSession ||
         ![bundleID isKindOfClass:NSString.class] ||
         !bundleID.length || [bundleID isEqualToString:@"com.apple.springboard"] ||
-        [bundleID isEqualToString:@"dev.beanbao.app"] || ![self showFocused:NO]) return NO;
+        [bundleID isEqualToString:@"dev.beanbao.app"]) return NO;
+    self.backgroundSnapshot = [[ScreenManager sharedInstance] captureScreenImage];
+    if (![self showFocused:NO]) { self.backgroundSnapshot = nil; return NO; }
     NSString *session = NSUUID.UUID.UUIDString;
     BBVoiceRemove(@"start"); BBVoiceRemove(@"ready");
     BBVoiceRemove(@"stop"); BBVoiceRemove(@"result"); BBVoiceRemove(@"cancel");
@@ -267,6 +285,7 @@ static dispatch_queue_t BBAppLaunchQueue(void) {
     self.field = nil;
     self.message = nil;
     self.runButton = nil;
+    self.backgroundSnapshot = nil;
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
@@ -289,7 +308,9 @@ static dispatch_queue_t BBAppLaunchQueue(void) {
         return;
     }
     [self hide]; // The Agent must observe the target app without this overlay.
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    // A pending restoration of the original app must finish before the Agent
+    // opens the requested target, or it can steal the foreground afterward.
+    dispatch_async(BBAppLaunchQueue(), ^{
         NSDictionary *reply = BBAgentRequest(@{@"op": @"start", @"task": task});
         if (![reply[@"ok"] boolValue]) dispatch_async(dispatch_get_main_queue(), ^{
             if ([self show]) {
