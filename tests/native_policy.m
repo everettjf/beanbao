@@ -88,21 +88,20 @@ int main(void) {
                                    researchChoice) isEqualToString:@"Research PDF"],
                    "addressed email is allowed through the research draft handoff") ||
             !Check(!BBResearchPDFCandidate(@"Compare speech APIs, make a PDF, and email it") &&
-                   BBResolvedTask(@"Compare speech APIs, make a PDF, and email it", researchChoice) == nil,
-                   "email request without a recipient cannot silently complete as PDF only") ||
+                   BBResearchBroadCandidate(@"Compare speech APIs, make a PDF, and email it"),
+                   "broad routing leaves an unaddressed email for the plan gate to reject") ||
             !Check(!BBResearchPDFCandidate(@"Do not research speech APIs or create a PDF") &&
-                   BBResolvedTask(@"Do not research speech APIs or create a PDF",
-                                  researchChoice) == nil,
-                   "a negated research request cannot start the PDF workflow") ||
-            !Check(!BBIsResearchPDFTask(@"Research speech APIs, create a PDF, and install Pages") &&
+                   BBResearchBroadCandidate(@"Do not research speech APIs or create a PDF"),
+                   "broad routing leaves negation for the plan gate to reject") ||
+            !Check(BBIsResearchPDFTask(@"Research speech APIs, create a PDF, and install Pages") &&
                    !BBResearchPDFCandidate(@"Research speech APIs, create a PDF, and install Pages") &&
                    BBResearchAppCandidate(@"Research speech APIs, create a PDF, and install Pages") &&
-                   BBResolvedTask(@"Research speech APIs, create a PDF, and install Pages",
-                                  researchChoice) == nil,
-                   "research plus installation enters the composite route, not PDF-only") ||
+                   [BBResolvedTask(@"Research speech APIs, create a PDF, and install Pages",
+                                   researchChoice) isEqualToString:@"Research PDF"],
+                   "research plus installation is classified for the validated plan") ||
             !Check(!BBResearchPDFCandidate(@"Research speech APIs, create a PDF; install Pages") &&
-                   !BBIsResearchPDFTask(@"Research speech APIs, create a PDF, install Pages"),
-                   "punctuation cannot hide a second installation step") ||
+                   BBIsResearchPDFTask(@"Research speech APIs, create a PDF, install Pages"),
+                   "punctuation cannot hide a second installation step from planning") ||
             !Check(BBResearchAppCandidate(@"Research iOS speech, create a PDF, and find app Pages") &&
                    !BBResearchPDFCandidate(@"Research iOS speech, create a PDF, and find app Pages"),
                    "research plus app lookup enters the composite route, not PDF-only") ||
@@ -126,14 +125,19 @@ int main(void) {
                     @"operations": @{@"mail": @{@"tool": @"mail_prepare", @"state": @"completed"}}})
                     isEqualToString:@"research_mail_app"],
                    "Sessions identifies a combined mail and app workflow") ||
+            !Check([BBWorkflowKind(@"test", @{@"request":
+                    @"Please research iOS speech, make a PDF, and get the Pages app",
+                    @"researchPlan": @{@"appQuery": @"Pages", @"installationRequested": @YES},
+                    @"operations": @{}}) isEqualToString:@"research_app"] &&
+                   BBRecordRequestsInstallation(@{@"request": @"Please research iOS speech, make a PDF, and get the Pages app",
+                    @"researchPlan": @{@"appQuery": @"Pages", @"installationRequested": @YES}}),
+                   "Sessions uses the persisted model plan for natural app requests") ||
             !Check(!BBResearchPDFCandidate(@"Compare speech APIs, make a PDF, and send a message to test@example.com") &&
-                   BBResolvedTask(@"Compare speech APIs, make a PDF, and send a message to test@example.com",
-                                  researchChoice) == nil,
-                   "research cannot turn a message request into an email draft") ||
+                   BBResearchBroadCandidate(@"Compare speech APIs, make a PDF, and send a message to test@example.com"),
+                   "message requests reach the plan gate but cannot execute") ||
             !Check(!BBResearchPDFCandidate(@"Open Settings, compare speech APIs, and make a PDF") &&
-                   BBResolvedTask(@"Open Settings, compare speech APIs, and make a PDF",
-                                  researchChoice) == nil,
-                   "research cannot drop a requested app switch")) return 1;
+                   BBResearchBroadCandidate(@"Open Settings, compare speech APIs, and make a PDF"),
+                   "app switch requests reach the plan gate but cannot execute")) return 1;
         if (!Check(BBObservationIsFresh(100, 109.9),
                    "recent monotonic observation remains valid") ||
             !Check(!BBObservationIsFresh(100, 110.1),
@@ -379,9 +383,9 @@ int main(void) {
         if (!Check(BBIsResearchPDFTask(@"Research iOS speech recognition and create a PDF") &&
                    BBIsResearchPDFTask(@"调研设备语音识别并生成 PDF") &&
                    BBIsResearchPDFTask(@"Research iOS speech, create a PDF and email to test@example.com") &&
-                   !BBIsResearchPDFTask(@"Research iOS speech and email the PDF to someone") &&
+                   BBIsResearchPDFTask(@"Research iOS speech and email the PDF to someone") &&
                    !BBIsResearchPDFTask(@"Open Maps"),
-                   "research PDF routing requires an explicit address for email drafts")) return 1;
+                   "research PDF routing sends natural tasks to the model plan gate")) return 1;
         if (!Check(BBIsAppStoreTask(@"Install Example Notes") &&
                    BBIsAppStoreTask(@"Download Example Notes") &&
                    !BBIsAppStoreTask(@"Install Example Notes and send an email") &&

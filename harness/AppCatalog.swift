@@ -214,7 +214,8 @@ public struct BeanBaoAppPrepareTool: PHKNativeTool {
         guard listing.bundleID == bundleID else {
             throw BeanBaoAppCatalogError.unsearchedListing
         }
-        if BeanBaoCompositeRequest.appQuery(record.request) != nil {
+        if record.researchPlan?.appQuery != nil ||
+            BeanBaoCompositeRequest.appQuery(record.request) != nil {
             guard record.operations.values.contains(where: {
                     $0.tool == "pdf_render" && $0.state == .completed
                   }),

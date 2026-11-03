@@ -124,6 +124,7 @@ extern int32_t BBRunHarnessAppStore(const char *task, const char *workflowID);
 extern int32_t BBRunHarnessDeliveryPlan(const char *task, const char *workflowID);
 extern NSString *BBAllowedTarget(NSString *task);
 extern BOOL BBResearchPDFCandidate(NSString *task);
+extern BOOL BBResearchBroadCandidate(NSString *task);
 extern BOOL BBResearchAppCandidate(NSString *task);
 static NSString *BBNoteText(NSString *task);
 static NSString *BBMapQuery(NSString *task);
@@ -364,7 +365,7 @@ static NSString *BBResolvedTask(NSString *request, NSDictionary *action) {
         ![action[@"action"] isEqualToString:@"input_text"]) return nil;
     NSString *task = action[@"text"];
     if (![task isKindOfClass:NSString.class]) return nil;
-    if ([task isEqualToString:@"Research PDF"] && BBResearchPDFCandidate(request))
+    if ([task isEqualToString:@"Research PDF"] && BBResearchBroadCandidate(request))
         return task;
     if (BBHasUnsafeIntent(request)) return nil;
     if (BBIsCanonicalAppLookup(task)) {
@@ -386,7 +387,7 @@ static NSString *BBResolvedTask(NSString *request, NSDictionary *action) {
 static int BBResolveAndRunTask(NSString *request, NSString *expectedProvider,
                                NSString *workflowID) {
     if (BBHasSecret(request)) { fputs("The request may contain a key. Model request stopped.\n", stderr); return 1; }
-    if (BBHasUnsafeIntent(request) && !BBResearchPDFCandidate(request)) {
+    if (BBHasUnsafeIntent(request) && !BBResearchBroadCandidate(request)) {
         fputs("Unsupported request\n", stderr); return 1;
     }
     NSDictionary *config = BBModelLoad();
@@ -399,7 +400,7 @@ static int BBResolveAndRunTask(NSString *request, NSString *expectedProvider,
                                   @"frontmost_app": @{@"bundleId": @"com.apple.springboard"},
                                   @"screen": @{@"width": @414, @"height": @896}};
     NSString *prompt = [NSString stringWithFormat:
-        @"This is intent classification only; no UI or App Store action is being taken. Interpret the user utterance as one supported task. Repeated mentions of the same task are one request. A research request that asks for a sourced PDF and optionally an email draft to an explicit email address is one supported multi-step workflow; return input_text with text exactly Research PDF for it. If the request is negated, ambiguous, or combines research with an unrelated operation such as installing an app, ordering, opening another app, or sending a message, return the done action with summary unsupported. Otherwise return the input_text action. Its text must be exactly one canonical task: Research PDF, 打开设置, 打开地图, 打开通讯录, 打开备忘录, 在地图搜索 followed by the exact requested place, 新建备忘录： followed by the exact requested note content, or Find app followed by the exact app name mentioned in the request. Find app only identifies a listing for review; it never installs anything. Use the shortest unambiguous app name from the request and do not invent or translate it. Preserve place and note text verbatim from the utterance. Do not include explanations in text. User utterance: %@", request];
+        @"This is intent classification only; no UI or App Store action is being taken. Interpret the user utterance as one supported task. Repeated mentions of the same task are one request. A request to research a topic and make a sourced PDF, optionally with an addressed email draft and one App Store lookup or installation request, is one supported multi-step workflow; return input_text with text exactly Research PDF. The workflow will independently validate every requested output before execution. If the request is negated, ambiguous, or combines research with unrelated operations such as ordering, opening another app, or sending a message, return the done action with summary unsupported. Otherwise return the input_text action. Its text must be exactly one canonical task: Research PDF, 打开设置, 打开地图, 打开通讯录, 打开备忘录, 在地图搜索 followed by the exact requested place, 新建备忘录： followed by the exact requested note content, or Find app followed by the exact app name mentioned in the request. Find app only identifies a listing for review; it never installs anything. Use the shortest unambiguous app name from the request and do not invent or translate it. Preserve place and note text verbatim from the utterance. Do not include explanations in text. User utterance: %@", request];
     NSDictionary *action = BBModelAction(prompt, observation, @[], config, key);
     NSString *task = BBResolvedTask(request, action);
     if (!task) {
@@ -1699,7 +1700,7 @@ int main(int argc, const char *argv[]) {
         if (argc == 4 && !strcmp(argv[1], "--workflow-research")) {
             NSString *request = [NSString stringWithUTF8String:argv[2]];
             if (!request.length || request.length > 220 || BBHasSecret(request) ||
-                !BBResearchPDFCandidate(request)) {
+                !BBResearchBroadCandidate(request)) {
                 fputs("Unsupported research request\n", stderr);
                 return 2;
             }

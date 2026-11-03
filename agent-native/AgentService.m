@@ -113,10 +113,22 @@ BOOL BBResearchPDFCandidate(NSString *task) {
     return research && pdf && !unrelated && (!externalAction || hasRecipient);
 }
 
+BOOL BBResearchBroadCandidate(NSString *task) {
+    if (![task isKindOfClass:NSString.class] || task.length < 12 || task.length > 220 ||
+        [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location != NSNotFound ||
+        [task.lowercaseString rangeOfString:@"pdf"].location == NSNotFound) return NO;
+    NSRegularExpression *verb = [NSRegularExpression regularExpressionWithPattern:
+        @"\\b(?:research|investigate|compare|analy[sz]e|study|survey|explore)\\b|\\blook into\\b"
+        options:NSRegularExpressionCaseInsensitive error:nil];
+    return [verb firstMatchInString:task options:0 range:NSMakeRange(0, task.length)] != nil ||
+        [task containsString:@"调研"] || [task containsString:@"研究"] ||
+        [task containsString:@"比较"] || [task containsString:@"分析"];
+}
+
 static BOOL BBIsResearchPDFTask(NSString *task) {
     NSString *lower = task.lowercaseString;
     return ([lower hasPrefix:@"research "] || [lower hasPrefix:@"investigate "] ||
-            [task hasPrefix:@"调研"]) && BBResearchPDFCandidate(task);
+            [task hasPrefix:@"调研"]) && BBResearchBroadCandidate(task);
 }
 
 BOOL BBResearchAppCandidate(NSString *task) {
@@ -292,9 +304,24 @@ static NSString *BBWorkflowEffectivePhase(NSDictionary *record) {
     return BBWorkflowHasUnresolvedMutation(record) ? @"needsReconciliation" : record[@"phase"];
 }
 
+static BOOL BBRecordHasResearchApp(NSDictionary *record) {
+    NSDictionary *plan = record[@"researchPlan"];
+    if ([plan isKindOfClass:NSDictionary.class])
+        return [plan[@"appQuery"] isKindOfClass:NSString.class] && [plan[@"appQuery"] length] > 0;
+    return BBResearchAppCandidate(record[@"request"]);
+}
+
+static BOOL BBRecordRequestsInstallation(NSDictionary *record) {
+    NSDictionary *plan = record[@"researchPlan"];
+    if ([plan isKindOfClass:NSDictionary.class])
+        return [plan[@"installationRequested"] isKindOfClass:NSNumber.class] &&
+            [plan[@"installationRequested"] boolValue];
+    return BBResearchAppInstallationCandidate(record[@"request"]);
+}
+
 static NSString *BBWorkflowKind(NSString *identity, NSDictionary *record) {
     if (BBIsDeliveryRecord(record)) return @"delivery";
-    if (BBResearchAppCandidate(record[@"request"])) {
+    if (BBRecordHasResearchApp(record)) {
         NSDictionary *operations = record[@"operations"];
         for (NSDictionary *operation in operations.allValues)
             if ([operation isKindOfClass:NSDictionary.class] &&
@@ -333,7 +360,7 @@ static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
         NSString *kind = BBWorkflowKind(identity, record);
         [items addObject:@{@"id": identity, @"request": request, @"kind": kind,
                            @"phase": BBWorkflowEffectivePhase(record),
-                           @"install_requested": @(BBResearchAppInstallationCandidate(request)),
+                           @"install_requested": @(BBRecordRequestsInstallation(record)),
                            @"mail_queued": @([record[@"mailQueuedAt"] isKindOfClass:NSNumber.class]),
                            @"app_installed": @([record[@"installedAppBundleID"] isKindOfClass:NSString.class]),
                            @"updated_at": @([updated doubleValue] + 978307200.0)}];
@@ -446,8 +473,8 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
     BOOL hasDraft = BBPrivateWorkflowFile(draftPath, 1, 16 * 1024);
     BOOL hasCandidate = BBPrivateWorkflowFile(candidatePath, 1, 16 * 1024);
     BOOL hasDelivery = BBIsDeliveryRecord(record);
-    BOOL composite = BBResearchAppCandidate(record[@"request"]);
-    BOOL installRequested = BBResearchAppInstallationCandidate(record[@"request"]);
+    BOOL composite = BBRecordHasResearchApp(record);
+    BOOL installRequested = BBRecordRequestsInstallation(record);
     BOOL mailQueued = [record[@"mailQueuedAt"] isKindOfClass:NSNumber.class];
     BOOL appInstalled = [record[@"installedAppBundleID"] isKindOfClass:NSString.class];
     BBState.app = hasDelivery ? @"DeliveryPlan" :
@@ -717,7 +744,7 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
                           @"Review PDF, email draft and App Store listing" : completionMessage) :
              (uncertain ? @"Workflow outcome needs review" : BBFailureMessage(summary)));
         if (succeeded && [resolvedApp isEqualToString:@"ResearchAppStoreReview"] &&
-            BBResearchAppInstallationCandidate(BBReadWorkflowRecord(BBState.taskID)[@"request"]))
+            BBRecordRequestsInstallation(BBReadWorkflowRecord(BBState.taskID)))
             BBState.message = BBState.mailDraftPath ?
                 @"Review PDF and email draft; install the selected app" :
                 @"Review PDF and install the selected app";
@@ -936,7 +963,7 @@ static NSDictionary *BBMailResult(NSDictionary *request) {
                 isEqualToString:@"waitingForUser"];
             BBState.phase = appPending ? @"waiting_for_user" : @"done";
             BBState.message = appPending ?
-                (BBResearchAppInstallationCandidate(BBReadWorkflowRecord(taskID)[@"request"]) ?
+                (BBRecordRequestsInstallation(BBReadWorkflowRecord(taskID)) ?
                  @"Email queued in Mail; install the selected app" :
                  @"Email queued in Mail; review the App Store listing") :
                 ([BBState.app isEqualToString:@"ResearchAppStoreReview"] ?

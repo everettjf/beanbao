@@ -53,6 +53,7 @@ public struct BeanBaoWorkflowRecord: Codable, Sendable {
     public let request: String
     public var phase: BeanBaoWorkflowPhase
     public var checkpoint: PHKAgentCheckpoint?
+    public var researchPlan: BeanBaoResearchPlan?
     public var operations: [String: BeanBaoWorkflowOperation]
     public var sources: [BeanBaoResearchSource]
     public var mailQueuedAt: Date?
@@ -71,6 +72,7 @@ public struct BeanBaoWorkflowRecord: Codable, Sendable {
         self.request = request
         self.phase = .planned
         self.checkpoint = nil
+        self.researchPlan = nil
         self.operations = [:]
         self.sources = []
         self.mailQueuedAt = nil
@@ -118,6 +120,14 @@ public actor BeanBaoWorkflowStore: PHKExecutionCheckpointPersisting {
 
     public func setPhase(_ phase: BeanBaoWorkflowPhase) throws {
         try mutate { $0.phase = phase }
+    }
+
+    public func saveResearchPlan(_ plan: BeanBaoResearchPlan) throws {
+        try BeanBaoResearchTaskPlanner.validate(plan, request: record.request)
+        try mutate {
+            guard $0.researchPlan == nil else { throw BeanBaoWorkflowError.invalidRecord }
+            $0.researchPlan = plan
+        }
     }
 
     public func markMailQueued() throws {
