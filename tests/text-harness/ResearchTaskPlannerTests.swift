@@ -36,6 +36,19 @@ final class ResearchTaskPlannerTests: XCTestCase {
                                                   appQuery: "Pages", installationRequested: true))
     }
 
+    func testDeveloperQualifiedAppNameKeepsExactTarget() async throws {
+        let text = "Research iOS dictation privacy, make a PDF, prepare an email draft to test@example.com, and find the Apple Mail app by Apple"
+        let plan = try await BeanBaoResearchTaskPlanner.plan(
+            request: text, model: "test",
+            client: ScriptedPlanClient(arguments: proposal(app: "Apple Mail", install: false)))
+        XCTAssertEqual(plan.appQuery, "Apple Mail")
+        XCTAssertEqual(BeanBaoResearchTaskPlanner.developerQualifier(
+            appQuery: "Apple Mail", request: text), "Apple")
+        XCTAssertThrowsError(try BeanBaoResearchTaskPlanner.validate(
+            BeanBaoResearchPlan(mailRecipient: "test@example.com", appQuery: "Mail",
+                                installationRequested: false), request: text))
+    }
+
     func testOmittedOrInventedStepsFailBeforeExecution() async {
         for arguments in [proposal(mail: ""), proposal(app: ""),
                           proposal(app: "Slack"), proposal(install: false),

@@ -26,6 +26,38 @@ private struct ScriptedAppStorePlanner: PHKModelClient {
 }
 
 final class AppCatalogTests: XCTestCase {
+    func testDeveloperQualifierCannotSelectAnotherPublisher() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("beanbao-developer-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false,
+                                                attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let evidence = BeanBaoAppCatalogEvidence()
+        try await evidence.add([
+            .init(productID: 11, name: "Apple Mail", developer: "Appleton Studio",
+                  bundleID: "com.example.mail", price: 0, currency: "USD", country: "US"),
+            .init(productID: 13, name: "Apple Mail Plus", developer: "Apple Studio",
+                  bundleID: "com.example.mailplus", price: 0, currency: "USD", country: "US"),
+            .init(productID: 12, name: "Mail", developer: "Apple Inc.",
+                  bundleID: "com.apple.mobilemail", price: 0, currency: "USD", country: "US")
+        ])
+        let output = folder.appendingPathComponent("app-candidate.json")
+        let prepare = BeanBaoAppPrepareTool(evidence: evidence, outputURL: output,
+                                            expectedDeveloper: "Apple")
+        do {
+            _ = try await prepare.execute(arguments: .object(["product_id": .number(11)]))
+            XCTFail("Accepted a developer that only shares a prefix")
+        } catch BeanBaoAppCatalogError.unsearchedListing { }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        do {
+            _ = try await prepare.execute(arguments: .object(["product_id": .number(13)]))
+            XCTFail("Accepted a different publisher with a whole-word prefix")
+        } catch BeanBaoAppCatalogError.unsearchedListing { }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        _ = try await prepare.execute(arguments: .object(["product_id": .number(12)]))
+        XCTAssertEqual(try BeanBaoAppPrepareTool.read(at: output).developer, "Apple Inc.")
+    }
+
     func testCompositeRequestKeepsBothRequestedOutputs() {
         XCTAssertEqual(BeanBaoCompositeRequest.appQuery(
             "Research iOS speech, create a PDF, and find app Pages"), "Pages")

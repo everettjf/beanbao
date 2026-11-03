@@ -178,17 +178,33 @@ public struct BeanBaoAppPrepareTool: PHKNativeTool {
         ]))
     private let evidence: BeanBaoAppCatalogEvidence
     private let outputURL: URL
+    private let expectedDeveloper: String?
 
-    public init(evidence: BeanBaoAppCatalogEvidence, outputURL: URL) {
+    public init(evidence: BeanBaoAppCatalogEvidence, outputURL: URL,
+                expectedDeveloper: String? = nil) {
         self.evidence = evidence
         self.outputURL = outputURL
+        self.expectedDeveloper = expectedDeveloper
+    }
+
+    public static func developerMatches(_ actual: String, expected: String?) -> Bool {
+        guard let expected, !expected.isEmpty else { return true }
+        func canonical(_ value: String) -> String {
+            value.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(
+                    of: #",?\s+(?:incorporated|inc|llc|ltd|limited|corporation|corp)\.?$"#,
+                    with: "", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return canonical(actual) == canonical(expected)
     }
 
     public func execute(arguments: PHKJSONValue) async throws -> PHKJSONValue {
         guard case .object(let fields) = arguments,
               case .number(let raw)? = fields["product_id"], raw.isFinite,
               raw.rounded() == raw, raw > 0, raw < 10_000_000_000,
-              let listing = await evidence.listing(Int64(raw)) else {
+              let listing = await evidence.listing(Int64(raw)),
+              Self.developerMatches(listing.developer, expected: expectedDeveloper) else {
             throw BeanBaoAppCatalogError.unsearchedListing
         }
         try BeanBaoWorkflowStore.writePrivateFile(JSONEncoder().encode(listing), to: outputURL)

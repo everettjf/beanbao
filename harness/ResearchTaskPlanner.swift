@@ -50,7 +50,7 @@ public enum BeanBaoResearchTaskPlanner {
     public static func plan(request: String, model: String,
                             client: any PHKModelClient) async throws -> BeanBaoResearchPlan {
         let system = """
-        You are BeanBao's planning classifier, not its executor. The available workflow can research a topic, make a sourced PDF, optionally prepare an email draft, and optionally look up one App Store app for review or installation. An addressed request to email the PDF is staged as a draft for the user's review; it is not sent automatically. It cannot silently install, place an order, purchase, open another app, or perform unrelated actions. Return exactly one propose_research_plan tool call. Use empty strings for outputs that were not requested. Copy an email address and the shortest unambiguous app name exactly from the user's text. Set installation_requested only if the user asked to obtain or install the app. Set unsupported true for a negated, ambiguous, or extra unsupported action. Do not claim any task is done.
+        You are BeanBao's planning classifier, not its executor. The available workflow can research a topic, make a sourced PDF, optionally prepare an email draft, and optionally look up one App Store app for review or installation. An addressed request to email the PDF is staged as a draft for the user's review; it is not sent automatically. It cannot silently install, place an order, purchase, open another app, or perform unrelated actions. Return exactly one propose_research_plan tool call. Use empty strings for outputs that were not requested. Copy an email address and the complete named app phrase exactly from the user's text; keep brand words such as Apple in Apple Mail, but omit a trailing "app" or "by Developer" qualifier. Set installation_requested only if the user asked to obtain or install the app. Set unsupported true for a negated, ambiguous, or extra unsupported action. Do not claim any task is done.
         """
         let completion = PHKCompletionRequest(model: model, messages: [
             PHKChatMessage(role: .system, content: system),
@@ -139,8 +139,21 @@ public enum BeanBaoResearchTaskPlanner {
     private static func appActionTargets(_ query: String, in request: String) -> Bool {
         let escaped = NSRegularExpression.escapedPattern(for: query)
         let pattern = #"\b(?:install|download|find|get|look\s+up)\s+(?:the\s+)?(?:app\s+)?"# +
-            escaped + #"(?:\s+app)?(?:\s+(?:on|in)\s+(?:the\s+)?App\s+Store)?\s*(?:[,.;!?]|$|\band\b|\bthen\b)"#
+            escaped + #"(?:\s+app)?(?:\s+by\s+[A-Za-z][A-Za-z0-9 .&'-]{0,60}?)?(?:\s+(?:on|in)\s+(?:the\s+)?App\s+Store)?\s*(?:[,.;!?]|$|\band\b|\bthen\b)"#
         return matches(request, pattern)
+    }
+
+    public static func developerQualifier(appQuery: String, request: String) -> String? {
+        let escaped = NSRegularExpression.escapedPattern(for: appQuery)
+        let pattern = #"\b(?:install|download|find|get|look\s+up)\s+(?:the\s+)?(?:app\s+)?"# +
+            escaped + #"(?:\s+app)?\s+by\s+([A-Za-z][A-Za-z0-9 .&'-]{0,60}?)(?=\s*(?:[,;!?]|$|\band\b|\bthen\b))"#
+        guard let expression = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = expression.firstMatch(in: request,
+                  range: NSRange(request.startIndex..., in: request)),
+              let range = Range(match.range(at: 1), in: request) else { return nil }
+        let value = request[range].trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return value.isEmpty ? nil : value
     }
 
     private static func appActionCount(in request: String) -> Int {

@@ -7,7 +7,7 @@ Updated November 2, 2026. This is a developer installation procedure for a compa
 Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
-2. `dev.beanbao.agent` 0.3.115: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
+2. `dev.beanbao.agent` 0.3.117: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
 3. `dev.beanbao.deliverybrowser` 0.1.20: sandboxed Uber Eats browser with visible page checks, bounded Palmino-driven Run control, explicit checkout review, a clearable request field, and an actionable reconnect message after an Agent restart.
 4. `dev.beanbao.app` 0.3.70: native text, Apple voice transcription, Sessions with step history and order-history review, App Store review, Activity, shortcut, and model settings UI.
 
@@ -38,7 +38,7 @@ python3 scripts/install_to_device.py dist/BeanBao-RootHide-*.tar --host 127.0.0.
 
 Add `--check-only` to transfer and run the phone preflight without installing. The transfer uses strict host-key checking and sends the validated archive directly over SSH. It does not configure root access or reload SpringBoard; a new Bridge install still needs a separate SpringBoard reload and manual unlock. Do not put model keys in the archive.
 
-On the paired iPhone, both `--check-only` and a full same-version run of this Mac helper passed. The full run kept all four packages and verified the running Agent 0.3.115. Initial installation on a second phone has not yet been verified.
+On the paired iPhone, `--check-only` and full runs of this Mac helper passed. The latest run upgraded only Agent 0.3.116 to 0.3.117, verified the running binary, and left the phone unlocked. Initial installation on a second phone has not yet been verified.
 
 The script checks every package checksum, package ID, architecture, and version before changing anything. It installs only changed versions in dependency order and refuses a downgrade. It also checks the running Agent's compiled version as the `mobile` user and restarts a stale service even when the package version is already current. It never reloads SpringBoard automatically. On the connected phone, extracting the `.tar`, the dry run, and a same-version install passed; all four packages were skipped and the Agent service ID stayed the same. Deliberately corrupting one package made the installer stop at checksum verification before an install. A later release upgraded only the Delivery Browser from 0.1.19 to 0.1.20 using this script, refreshed its icon, and left Agent running with the same service ID. A second run skipped every package. A controlled one-time stale-version response then made the installer restart only Agent and verify its real 0.3.115 version. First installation on a different phone still needs validation.
 
@@ -46,7 +46,7 @@ For manual installation, copy the packages to a root shell on the jailbroken pho
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.115_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.117_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.deliverybrowser_0.1.20_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.70_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app
