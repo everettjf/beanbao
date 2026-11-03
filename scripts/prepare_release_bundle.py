@@ -59,7 +59,7 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             "against the fresh cart page. Exact checkout review and the explicit one-time "
             "order control and the user-reported order-history review have passed only synthetic checks; "
             "a signed-in checkout and real order outcome remain unverified. "
-            "See docs/complex-workflows.md. "
+            "Workflow limits: https://github.com/everettjf/beanbao/blob/main/docs/complex-workflows.md. "
             "Test other devices separately. A compatible Relaxin / RootHide environment is required.\n\n"
             "Verify the archive SHA-256 against the published release value before transfer. "
             "Transfer the uncompressed `.tar` bundle to the phone and extract it with `tar -xf`; "
@@ -80,7 +80,8 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             "Choose Claude under Model services and enter your own key for research and App Store workflows. "
             "The older bounded UI tasks also support OpenAI or a Compatible API. "
             "Try 'Open Maps' and 'Search Maps for Golden Gate Bridge'. "
-            "Opening apps and creating notes run locally. See docs/install-and-configure.md for details. "
+            "Opening apps and creating notes run locally. Full setup guide: "
+            "https://github.com/everettjf/beanbao/blob/main/docs/install-and-configure.md. "
             "This archive contains no model keys, SSH credentials, or device data.\n").encode("utf-8")
 
 

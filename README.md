@@ -11,6 +11,7 @@ The app has an Activity view for recent task outcomes. It derives short summarie
 The offline release includes a phone-extractable `.tar` and an installer that verifies the four packages, skips matching versions, checks the running Agent version, and leaves SpringBoard reload to the owner. A Mac helper transfers the archive over paired root SSH after checking its published hash and contents. The installer has passed a same-version run and a Delivery Browser-only upgrade on the connected RootHide phone; other devices still need separate validation. There is no public package source yet.
 
 - [Installation and configuration](docs/install-and-configure.md)
+- [Current release candidate and checksums](docs/release-candidate-0.3.71.md)
 - [Device test record](docs/build-and-test.md)
 - [Human acceptance checklist](docs/human-acceptance.md)
 - [UI and Activity design](docs/ui-and-activity.md)
