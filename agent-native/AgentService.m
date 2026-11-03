@@ -343,6 +343,22 @@ static BOOL BBDeliveryHasUnfinishedAction(NSDictionary *record) {
     return NO;
 }
 
+static NSString *BBDeliveryCompletedMessage(NSDictionary *record) {
+    NSDictionary *operations = record[@"operations"];
+    for (NSString *tool in @[@"delivery_review_checkout", @"delivery_review_cart",
+                           @"delivery_review_options"]) {
+        for (NSDictionary *operation in operations.allValues)
+            if ([operation isKindOfClass:NSDictionary.class] &&
+                [operation[@"tool"] isEqualToString:tool] &&
+                [operation[@"state"] isEqualToString:@"completed"])
+                return [tool isEqualToString:@"delivery_review_checkout"] ?
+                    @"Checkout is visible; review every charge before ordering elsewhere" :
+                    ([tool isEqualToString:@"delivery_review_cart"] ?
+                     @"Cart ready for review" : @"Item options ready for review");
+    }
+    return @"Delivery review completed";
+}
+
 static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
     struct stat root = {0};
     if (lstat(BBWorkflowRoot.fileSystemRepresentation, &root) ||
@@ -515,6 +531,9 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
         BBState.phase = @"waiting_for_user";
         BBState.message = @"Review the email draft";
         BBState.mailDraftPath = draftPath;
+    } else if ([phase isEqualToString:@"completed"] && hasDelivery) {
+        BBState.phase = @"done";
+        BBState.message = BBDeliveryCompletedMessage(record);
     } else if ([phase isEqualToString:@"completed"] && hasCandidate) {
         BBState.phase = @"done";
         BBState.message = mailQueued ? @"Research PDF available; email queued; selected app is installed" :
@@ -1176,7 +1195,8 @@ static NSDictionary *BBDeliveryVerifyAction(NSDictionary *request) {
                 @{@"ok": @NO, @"error": @"Delivery action check failed"};
         NSString *reviewAction = BBState.deliveryAction[@"action"];
         if ([reviewAction isEqualToString:@"review_options"] ||
-            [reviewAction isEqualToString:@"review_cart"]) {
+            [reviewAction isEqualToString:@"review_cart"] ||
+            [reviewAction isEqualToString:@"review_checkout"]) {
             if (BBDeliveryReadOnlyReviewFinish(taskID.UTF8String, actionJSON.UTF8String,
                                                snapshotJSON.UTF8String) != 0) {
                 BBState.phase = @"error";
@@ -1184,13 +1204,13 @@ static NSDictionary *BBDeliveryVerifyAction(NSDictionary *request) {
                 return @{@"ok": @NO, @"error": BBState.message};
             }
             BBState.phase = @"done";
-            BBState.message = [reviewAction isEqualToString:@"review_cart"] ?
-                @"Cart ready for review" : @"Item options ready for review";
+            BBState.message = [reviewAction isEqualToString:@"review_checkout"] ?
+                @"Checkout is visible; review every charge before ordering elsewhere" :
+                ([reviewAction isEqualToString:@"review_cart"] ?
+                 @"Cart ready for review" : @"Item options ready for review");
             BBState.deliveryAction = nil;
             return result;
         }
-        if ([BBState.deliveryAction[@"action"] isEqualToString:@"review_checkout"])
-            return result;
         if (BBDeliveryActionBegin(taskID.UTF8String, actionJSON.UTF8String) != 0) {
             BBState.phase = @"needs_reconciliation";
             BBState.message = @"A delivery step may already have run. Check Uber Eats.";

@@ -342,7 +342,8 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                     return;
                 }
                 if ([name isEqualToString:@"review_checkout"]) {
-                    [self finishDeliveryRun:@"Checkout reached. Review the exact total yourself. No order placed."];
+                    self.deliveryTaskID = nil;
+                    [self finishDeliveryRun:@"Checkout is visible. Review every charge and the address yourself. No order placed."];
                     return;
                 }
                 [self executeDeliveryAction:action onSnapshot:snapshot];

@@ -2,6 +2,10 @@
 
 Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 2 checkout review
+
+Agent 0.3.103 and Delivery Browser 0.1.15 make a checkout review a recorded read-only step. A model-proposed `review_checkout` must match a second fresh observation of the same Uber Eats checkout screen and find one visible total, a subtotal, a delivery address label, and a Place order control. A changed total, missing field, or second total cannot complete the review. The session records the visible total and checkout page fingerprint without storing full website text or beginning an order action. The Agent restores completed delivery sessions as completed after a service restart. Offline tests cover the successful receipt, changed page, incomplete page, native no-mutation route, and restored status. Live checkout is still blocked by Uber Eats account sign-in; no real charges or address have been verified.
+
 ## November 2 composite App Store installation intent
 
 Agent 0.3.102 adds model-proposed plans for naturally phrased research/PDF requests. Before tools run, the Agent checks that a requested recipient and App Store target are present, that the app target follows an app action in the original text, and that installation intent was not dropped. The plan is persisted for restart and resume. Offline planner tests cover a three-output request, omitted or invented fields, research-only source finding, unsupported actions, target binding, multiple app targets, and reload. The full package build passed 82 Swift tests, native policy checks, and the four-package audit.

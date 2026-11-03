@@ -82,7 +82,7 @@ final class UberEatsAdapterTests: XCTestCase {
         XCTAssertNotNil(pointer)
         defer { free(pointer) }
         let response = String(cString: try XCTUnwrap(pointer))
-        XCTAssertEqual(response, "{\"ok\":true,\"page\":\"cart\",\"adapter_version\":3}")
+        XCTAssertEqual(response, "{\"ok\":true,\"page\":\"cart\",\"adapter_version\":4}")
         XCTAssertFalse(response.contains("checkout"))
 
         var impersonated = snapshot

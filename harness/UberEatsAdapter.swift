@@ -60,7 +60,7 @@ func beanBaoAvailableOptions(_ fields: [String: Any]) -> [String]? {
 /// Versioned screen contract for the first delivery site. Unrecognized screens
 /// stop the workflow; the adapter does not infer a payable total from a menu.
 public enum BeanBaoUberEatsAdapter {
-    public static let version = 3
+    public static let version = 4
 
     public static func page(_ observation: BeanBaoUberEatsObservation) -> BeanBaoUberEatsPage {
         guard observation.url.scheme?.lowercased() == "https",
@@ -130,6 +130,27 @@ public enum BeanBaoUberEatsAdapter {
             .map { String(format: "%02x", $0) }.joined()
         return .init(bundleID: observation.bundleID,
                      checkoutFingerprint: fingerprint, observedAt: observation.observedAt)
+    }
+
+    /// Read-only checkout review can be recorded before an account and a
+    /// structured cart adapter are available. One visible total is necessary,
+    /// but it is not authorization or evidence that all charges were checked.
+    public static func checkoutVisibleTotal(_ observation: BeanBaoUberEatsObservation) -> String? {
+        guard page(observation) == .checkout,
+              observation.bundleID == "dev.beanbao.deliverybrowser",
+              observation.visibleText.contains("Place order"),
+              observation.visibleText.range(of: #"\bsubtotal\s+\$[0-9,]+\.[0-9]{2}\b"#,
+                                            options: [.regularExpression, .caseInsensitive]) != nil,
+              observation.visibleText.range(of: #"\b(?:deliver\s+to|delivery\s+address)\b"#,
+                                            options: [.regularExpression, .caseInsensitive]) != nil,
+              let regex = try? NSRegularExpression(pattern: #"\btotal\s+\$[0-9,]+\.[0-9]{2}\b"#,
+                                                   options: .caseInsensitive) else { return nil }
+        let matches = regex.matches(in: observation.visibleText,
+                                    range: NSRange(observation.visibleText.startIndex...,
+                                                   in: observation.visibleText))
+        guard matches.count == 1,
+              let range = Range(matches[0].range, in: observation.visibleText) else { return nil }
+        return String(observation.visibleText[range])
     }
 
     private static func money(_ minor: Int, currency: String) -> String {

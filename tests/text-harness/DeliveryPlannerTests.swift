@@ -178,6 +178,58 @@ final class DeliveryPlannerTests: XCTestCase {
             .contains("private-cart-marker"))
     }
 
+    func testCheckoutReviewRecordsVisibleTotalWithoutOrderAction() async throws {
+        let request = "Add Rice bowl to cart and open checkout to review the total"
+        let (journal, file) = try store(request: request)
+        let text = """
+        Example Kitchen Rice bowl $18.00
+        Deliver to 200 E Santa Clara St, San Jose, CA
+        Subtotal $18.00 Tax $1.49 Delivery fee $3.50
+        Total $22.99 Place order private-checkout-marker
+        """
+        let checkout = observation("https://www.ubereats.com/checkout", text)
+        let id = try BeanBaoDeliveryObservationContract.identifier(checkout)
+        let proposal = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: checkout, store: journal,
+            client: DeliveryScriptModel(action: "review_checkout", target: "",
+                                        observationID: id), model: "scripted")
+        let changed = observation(checkout.url.absoluteString,
+                                  text.replacingOccurrences(of: "$22.99", with: "$24.99"))
+        XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(
+            proposal, observation: changed, request: request))
+        do {
+            try await BeanBaoDeliveryPlanner.completeReadOnlyReview(proposal,
+                                                                    on: changed, store: journal)
+            XCTFail("Changed total completed checkout review")
+        } catch BeanBaoDeliveryPlanError.invalidAction { }
+        try await BeanBaoDeliveryPlanner.completeReadOnlyReview(proposal,
+                                                                on: checkout, store: journal)
+        let saved = await journal.snapshot()
+        XCTAssertEqual(saved.phase, .completed)
+        let receipt = saved.operations["delivery-review-v1-\(id)"]
+        XCTAssertEqual(receipt?.tool, "delivery_review_checkout")
+        guard case .object(let fields)? = receipt?.result else {
+            return XCTFail("Checkout receipt missing")
+        }
+        XCTAssertEqual(fields["visible_total"], .string("Total $22.99"))
+        let journalText = String(decoding: try Data(contentsOf: file), as: UTF8.self)
+        XCTAssertFalse(journalText.contains("private-checkout-marker"))
+        XCTAssertFalse(journalText.contains("Place order"))
+    }
+
+    func testIncompleteCheckoutCannotBeRecorded() throws {
+        let full = "Deliver to 200 E Santa Clara St Subtotal $18.00 Total $22.99 Place order"
+        let url = "https://www.ubereats.com/checkout"
+        XCTAssertEqual(BeanBaoUberEatsAdapter.checkoutVisibleTotal(observation(url, full)),
+                       "Total $22.99")
+        for text in ["Subtotal $18.00 Total $22.99 Place order",
+                     "Deliver to 200 E Santa Clara St Total $22.99 Place order",
+                     "Deliver to 200 E Santa Clara St Subtotal $18.00 Total $22.99 Total $23.99 Place order",
+                     "Deliver to 200 E Santa Clara St Subtotal $18.00 Total $22.99"] {
+            XCTAssertNil(BeanBaoUberEatsAdapter.checkoutVisibleTotal(observation(url, text)))
+        }
+    }
+
     func testFeedMustOpenSearchBeforeSubmittingAQuery() throws {
         let feed = observation("https://www.ubereats.com/feed", "Search Uber Eats")
         let feedID = try BeanBaoDeliveryObservationContract.identifier(feed)

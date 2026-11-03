@@ -30,9 +30,9 @@ int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID) {
 }
 char *BBUberEatsClassifySnapshot(const char *snapshotJSON) {
     if (snapshotJSON && strstr(snapshotJSON, "View order"))
-        return strdup("{\"ok\":true,\"page\":\"cart_handoff\",\"adapter_version\":3}");
+        return strdup("{\"ok\":true,\"page\":\"cart_handoff\",\"adapter_version\":4}");
     if (!snapshotJSON || !strstr(snapshotJSON, "Go to checkout")) return NULL;
-    return strdup("{\"ok\":true,\"page\":\"cart\",\"adapter_version\":3}");
+    return strdup("{\"ok\":true,\"page\":\"cart\",\"adapter_version\":4}");
 }
 char *BBUberEatsValidateAction(const char *snapshotJSON, const char *actionJSON) {
     if (!snapshotJSON || !actionJSON) return NULL;
@@ -195,18 +195,24 @@ int main(void) {
                    "stop refuses a different service identity")) return 1;
         BBState.app = @"DeliveryPlan";
         BBState.phase = @"waiting_for_user";
+        if (!Check([BBDeliveryCompletedMessage(@{@"operations": @{
+                       @"review": @{@"tool": @"delivery_review_checkout", @"state": @"completed"}}})
+                       containsString:@"Checkout is visible"],
+                   "a completed checkout review retains its status after service restart")) return 1;
         BBState.deliveryAction = @{@"action": @"review_checkout", @"target": @"",
                                    @"observationID": @"1234567890123456789012345678901234567890123456789012345678901234"};
         NSDictionary *deliveryCheck = BBDeliveryVerifyAction(@{@"task_id": @"task-A",
             @"service_id": @"service-A", @"snapshot": @{@"visible_text": @"Place order"}});
         if (!Check([deliveryCheck[@"valid"] boolValue] && DeliveryBeginCalls == 0 &&
-                   [BBState.phase isEqualToString:@"waiting_for_user"],
-                   "checkout review never claims a browser mutation")) return 1;
+                   DeliveryReviewCalls == 1 && [BBState.phase isEqualToString:@"done"] &&
+                   BBState.deliveryAction == nil,
+                   "checkout review records a read-only receipt without claiming a browser mutation")) return 1;
+        BBState.phase = @"waiting_for_user";
         BBState.deliveryAction = @{@"action": @"review_options", @"target": @"",
                                    @"observationID": @"1234567890123456789012345678901234567890123456789012345678901234"};
         deliveryCheck = BBDeliveryVerifyAction(@{@"task_id": @"task-A",
             @"service_id": @"service-A", @"snapshot": @{@"visible_text": @"Add 1 to order"}});
-        if (!Check([deliveryCheck[@"valid"] boolValue] && DeliveryReviewCalls == 1 &&
+        if (!Check([deliveryCheck[@"valid"] boolValue] && DeliveryReviewCalls == 2 &&
                    DeliveryBeginCalls == 0 && [BBState.phase isEqualToString:@"done"] &&
                    BBState.deliveryAction == nil,
                    "options review completes without claiming a cart mutation")) return 1;

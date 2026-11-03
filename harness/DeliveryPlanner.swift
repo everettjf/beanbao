@@ -138,7 +138,7 @@ public enum BeanBaoDeliveryObservationContract {
         case (.cart, "open_checkout"):
             return target.isEmpty && text.contains("Go to checkout")
         case (.checkout, "review_checkout"):
-            return target.isEmpty && text.contains("Place order")
+            return target.isEmpty && BeanBaoUberEatsAdapter.checkoutVisibleTotal(observation) != nil
         default:
             return false
         }
@@ -292,7 +292,8 @@ public enum BeanBaoDeliveryPlanner {
                                               store: BeanBaoWorkflowStore) async throws {
         let page = BeanBaoUberEatsAdapter.page(observation)
         guard (proposal.action == "review_options" && page == .itemConfiguration) ||
-              (proposal.action == "review_cart" && page == .cart) else {
+              (proposal.action == "review_cart" && page == .cart) ||
+              (proposal.action == "review_checkout" && page == .checkout) else {
             throw BeanBaoDeliveryPlanError.invalidAction
         }
         let record = await store.snapshot()
@@ -305,7 +306,7 @@ public enum BeanBaoDeliveryPlanner {
               let result = planned.result, Self.proposal(from: result) == proposal else {
             throw BeanBaoWorkflowError.invalidRecord
         }
-        if proposal.action == "review_cart" {
+        if proposal.action == "review_cart" || proposal.action == "review_checkout" {
             // A visible cart button alone is not evidence that the item just
             // selected by this workflow is still in the cart. Match every
             // successfully executed merchant, item, and option target against
@@ -326,11 +327,17 @@ public enum BeanBaoDeliveryPlanner {
             }
         }
         let key = "delivery-review-v1-\(proposal.observationID)"
-        let tool = proposal.action == "review_cart" ? "delivery_review_cart" : "delivery_review_options"
+        let tool = proposal.action == "review_cart" ? "delivery_review_cart" :
+            (proposal.action == "review_checkout" ? "delivery_review_checkout" :
+             "delivery_review_options")
+        let total = proposal.action == "review_checkout" ?
+            BeanBaoUberEatsAdapter.checkoutVisibleTotal(observation) : nil
         switch try await store.claim(key: key, tool: tool, effect: .readOnly) {
         case .execute:
-            try await store.finish(key: key, result: .object([
-                "page": .string(String(describing: page)), "verified": .bool(true)]))
+            var receipt: [String: PHKJSONValue] = [
+                "page": .string(String(describing: page)), "verified": .bool(true)]
+            if let total { receipt["visible_total"] = .string(total) }
+            try await store.finish(key: key, result: .object(receipt))
         case .cached: break
         }
         try await store.setPhase(.completed)
