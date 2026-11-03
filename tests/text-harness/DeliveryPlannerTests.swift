@@ -276,6 +276,31 @@ final class DeliveryPlannerTests: XCTestCase {
                 approvedDigest: digest, on: checkout, store: restored)
             XCTFail("An interrupted order commit must never be replayed")
         } catch BeanBaoDeliveryReviewError.approvalRequired { }
+        do {
+            try await restored.markDeliveryOrderReportedPlaced(
+                digest: String(repeating: "f", count: 64))
+            XCTFail("A different cart cannot be reported placed")
+        } catch BeanBaoWorkflowError.completionUnverified { }
+        try await restored.markDeliveryOrderReportedPlaced(digest: digest)
+        let reported = await restored.snapshot()
+        XCTAssertEqual(reported.phase, .completed)
+        XCTAssertEqual(reported.operations["delivery-order-v1"]?.state, .completed)
+        guard case .object(let orderResult)? = reported.operations["delivery-order-v1"]?.result else {
+            return XCTFail("Order-history report receipt missing")
+        }
+        XCTAssertEqual(orderResult["outcome"], .string("user_reported_placed"))
+        let reportedAfterRestart = try BeanBaoWorkflowStore(existingURL: file)
+        let savedReport = await reportedAfterRestart.snapshot()
+        XCTAssertEqual(savedReport.phase, .completed)
+        do {
+            try await reportedAfterRestart.markDeliveryOrderReportedPlaced(digest: digest)
+            XCTFail("A history report cannot be recorded twice")
+        } catch BeanBaoWorkflowError.completionUnverified { }
+        do {
+            try await BeanBaoDeliveryPlanner.beginOrderCommit(
+                approvedDigest: digest, on: checkout, store: reportedAfterRestart)
+            XCTFail("Reporting an order placed must not authorize another click")
+        } catch BeanBaoDeliveryReviewError.outcomeUnconfirmed { }
     }
 
     func testIncompleteCheckoutCannotBeRecorded() throws {

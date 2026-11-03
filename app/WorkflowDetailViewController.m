@@ -7,6 +7,8 @@
 @property(nonatomic, strong) NSDateFormatter *dates;
 @end
 
+static NSString *BBCheckoutSummaryText(NSDictionary *summary);
+
 @implementation BBWorkflowDetailViewController
 
 - (instancetype)initWithWorkflowID:(NSString *)identity {
@@ -49,9 +51,52 @@
                 return;
             }
             self.details = reply;
+            self.navigationItem.rightBarButtonItem = [reply[@"order_needs_review"] boolValue] ?
+                [[UIBarButtonItem alloc] initWithTitle:@"Resolve" style:UIBarButtonItemStylePlain
+                    target:self action:@selector(reviewOrderHistory)] : nil;
             [self.tableView reloadData];
         });
     });
+}
+
+- (void)reviewOrderHistory {
+    NSDictionary *summary = self.details[@"checkout_summary"];
+    NSString *digest = summary[@"cart_digest"];
+    if (![self.details[@"order_needs_review"] boolValue] ||
+        ![digest isKindOfClass:NSString.class] || digest.length != 64) return;
+    NSString *message = [NSString stringWithFormat:
+        @"Check Uber Eats order history and match this exact order:\n\n%@\n\n"
+         "Only confirm if you found it there. BeanBao records your report; "
+         "it cannot verify Uber Eats' server response. If it is missing or unclear, cancel and do not place another order.",
+        BBCheckoutSummaryText(summary)];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Order history review"
+        message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+        style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"I found this order"
+        style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            NSString *identity = self.workflowID;
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                NSDictionary *reply = BBAgentRequest(@{
+                    @"op": @"delivery_order_report_placed", @"workflow_id": identity,
+                    @"cart_digest": digest,
+                    @"confirmation": @"found_in_uber_order_history"});
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (![reply[@"ok"] boolValue]) {
+                        UIAlertController *error = [UIAlertController
+                            alertControllerWithTitle:@"Review was not saved"
+                            message:reply[@"error"] ?: @"Please try again"
+                            preferredStyle:UIAlertControllerStyleAlert];
+                        [error addAction:[UIAlertAction actionWithTitle:@"OK"
+                            style:UIAlertActionStyleDefault handler:nil]];
+                        [self presentViewController:error animated:YES completion:nil];
+                        return;
+                    }
+                    [self reloadDetails];
+                });
+            });
+        }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {

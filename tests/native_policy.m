@@ -41,6 +41,7 @@ char *BBUberEatsValidateAction(const char *snapshotJSON, const char *actionJSON)
 static int DeliveryBeginCalls = 0;
 static int DeliveryReviewCalls = 0;
 static int DeliveryOrderBeginCalls = 0;
+static int DeliveryOrderReportCalls = 0;
 int32_t BBDeliveryActionBegin(const char *workflowID, const char *actionJSON) {
     (void)workflowID; (void)actionJSON; DeliveryBeginCalls++; return 0;
 }
@@ -60,6 +61,9 @@ int32_t BBDeliveryOrderBegin(const char *workflowID, const char *digest,
     (void)workflowID; (void)digest; (void)snapshotJSON;
     DeliveryOrderBeginCalls++;
     return 0;
+}
+int32_t BBDeliveryOrderReportPlaced(const char *workflowID, const char *digest) {
+    (void)workflowID; (void)digest; DeliveryOrderReportCalls++; return 0;
 }
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
@@ -423,7 +427,8 @@ int main(void) {
         NSDictionary *uncertainDetails = BBWorkflowDetails(@{@"workflow_id": checkoutID});
         if (!Check([uncertainDetails[@"phase"] isEqualToString:@"needsReconciliation"] &&
                    [uncertainDetails[@"steps"] count] == 1 &&
-                   [uncertainDetails[@"steps"][0][@"state"] isEqualToString:@"needsReconciliation"],
+                   [uncertainDetails[@"steps"][0][@"state"] isEqualToString:@"needsReconciliation"] &&
+                   [uncertainDetails[@"order_needs_review"] boolValue],
                    "Sessions shows an interrupted order as needing review")) return 1;
         if (!Check(BBAnyUnresolvedDeliveryOrder() &&
                    ![BBDeleteWorkflow(@{@"workflow_id": checkoutID})[@"ok"] boolValue] &&
@@ -452,6 +457,50 @@ int main(void) {
         if (!Check(![crossWorkflowPlan[@"ok"] boolValue] &&
                    [crossWorkflowPlan[@"error"] containsString:@"previous order"],
                    "switching workflows cannot start another delivery plan")) return 1;
+        NSDictionary *wrongHistory = BBDeliveryOrderReportPlacedRequest(@{
+            @"workflow_id": checkoutID, @"cart_digest": @"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            @"confirmation": @"found_in_uber_order_history"});
+        NSDictionary *missingHistory = BBDeliveryOrderReportPlacedRequest(@{
+            @"workflow_id": checkoutID, @"cart_digest": safeSummary[@"cart_digest"],
+            @"confirmation": @"not_found"});
+        if (!Check(![wrongHistory[@"ok"] boolValue] && ![missingHistory[@"ok"] boolValue] &&
+                   DeliveryOrderReportCalls == 0 && BBAnyUnresolvedDeliveryOrder(),
+                   "only an exact reviewed order may be reported found in history")) return 1;
+        NSDictionary *reportedHistory = BBDeliveryOrderReportPlacedRequest(@{
+            @"workflow_id": checkoutID, @"cart_digest": safeSummary[@"cart_digest"],
+            @"confirmation": @"found_in_uber_order_history"});
+        if (!Check([reportedHistory[@"ok"] boolValue] && DeliveryOrderReportCalls == 1,
+                   "history report reaches the durable workflow store")) return 1;
+        NSMutableDictionary *resolvedOperations = [uncertainOperations mutableCopy];
+        resolvedOperations[@"delivery-order-v1"] = @{@"tool": @"delivery_place_order",
+            @"effect": @"externalCommit", @"state": @"completed", @"updatedAt": @1500,
+            @"result": @{@"outcome": @"user_reported_placed",
+                          @"evidence": @"uber_eats_order_history"}};
+        NSDictionary *resolvedCheckout = @{@"id": checkoutID, @"request": @"Review checkout",
+            @"phase": @"completed", @"updatedAt": @1500,
+            @"operations": resolvedOperations};
+        [[NSJSONSerialization dataWithJSONObject:resolvedCheckout options:0 error:nil]
+            writeToFile:checkoutPath atomically:YES];
+        chmod(checkoutPath.fileSystemRepresentation, 0600);
+        NSDictionary *resolvedDetails = BBWorkflowDetails(@{@"workflow_id": checkoutID});
+        if (!Check(!BBAnyUnresolvedDeliveryOrder() &&
+                   [resolvedDetails[@"order_reported_placed"] boolValue] &&
+                   [resolvedDetails[@"steps"][0][@"title"] isEqualToString:
+                       @"You reported this order placed"],
+                   "a saved user history report removes the cross-session block")) return 1;
+        NSMutableDictionary *damagedOperations = [resolvedOperations mutableCopy];
+        NSMutableDictionary *damagedOrder = [resolvedOperations[@"delivery-order-v1"] mutableCopy];
+        damagedOrder[@"result"] = @"invalid old receipt";
+        damagedOperations[@"delivery-order-v1"] = damagedOrder;
+        NSDictionary *damagedCheckout = @{@"id": checkoutID, @"request": @"Review checkout",
+            @"phase": @"completed", @"updatedAt": @1501,
+            @"operations": damagedOperations};
+        [[NSJSONSerialization dataWithJSONObject:damagedCheckout options:0 error:nil]
+            writeToFile:checkoutPath atomically:YES];
+        chmod(checkoutPath.fileSystemRepresentation, 0600);
+        if (!Check(![BBWorkflowDetails(@{@"workflow_id": checkoutID})[@"order_reported_placed"]
+                       boolValue],
+                   "malformed old receipts cannot claim a reported order")) return 1;
         [NSFileManager.defaultManager removeItemAtPath:otherCheckoutFolder error:nil];
         [NSFileManager.defaultManager removeItemAtPath:checkoutFolder error:nil];
         if (!Check(!BBAnyUnresolvedDeliveryOrder(),

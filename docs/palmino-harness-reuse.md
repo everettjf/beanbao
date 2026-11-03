@@ -18,6 +18,8 @@ The selected runtime and tool registry support these task paths:
 
 This is a working foundation for multi-step tasks: the Palmino loop can sequence typed tools, save receipts, and resume after interruption. Each additional domain still needs its own validated tool, review gate, and outcome check. The delivery order gate now checks all saved sessions before another delivery plan or final click, so switching sessions cannot bypass an uncertain order attempt. Research/PDF, App Store handoff, and delivery are bounded workflows; arbitrary app downloads or purchases are not general-purpose Palmino capabilities.
 
+The order receipt can be resolved only when the user explicitly reports finding the exact reviewed order in Uber Eats history. The report is labeled as user evidence, persists in the workflow, and does not authorize a second click in that session. BeanBao cannot yet independently verify Uber Eats order status.
+
 The model chooses the next visible step; the stored user request now sets an additional limit for option selection, adding to cart, and checkout navigation. A review-only request cannot gain those actions through page text, a model proposal, or a saved proposal from an older version. Ambiguous requests stop before these transitions. This is an authorization boundary around the Palmino loop, not a fixed sequence of taps.
 
 The Agent service runs each task in a child process, has a stop operation, and uses service and task IDs so an old result is not shown as the result of a new task. A wake lease attempts to prevent automatic screen locking during execution and is released on completion, stop, or service failure. The shortcut and voice flows remain in the app.

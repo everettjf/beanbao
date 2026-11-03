@@ -223,6 +223,38 @@ public actor BeanBaoWorkflowStore: PHKExecutionCheckpointPersisting {
         }
     }
 
+    /// A person found this exact order in the provider's order history.
+    /// This records the person's report; it does not claim server confirmation.
+    public func markDeliveryOrderReportedPlaced(digest: String) throws {
+        try mutate {
+            guard $0.phase == .needsReconciliation,
+                  digest.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+                  var order = $0.operations["delivery-order-v1"],
+                  order.tool == "delivery_place_order", order.effect == .externalCommit,
+                  order.state == .running || order.state == .needsReconciliation,
+                  $0.operations.values.filter({
+                      $0.effect != .readOnly &&
+                      ($0.state == .running || $0.state == .needsReconciliation)
+                  }).count == 1,
+                  $0.operations.values.contains(where: {
+                      guard $0.tool == "delivery_review_checkout", $0.state == .completed,
+                            case .object(let result)? = $0.result,
+                            case .string(let reviewedDigest)? = result["cart_digest"] else {
+                          return false
+                      }
+                      return reviewedDigest == digest
+                  }) else { throw BeanBaoWorkflowError.completionUnverified }
+            order.state = .completed
+            order.result = .object([
+                "outcome": .string("user_reported_placed"),
+                "evidence": .string("uber_eats_order_history")
+            ])
+            order.updatedAt = Date()
+            $0.operations["delivery-order-v1"] = order
+            $0.phase = .completed
+        }
+    }
+
     public func assertSafeToRun() throws {
         guard !record.hasUnresolvedMutation else {
             throw BeanBaoWorkflowError.outcomeUnconfirmed("workflow")

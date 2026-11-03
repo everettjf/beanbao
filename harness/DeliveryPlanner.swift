@@ -755,6 +755,25 @@ public func BBDeliveryOrderBegin(_ idPointer: UnsafePointer<CChar>?,
     return done.wait(timeout: .now() + .seconds(10)) == .success && outcome.get() ? 0 : 1
 }
 
+@_cdecl("BBDeliveryOrderReportPlaced")
+public func BBDeliveryOrderReportPlaced(_ idPointer: UnsafePointer<CChar>?,
+                                        _ digestPointer: UnsafePointer<CChar>?) -> Int32 {
+    guard let idPointer, let digestPointer, strlen(digestPointer) == 64,
+          let id = UUID(uuidString: String(cString: idPointer)) else { return 2 }
+    let digest = String(cString: digestPointer)
+    let outcome = DeliveryActionOutcome()
+    let done = DispatchSemaphore(value: 0)
+    Task.detached {
+        do {
+            let store = try BeanBaoWorkflowStore(existingURL: deliveryStoreURL(id))
+            try await store.markDeliveryOrderReportedPlaced(digest: digest)
+            outcome.set()
+        } catch { }
+        done.signal()
+    }
+    return done.wait(timeout: .now() + .seconds(10)) == .success && outcome.get() ? 0 : 1
+}
+
 @_cdecl("BBRunHarnessDeliveryPlan")
 public func BBRunHarnessDeliveryPlan(_ taskPointer: UnsafePointer<CChar>?,
                                      _ idPointer: UnsafePointer<CChar>?) -> Int32 {

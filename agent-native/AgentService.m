@@ -35,6 +35,7 @@ extern int32_t BBDeliveryReadOnlyReviewFinish(const char *workflowID, const char
                                              const char *snapshotJSON);
 extern int32_t BBDeliveryOrderBegin(const char *workflowID, const char *digest,
                                    const char *snapshotJSON);
+extern int32_t BBDeliveryOrderReportPlaced(const char *workflowID, const char *digest);
 
 static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.sock";
 static const uint16_t BBBrowserPort = 47813;
@@ -379,6 +380,13 @@ static BOOL BBDeliveryHasUnfinishedAction(NSDictionary *record) {
 
 static NSString *BBDeliveryCompletedMessage(NSDictionary *record) {
     NSDictionary *operations = record[@"operations"];
+    NSDictionary *order = operations[@"delivery-order-v1"];
+    NSDictionary *orderResult = [order[@"result"] isKindOfClass:NSDictionary.class] ?
+        order[@"result"] : nil;
+    if ([order[@"tool"] isEqualToString:@"delivery_place_order"] &&
+        [order[@"state"] isEqualToString:@"completed"] &&
+        [orderResult[@"outcome"] isEqualToString:@"user_reported_placed"])
+        return @"You reported finding this order in Uber Eats order history";
     for (NSString *tool in @[@"delivery_review_checkout", @"delivery_review_cart",
                            @"delivery_review_options"]) {
         for (NSDictionary *operation in operations.allValues)
@@ -591,6 +599,12 @@ static NSDictionary *BBWorkflowDetails(NSDictionary *request) {
             if (delivery && [tool isEqualToString:@"delivery_place_order"] &&
                 [state isEqualToString:@"running"])
                 state = @"needsReconciliation";
+            NSDictionary *orderResult = [operation[@"result"] isKindOfClass:NSDictionary.class] ?
+                operation[@"result"] : nil;
+            if (delivery && [tool isEqualToString:@"delivery_place_order"] &&
+                [state isEqualToString:@"completed"] &&
+                [orderResult[@"outcome"] isEqualToString:@"user_reported_placed"])
+                title = @"You reported this order placed";
             NSMutableDictionary *step = [@{@"tool": tool, @"state": state,
                 @"updated_at": @([updated doubleValue] + 978307200.0)} mutableCopy];
             if (title) step[@"title"] = title;
@@ -610,6 +624,15 @@ static NSDictionary *BBWorkflowDetails(NSDictionary *request) {
     if (delivery) {
         NSDictionary *checkout = BBCheckoutSummaryFromOperations(operations);
         if (checkout) details[@"checkout_summary"] = checkout;
+        if (checkout && BBWorkflowHasUnresolvedOrder(record))
+            details[@"order_needs_review"] = @YES;
+        NSDictionary *order = operations[@"delivery-order-v1"];
+        NSDictionary *result = [order[@"result"] isKindOfClass:NSDictionary.class] ?
+            order[@"result"] : nil;
+        if ([order[@"tool"] isEqualToString:@"delivery_place_order"] &&
+            [order[@"state"] isEqualToString:@"completed"] &&
+            [result[@"outcome"] isEqualToString:@"user_reported_placed"])
+            details[@"order_reported_placed"] = @YES;
     }
     return details;
 }
@@ -1472,6 +1495,30 @@ static NSDictionary *BBDeliveryOrderBeginRequest(NSDictionary *request) {
     }
 }
 
+static NSDictionary *BBDeliveryOrderReportPlacedRequest(NSDictionary *request) {
+    NSString *identity = request[@"workflow_id"];
+    NSString *digest = request[@"cart_digest"];
+    if (!BBWorkflowFolder(identity) || ![digest isKindOfClass:NSString.class] ||
+        digest.length != 64 ||
+        ![request[@"confirmation"] isEqualToString:@"found_in_uber_order_history"])
+        return @{@"ok": @NO, @"error": @"Invalid order-history confirmation"};
+    @synchronized (BBState) {
+        if (BBState.child > 0 || [BBState.phase isEqualToString:@"executing"])
+            return @{@"ok": @NO, @"error": @"A task is already running"};
+        NSDictionary *record = BBReadWorkflowRecord(identity);
+        NSDictionary *summary = BBCheckoutSummaryFromOperations(record[@"operations"]);
+        if (!BBIsDeliveryRecord(record) || !BBWorkflowHasUnresolvedOrder(record) ||
+            ![summary[@"cart_digest"] isEqualToString:digest])
+            return @{@"ok": @NO, @"error": @"This order attempt is not ready for history review"};
+        if (BBDeliveryOrderReportPlaced(identity.UTF8String, digest.UTF8String) != 0)
+            return @{@"ok": @NO, @"error": @"Could not save the order-history review"};
+        if ([BBState.taskID isEqualToString:identity]) BBRestoreWorkflowIdentity(identity);
+        BBAudit(@"task", @"DeliveryPlan", @"completed", @"user_reported_order_placed");
+        return @{@"ok": @YES, @"workflow_id": identity,
+                 @"outcome": @"user_reported_placed"};
+    }
+}
+
 static NSDictionary *BBDeliveryCheckoutSummaryRequest(NSDictionary *request) {
     NSString *taskID = request[@"task_id"];
     NSString *serviceID = request[@"service_id"];
@@ -1507,6 +1554,8 @@ static NSDictionary *BBHandle(NSDictionary *request) {
     if ([op isEqualToString:@"delivery_action_aborted"]) return BBDeliveryActionAbortBeforeClick(request);
     if ([op isEqualToString:@"delivery_action_result"]) return BBDeliveryActionResult(request);
     if ([op isEqualToString:@"delivery_order_begin"]) return BBDeliveryOrderBeginRequest(request);
+    if ([op isEqualToString:@"delivery_order_report_placed"])
+        return BBDeliveryOrderReportPlacedRequest(request);
     if ([op isEqualToString:@"delivery_checkout_summary"]) return BBDeliveryCheckoutSummaryRequest(request);
     if ([op isEqualToString:@"list_workflows"])
         return @{@"ok": @YES, @"workflows": BBWorkflowSummaries()};
