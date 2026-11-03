@@ -2,6 +2,12 @@
 
 Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 2 current-build delivery cart regression
+
+After wireless data permission was allowed, the installed Bridge 0.2.13 / Agent 0.3.112 / Delivery Browser 0.1.18 / App 0.3.68 build completed a fresh text request in the sandboxed browser: **Find Phin & Bowl Chicken Pho, choose Rice Noodle, and add one to the cart for review; do not check out.** The browser's own **Check** first identified the Uber Eats home feed. Task and workflow `851BE895-6F2B-4AF1-8F52-6204B977229E` then recorded completed search, merchant, item, option, one add-to-cart, cart-open, and cart-review steps. The Agent ended `done` with **Cart ready for review**. The visible cart showed one Chicken Pho, Noodle choice: Rice Noodle, delivery to the public San Jose City Hall test address, and a $27.99 subtotal. BeanBao showed **Cart is ready for review. No checkout or order was started.** No checkout, payment, or order action occurred.
+
+During the automated cart opening, the browser briefly displayed **This link leaves Uber Eats. Open it in Safari if needed.** while the Agent checked the step result; it then reached the correct cart and completed. Closing and reopening that same cart manually did not reproduce the warning or add another item. The trigger is unconfirmed, so this observation does not justify weakening the navigation allowlist. The phone remained unlocked and no SpringBoard reload occurred.
+
 ## November 2 visible Sessions and text acceptance
 
 On the installed Bridge 0.2.13 / Agent 0.3.112 / Delivery Browser 0.1.18 / App 0.3.68 build, the unlocked phone's Sessions list showed the latest completed research session. Its detail view displayed the three search, compose, and PDF steps as completed. Selecting the session returned to the App's completed task view with **Research PDF available**; **View PDF report** opened the two-page PDF in the system preview with visible text. This checks the user-visible route in addition to the saved Agent record and PDF file.
