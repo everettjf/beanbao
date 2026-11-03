@@ -107,6 +107,7 @@ def main() -> None:
                     add_bytes(archive, "SHA256SUMS", checksums)
                     add_bytes(archive, "INSTALL.md", install_notes(packages, versions))
         os.replace(temporary, output)
+        os.chmod(output, 0o644)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
