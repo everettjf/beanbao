@@ -2,7 +2,7 @@
 
 Updated November 3, 2026. This is a developer installation procedure for a compatible Relaxin / RootHide jailbreak. The tested device is an iPhone 11 running iOS 26.0.1 and Relaxin 0.5.5. Other devices require their own validation.
 
-The package versions and manual commands below describe the published v0.3.72 release. The current source build names the second visible app **BeanBao Companion** (formerly **BeanBao Delivery**); its package and bundle IDs remain unchanged so its website session survives an upgrade. See the [two-app design](two-app-architecture.md). Do not mix a source-built 0.3.74 App package with the older 0.1.21 browser package; the package dependency requires BeanBao Companion 0.1.23 or later.
+The package versions and manual commands below describe the published v0.3.72 release. The current source build names the second visible app **BeanBao Helper** (formerly **BeanBao Delivery**); its package and bundle IDs remain unchanged so its website session survives an upgrade. See the [two-app design](two-app-architecture.md). Do not mix a source-built 0.3.75 App package with the older 0.1.21 browser package; the package dependency requires BeanBao Helper 0.1.24 or later.
 
 ## Packages
 

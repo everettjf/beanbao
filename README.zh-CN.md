@@ -31,7 +31,7 @@ BeanBao 目前不提供任意应用自动点击、静默安装 App Store 应用�
 详见[常见需求](docs/common-cases.md)和[复杂任务边界](docs/complex-workflows.md)。
 
 BeanBao 采用两个可见 App：**BeanBao** 负责指令、语音、Sessions 与审阅；
-**BeanBao Companion** 承载需要正常 App 沙盒与原生界面的交互任务，目前只支持 Uber Eats。
+**BeanBao Helper** 承载需要正常 App 沙盒与原生界面的交互任务，目前只支持 Uber Eats。
 当前公开版本的第二个图标仍显示“BeanBao Delivery”；
 源码构建已改名，并保留原安装身份和网站数据。详见[双 App 设计（英文）](docs/two-app-architecture.md)。
 
@@ -105,7 +105,7 @@ python3 scripts/prepare_release_bundle.py
 - `bridge/`：SpringBoard 中受限的屏幕观察、输入操作和语音浮层。
 - `agent-native/`、`harness/`：手机端任务服务、模型客户端、策略和可恢复流程。
 - `app/`：BeanBao 界面、Apple 语音转写、模型设置、Sessions 和 Activity。
-- `delivery-browser/`：BeanBao Companion，目前只提供受限的 Uber Eats 实验流程；源码目录保留历史名称。
+- `delivery-browser/`：BeanBao Helper，目前只提供受限的 Uber Eats 实验流程；源码目录保留历史名称。
 - `vendor/`：保留原许可与说明的 ios-mcp、PalminoHarnessKit 源码快照。
 - `scripts/`、`tests/`：构建、包审计、安装器与验收工具。
 - `web/`：无需构建工具的 GitHub Pages 网站，默认英文，提供简体中文页面。

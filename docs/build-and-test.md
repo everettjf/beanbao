@@ -2,6 +2,10 @@
 
 Updated November 3, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 3 BeanBao Helper source build
+
+The second app's display and package name is now **BeanBao Helper**. The Browser 0.1.24 and App 0.3.75 packages built and passed the four-package signature, identity, dependency, and contents audit with the previously validated Bridge and Agent packages. The local transfer archive SHA-256 is `dba5bfa20b94496440e02fabcba29b21f47d599841c4573083762153807e4371`. This was a display-name and UI-copy change; the full 90-test suite passed in the immediately preceding Companion build. The Helper build has not been installed on the phone or published as a GitHub release.
+
 ## November 3 BeanBao Companion source build
 
 The second app's broader name reflects its role as a normally sandboxed interactive surface, while the currently implemented workflow remains Uber Eats. Bridge 0.2.14 / Agent 0.3.118 / BeanBao Companion 0.1.23 / App 0.3.74 passed native policy and activity checks, Python browser and installer checks, 90 Swift Harness tests, and the four-package audit. The prepared local transfer archive SHA-256 is `4d4dcb060fad6cd74e03193990adacd9dc455260ad134cec25fb4fa8369fbdf2`. The package is not installed on the phone or published as a GitHub release. The public v0.3.72 archive still shows the old name.

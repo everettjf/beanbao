@@ -183,8 +183,8 @@ def main() -> None:
                                    "dev.beanbao.app", APP_FILES)
     browser, browser_files = audit_package(args.browser, ROOT / "delivery-browser/control",
         "dev.beanbao.deliverybrowser", BROWSER_FILES)
-    if browser.get("Name") != "BeanBao Companion":
-        fail("Browser package must use the BeanBao Companion display name")
+    if browser.get("Name") != "BeanBao Helper":
+        fail("Browser package must use the BeanBao Helper display name")
     for path in ("usr/bin/beanbaod", "usr/bin/beanbaoagentctl"):
         if not agent_files[path][0].mode & 0o111:
             fail(f"{path}: Agent executable bit is missing")
@@ -224,7 +224,7 @@ def main() -> None:
     browser_info = plistlib.loads(browser_files[BROWSER_BASE + "Info.plist"][1])
     if browser_info.get("CFBundleIdentifier") != "dev.beanbao.deliverybrowser" or \
             browser_info.get("CFBundleExecutable") != "BeanBaoDelivery" or \
-            browser_info.get("CFBundleDisplayName") != "BeanBao Companion" or \
+            browser_info.get("CFBundleDisplayName") != "BeanBao Helper" or \
             browser_info.get("CFBundleShortVersionString") != browser["Version"] or \
             browser_info.get("CFBundleURLTypes", [{}])[0].get("CFBundleURLSchemes") != ["beanbaodelivery"]:
         fail("Delivery browser identity or URL scheme is invalid")

@@ -109,7 +109,7 @@ printf 'Running Agent version verified: %s\n' "$agent_version"
         printf 'Run uicache -a or reload SpringBoard later to refresh the app icons.\n' >&2
     fi
 }
-[ "$browser_changed" -eq 0 ] || printf 'Close and reopen BeanBao Companion to load its update.\n'
+[ "$browser_changed" -eq 0 ] || printf 'Close and reopen BeanBao Helper to load its update.\n'
 [ "$app_changed" -eq 0 ] || printf 'Close and reopen BeanBao to load its update.\n'
 [ "$bridge_changed" -eq 0 ] ||
     printf 'Reload SpringBoard when convenient, then unlock the phone to activate the Bridge update.\n'

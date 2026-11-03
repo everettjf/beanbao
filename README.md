@@ -32,7 +32,7 @@ silent App Store installation, automatic email sending, or unattended payment.
 See [common requests](docs/common-cases.md) and [complex workflow limits](docs/complex-workflows.md).
 
 BeanBao uses two visible apps: **BeanBao** for requests, voice, Sessions, and
-review; **BeanBao Companion** for interactive tasks that need a normally
+review; **BeanBao Helper** for interactive tasks that need a normally
 sandboxed app. Its first supported task is Uber Eats. The current public release
 still labels the second icon “BeanBao Delivery”; the source build renames it
 without replacing its package or website data. See the [two-app design](docs/two-app-architecture.md).
@@ -119,7 +119,7 @@ this `iphoneos-arm64e` release. See [build and device tests](docs/build-and-test
 | `bridge/` | Restricted SpringBoard observation, input actions, and voice overlay. |
 | `agent-native/` and `harness/` | On-device task service, model clients, policy, and resumable workflows. |
 | `app/` | BeanBao UI, Apple speech transcription, model settings, Sessions, Activity, and review screens. |
-| `delivery-browser/` | BeanBao Companion, a sandboxed app currently limited to the experimental Uber Eats flow. The source directory keeps its historical name. |
+| `delivery-browser/` | BeanBao Helper, a sandboxed app currently limited to the experimental Uber Eats flow. The source directory keeps its historical name. |
 | `vendor/` | Pinned ios-mcp and PalminoHarnessKit source snapshots with their original notices. |
 | `scripts/` and `tests/` | Build, package audit, installer, and acceptance tooling. |
 | `web/` | Buildless GitHub Pages website. |
