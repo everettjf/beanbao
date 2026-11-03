@@ -30,6 +30,16 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         [name isEqualToString:@"ubereats.com"] || [name hasSuffix:@".ubereats.com"];
 }
 
+static NSDictionary *BBDeliveryRequest(NSDictionary *request) {
+    NSDictionary *reply = BBAgentRequest(request);
+    // Agent restarts invalidate the browser's in-memory pairing token.
+    // The loopback rejection stays generic; the browser gives a recovery step.
+    if ([reply[@"error"] isEqualToString:@"Invalid request"])
+        return @{@"ok": @NO, @"error":
+            @"Delivery connection needs refreshing. Open BeanBao and Browse food delivery again."};
+    return reply;
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"Food delivery";
@@ -191,7 +201,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     NSString *serviceID = self.deliveryServiceID;
     if (taskID.length && serviceID.length) {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-            BBAgentRequest(@{@"op": @"stop", @"task_id": taskID,
+            BBDeliveryRequest(@{@"op": @"stop", @"task_id": taskID,
                              @"service_id": serviceID});
         });
     }
@@ -206,7 +216,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
         NSString *serviceID = self.deliveryServiceID;
         if (taskID.length && serviceID.length) {
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                BBAgentRequest(@{@"op": @"stop", @"task_id": taskID,
+                BBDeliveryRequest(@{@"op": @"stop", @"task_id": taskID,
                                  @"service_id": serviceID});
             });
         }
@@ -272,7 +282,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                                          @"snapshot": snapshot} mutableCopy];
         if (self.deliveryTaskID.length) request[@"workflow_id"] = self.deliveryTaskID;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            NSDictionary *reply = BBAgentRequest(request);
+            NSDictionary *reply = BBDeliveryRequest(request);
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (!self.runningDelivery) return;
                 if (![reply[@"ok"] boolValue] ||
@@ -297,7 +307,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC)),
                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSDictionary *reply = BBAgentRequest(@{@"op": @"status"});
+        NSDictionary *reply = BBDeliveryRequest(@{@"op": @"status"});
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!self.runningDelivery) return;
             if (![reply[@"ok"] boolValue] ||
@@ -340,7 +350,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                                   @"service_id": self.deliveryServiceID,
                                   @"snapshot": snapshot};
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            NSDictionary *reply = BBAgentRequest(request);
+            NSDictionary *reply = BBDeliveryRequest(request);
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (!self.runningDelivery) return;
                 if (![reply[@"ok"] boolValue]) {
@@ -456,7 +466,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                 NSString *taskID = self.deliveryTaskID;
                 NSString *serviceID = self.deliveryServiceID;
                 dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-                    NSDictionary *reply = BBAgentRequest(@{@"op": @"delivery_action_aborted",
+                    NSDictionary *reply = BBDeliveryRequest(@{@"op": @"delivery_action_aborted",
                         @"task_id": taskID, @"service_id": serviceID, @"reason": reason});
                     dispatch_async(dispatch_get_main_queue(), ^{
                         if (!self.runningDelivery) return;
@@ -550,7 +560,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
                               @"service_id": self.deliveryServiceID,
                               @"snapshot": snapshot};
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSDictionary *reply = BBAgentRequest(request);
+        NSDictionary *reply = BBDeliveryRequest(request);
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!self.runningDelivery) return;
             if (![reply[@"ok"] boolValue]) {
@@ -575,7 +585,7 @@ static BOOL BBTrustedDeliveryHost(NSString *host) {
     self.statusLabel.text = @"Checking the saved result of this step…";
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC)),
                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSDictionary *status = BBAgentRequest(@{@"op": @"status"});
+        NSDictionary *status = BBDeliveryRequest(@{@"op": @"status"});
         dispatch_async(dispatch_get_main_queue(), ^{
             if (!self.runningDelivery) return;
             if ([status[@"ok"] boolValue] &&
@@ -655,7 +665,7 @@ static NSString *BBOrderReviewText(NSDictionary *summary) {
     [self setReviewAvailable:NO];
     self.statusLabel.text = @"Loading the checked order summary…";
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSDictionary *reply = BBAgentRequest(@{@"op": @"delivery_checkout_summary",
+        NSDictionary *reply = BBDeliveryRequest(@{@"op": @"delivery_checkout_summary",
             @"task_id": taskID, @"service_id": serviceID});
         dispatch_async(dispatch_get_main_queue(), ^{
             if (![taskID isEqualToString:self.deliveryTaskID] ||
@@ -736,7 +746,7 @@ static NSString *BBOrderReviewText(NSDictionary *summary) {
         NSDictionary *request = @{@"op": @"delivery_order_begin", @"task_id": taskID,
             @"service_id": serviceID, @"cart_digest": digest, @"snapshot": snapshot};
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            NSDictionary *reply = BBAgentRequest(request);
+            NSDictionary *reply = BBDeliveryRequest(request);
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (![reply[@"ok"] boolValue] ||
                     ![reply[@"task_id"] isEqualToString:taskID] ||
@@ -808,7 +818,7 @@ static NSString *BBOrderReviewText(NSDictionary *summary) {
         NSString *checkedURL = snapshot[@"url"];
         self.statusLabel.text = @"Checking the current page…";
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            NSDictionary *reply = BBAgentRequest(@{@"op": @"delivery_observe", @"snapshot": snapshot});
+            NSDictionary *reply = BBDeliveryRequest(@{@"op": @"delivery_observe", @"snapshot": snapshot});
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (![self.webView.URL.absoluteString isEqualToString:checkedURL]) return;
                 if (![reply[@"ok"] boolValue]) {

@@ -1570,6 +1570,11 @@ static NSDictionary *BBHandle(NSDictionary *request) {
 static int BBOpenBrowserListener(void) {
     int listener = socket(AF_INET, SOCK_STREAM, 0);
     if (listener < 0) return -1;
+    int reuseAddress = 1;
+    if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuseAddress, sizeof(reuseAddress))) {
+        close(listener);
+        return -1;
+    }
     struct sockaddr_in address = {0};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
