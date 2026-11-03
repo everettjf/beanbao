@@ -18,9 +18,9 @@ The current test scripts are `scripts/accept_text_device.py` and `scripts/accept
 
 ## Multi-step research, PDF, email, and app
 
-The current installed build completed one text request through six Palmino tools and left a two-page sourced PDF, an addressed email draft, and the exact Apple Mail listing in one saved session. The PDF was rendered and inspected; the email remained unsent. Exact bundle verification cleared only the app review. To complete human acceptance, configure an Apple Mail account, open the draft in the system composer, verify the recipient and PDF attachment, then cancel the composer and confirm the session still waits. A later separately approved send can test Mail's queued callback; it cannot prove delivery to the recipient.
+The current installed build completed one text request through six Palmino tools and left a two-page sourced PDF, an addressed email draft, and the exact Apple Mail listing in one saved session. The PDF was rendered and inspected; the email remained unsent. Exact bundle verification cleared only the app review. The owner chose to skip Mail acceptance for this run, so Mail account setup and native composer verification are deferred. A later separately approved send can test Mail's queued callback; it cannot prove delivery to the recipient.
 
-On the current installed App 0.3.71, **Review email draft** still reports that an Apple Mail account must be set up. Switching Sessions now clears that task-specific prompt. The system composer has not opened, so attachment and callback checks remain open.
+On the current installed App 0.3.71, **Review email draft** still reports that an Apple Mail account must be set up. Switching Sessions now clears that task-specific prompt. The system composer has not opened, so attachment and callback checks remain unverified and are outside this run's acceptance scope.
 
 Agent 0.3.115 also passed a current-build research interruption test: one completed search receipt survived an Agent-only restart, the same workflow ID resumed, and a three-page PDF with 17 source links was produced. This does not replace the Apple Mail account test or the physical USB-disconnect and reboot tests below.
 
