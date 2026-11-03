@@ -33,6 +33,8 @@ extern int32_t BBDeliveryActionFinish(const char *workflowID, const char *action
 extern int32_t BBDeliveryActionAbort(const char *workflowID, const char *actionJSON);
 extern int32_t BBDeliveryReadOnlyReviewFinish(const char *workflowID, const char *actionJSON,
                                              const char *snapshotJSON);
+extern int32_t BBDeliveryOrderBegin(const char *workflowID, const char *digest,
+                                   const char *snapshotJSON);
 
 static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.sock";
 static const uint16_t BBBrowserPort = 47813;
@@ -420,7 +422,18 @@ static BOOL BBCheckoutMinorValid(id value, BOOL signedAdjustment) {
 
 static NSDictionary *BBCheckoutSummaryFromOperations(NSDictionary *operations) {
     if (![operations isKindOfClass:NSDictionary.class]) return nil;
-    for (NSString *key in operations) {
+    NSArray<NSString *> *orderedKeys = [operations.allKeys sortedArrayUsingComparator:
+        ^NSComparisonResult(NSString *first, NSString *second) {
+        NSString *firstSuffix = [first hasPrefix:@"delivery-plan-v1-"] ?
+            [first substringFromIndex:@"delivery-plan-v1-".length] : @"";
+        NSString *secondSuffix = [second hasPrefix:@"delivery-plan-v1-"] ?
+            [second substringFromIndex:@"delivery-plan-v1-".length] : @"";
+        NSNumber *firstTime = operations[[@"delivery-review-v1-" stringByAppendingString:firstSuffix]][@"updatedAt"];
+        NSNumber *secondTime = operations[[@"delivery-review-v1-" stringByAppendingString:secondSuffix]][@"updatedAt"];
+        return [secondTime isKindOfClass:NSNumber.class] && [firstTime isKindOfClass:NSNumber.class] ?
+            [secondTime compare:firstTime] : NSOrderedSame;
+    }];
+    for (NSString *key in orderedKeys) {
         if (![key hasPrefix:@"delivery-plan-v1-"]) continue;
         NSString *suffix = [key substringFromIndex:@"delivery-plan-v1-".length];
         NSDictionary *plan = operations[key];
@@ -543,6 +556,9 @@ static NSDictionary *BBWorkflowDetails(NSDictionary *request) {
                     if ([operations[planKey] isKindOfClass:NSDictionary.class]) continue;
                 }
             }
+            if (delivery && [tool isEqualToString:@"delivery_place_order"] &&
+                [state isEqualToString:@"running"])
+                state = @"needsReconciliation";
             NSMutableDictionary *step = [@{@"tool": tool, @"state": state,
                 @"updated_at": @([updated doubleValue] + 978307200.0)} mutableCopy];
             if (title) step[@"title"] = title;
@@ -1179,7 +1195,7 @@ static NSDictionary *BBDeliveryPlan(NSDictionary *request) {
         for (NSString *key in operations)
             if ([key hasPrefix:@"delivery-plan-v1-"]) { hasDeliveryStep = YES; break; }
         if (!saved || ![saved[@"request"] isEqualToString:task] || !hasDeliveryStep ||
-            BBDeliveryHasUnfinishedAction(saved))
+            BBDeliveryHasUnfinishedAction(saved) || BBWorkflowHasUnresolvedMutation(saved))
             return @{@"ok": @NO, @"error": @"Delivery session could not be resumed"};
     }
     @synchronized (BBState) {
@@ -1384,6 +1400,60 @@ static NSDictionary *BBDeliveryActionResult(NSDictionary *request) {
     }
 }
 
+static NSDictionary *BBDeliveryOrderBeginRequest(NSDictionary *request) {
+    NSString *taskID = request[@"task_id"];
+    NSString *serviceID = request[@"service_id"];
+    NSString *digest = request[@"cart_digest"];
+    NSDictionary *snapshot = request[@"snapshot"];
+    if (![taskID isKindOfClass:NSString.class] ||
+        ![serviceID isKindOfClass:NSString.class] ||
+        ![digest isKindOfClass:NSString.class] || digest.length != 64 ||
+        ![snapshot isKindOfClass:NSDictionary.class])
+        return @{@"ok": @NO, @"error": @"Invalid checkout approval"};
+    @synchronized (BBState) {
+        if (![taskID isEqualToString:BBState.taskID] ||
+            ![serviceID isEqualToString:BBState.serviceID] ||
+            ![BBState.app isEqualToString:@"DeliveryPlan"] ||
+            ![BBState.phase isEqualToString:@"done"] || BBState.child > 0 ||
+            BBState.deliveryAction)
+            return @{@"ok": @NO, @"error": @"The checkout session changed"};
+        NSDictionary *record = BBReadWorkflowRecord(taskID);
+        NSDictionary *summary = BBCheckoutSummaryFromOperations(record[@"operations"]);
+        if (![summary[@"cart_digest"] isEqualToString:digest])
+            return @{@"ok": @NO, @"error": @"Review the current checkout again"};
+        NSData *data = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
+        if (!data || data.length >= 65536)
+            return @{@"ok": @NO, @"error": @"Invalid checkout page"};
+        NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if (BBDeliveryOrderBegin(taskID.UTF8String, digest.UTF8String, json.UTF8String) != 0)
+            return @{@"ok": @NO, @"error": @"Checkout changed or expired. Review it again."};
+        BBState.phase = @"needs_reconciliation";
+        BBState.message = @"Order action started. Check Uber Eats before any retry.";
+        BBAudit(@"task", @"DeliveryPlan", @"needs_reconciliation", @"order_attempt_started");
+        return @{@"ok": @YES, @"task_id": taskID, @"service_id": serviceID};
+    }
+}
+
+static NSDictionary *BBDeliveryCheckoutSummaryRequest(NSDictionary *request) {
+    NSString *taskID = request[@"task_id"];
+    NSString *serviceID = request[@"service_id"];
+    if (![taskID isKindOfClass:NSString.class] ||
+        ![serviceID isKindOfClass:NSString.class])
+        return @{@"ok": @NO, @"error": @"Invalid checkout review"};
+    @synchronized (BBState) {
+        if (![taskID isEqualToString:BBState.taskID] ||
+            ![serviceID isEqualToString:BBState.serviceID] ||
+            ![BBState.app isEqualToString:@"DeliveryPlan"] ||
+            ![BBState.phase isEqualToString:@"done"] || BBState.child > 0)
+            return @{@"ok": @NO, @"error": @"The checkout session changed"};
+        NSDictionary *record = BBReadWorkflowRecord(taskID);
+        NSDictionary *summary = BBCheckoutSummaryFromOperations(record[@"operations"]);
+        return summary ? @{@"ok": @YES, @"summary": summary,
+                           @"task_id": taskID, @"service_id": serviceID} :
+            @{@"ok": @NO, @"error": @"Review the checkout before placing an order"};
+    }
+}
+
 static NSDictionary *BBHandle(NSDictionary *request) {
     NSString *op = request[@"op"];
     if ([op isEqualToString:@"status"]) return BBStatus();
@@ -1398,6 +1468,8 @@ static NSDictionary *BBHandle(NSDictionary *request) {
     if ([op isEqualToString:@"delivery_verify_action"]) return BBDeliveryVerifyAction(request);
     if ([op isEqualToString:@"delivery_action_aborted"]) return BBDeliveryActionAbortBeforeClick(request);
     if ([op isEqualToString:@"delivery_action_result"]) return BBDeliveryActionResult(request);
+    if ([op isEqualToString:@"delivery_order_begin"]) return BBDeliveryOrderBeginRequest(request);
+    if ([op isEqualToString:@"delivery_checkout_summary"]) return BBDeliveryCheckoutSummaryRequest(request);
     if ([op isEqualToString:@"list_workflows"])
         return @{@"ok": @YES, @"workflows": BBWorkflowSummaries()};
     if ([op isEqualToString:@"workflow_details"])
@@ -1453,11 +1525,12 @@ static void BBClient(int fd, BOOL browserOnly) {
     NSDictionary *request = complete ?
         [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     if (data.length >= 4096 && ![@[@"delivery_observe", @"delivery_plan",
-                                  @"delivery_verify_action", @"delivery_action_result"] containsObject:request[@"op"]])
+                                  @"delivery_verify_action", @"delivery_action_result",
+                                  @"delivery_order_begin"] containsObject:request[@"op"]])
         request = nil;
     BOOL allowed = !browserOnly || [@[@"status", @"stop", @"delivery_observe",
         @"delivery_plan", @"delivery_verify_action", @"delivery_action_aborted",
-        @"delivery_action_result"]
+        @"delivery_action_result", @"delivery_order_begin", @"delivery_checkout_summary"]
         containsObject:request[@"op"]];
     if (browserOnly && [request[@"op"] isEqualToString:@"stop"]) {
         allowed = allowed && [request[@"task_id"] isKindOfClass:NSString.class] &&

@@ -40,6 +40,7 @@ char *BBUberEatsValidateAction(const char *snapshotJSON, const char *actionJSON)
 }
 static int DeliveryBeginCalls = 0;
 static int DeliveryReviewCalls = 0;
+static int DeliveryOrderBeginCalls = 0;
 int32_t BBDeliveryActionBegin(const char *workflowID, const char *actionJSON) {
     (void)workflowID; (void)actionJSON; DeliveryBeginCalls++; return 0;
 }
@@ -53,6 +54,12 @@ int32_t BBDeliveryActionAbort(const char *workflowID, const char *actionJSON) {
 int32_t BBDeliveryReadOnlyReviewFinish(const char *workflowID, const char *actionJSON,
                                        const char *snapshotJSON) {
     (void)workflowID; (void)actionJSON; (void)snapshotJSON; DeliveryReviewCalls++; return 0;
+}
+int32_t BBDeliveryOrderBegin(const char *workflowID, const char *digest,
+                             const char *snapshotJSON) {
+    (void)workflowID; (void)digest; (void)snapshotJSON;
+    DeliveryOrderBeginCalls++;
+    return 0;
 }
 
 static NSDictionary *Observation(NSString *app, BOOL locked, NSDictionary *ui, NSDictionary *ocr) {
@@ -182,6 +189,11 @@ int main(void) {
         if (!Check(![BBHandle(@{@"op": @"delivery_verify_action", @"task_id": @"old",
                                @"service_id": @"old", @"snapshot": @{}})[@"ok"] boolValue],
                    "delivery action requires the active planned step")) return 1;
+        if (!Check(![BBHandle(@{@"op": @"delivery_order_begin", @"task_id": @"old",
+                               @"service_id": @"old", @"cart_digest": @"bad",
+                               @"snapshot": @{}})[@"ok"] boolValue] &&
+                   DeliveryOrderBeginCalls == 0,
+                   "order commit rejects invalid or stale approval before the Swift gate")) return 1;
         BBState.serviceID = @"service-A";
         BBState.taskID = @"task-A";
         BBState.phase = @"done";
@@ -359,6 +371,61 @@ int main(void) {
             !Check(BBCheckoutSummaryFromOperations(@{@"delivery-plan-v1-checkout":
                 checkoutOps[@"delivery-plan-v1-checkout"]}) == nil,
                    "an unverified model proposal cannot appear as a checkout summary")) return 1;
+        NSString *checkoutID = NSUUID.UUID.UUIDString;
+        NSString *checkoutFolder = [workflowRoot stringByAppendingPathComponent:checkoutID];
+        [NSFileManager.defaultManager createDirectoryAtPath:checkoutFolder
+            withIntermediateDirectories:NO attributes:@{NSFilePosixPermissions: @0700} error:nil];
+        NSString *checkoutPath = [checkoutFolder stringByAppendingPathComponent:@"session.json"];
+        NSDictionary *checkoutRecord = @{@"id": checkoutID, @"request": @"Review checkout",
+            @"phase": @"completed", @"updatedAt": @1200, @"operations": checkoutOps};
+        [[NSJSONSerialization dataWithJSONObject:checkoutRecord options:0 error:nil]
+            writeToFile:checkoutPath atomically:YES];
+        chmod(checkoutPath.fileSystemRepresentation, 0600);
+        BBState.taskID = checkoutID;
+        BBState.serviceID = @"checkout-service";
+        BBState.app = @"DeliveryPlan";
+        BBState.phase = @"done";
+        BBState.deliveryAction = nil;
+        NSDictionary *orderSummary = BBDeliveryCheckoutSummaryRequest(@{@"task_id": checkoutID,
+            @"service_id": @"checkout-service"});
+        if (!Check([orderSummary[@"ok"] boolValue] &&
+                   [orderSummary[@"summary"][@"cart_digest"] isEqualToString:
+                    safeSummary[@"cart_digest"]],
+                   "browser review receives the verified checkout summary") ||
+            !Check(![BBDeliveryCheckoutSummaryRequest(@{@"task_id": checkoutID,
+                @"service_id": @"old-service"})[@"ok"] boolValue] &&
+                   DeliveryOrderBeginCalls == 0,
+                   "stale browser identity cannot read or approve a checkout")) return 1;
+        NSDictionary *wrongOrder = BBDeliveryOrderBeginRequest(@{@"task_id": checkoutID,
+            @"service_id": @"checkout-service", @"cart_digest": @"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            @"snapshot": @{@"visible_text": @"Place order"}});
+        if (!Check(![wrongOrder[@"ok"] boolValue] && DeliveryOrderBeginCalls == 0,
+                   "order start rejects a digest other than the reviewed cart")) return 1;
+        NSDictionary *begunOrder = BBDeliveryOrderBeginRequest(@{@"task_id": checkoutID,
+            @"service_id": @"checkout-service", @"cart_digest": safeSummary[@"cart_digest"],
+            @"snapshot": @{@"visible_text": @"Place order"}});
+        if (!Check([begunOrder[@"ok"] boolValue] && DeliveryOrderBeginCalls == 1 &&
+                   [BBState.phase isEqualToString:@"needs_reconciliation"] &&
+                   ![BBDeliveryOrderBeginRequest(@{@"task_id": checkoutID,
+                       @"service_id": @"checkout-service", @"cart_digest": safeSummary[@"cart_digest"],
+                       @"snapshot": @{@"visible_text": @"Place order"}})[@"ok"] boolValue] &&
+                   DeliveryOrderBeginCalls == 1,
+                   "one approved order attempt is claimed once and blocks replay")) return 1;
+        NSMutableDictionary *uncertainOperations = [checkoutOps mutableCopy];
+        uncertainOperations[@"delivery-order-v1"] = @{@"tool": @"delivery_place_order",
+            @"effect": @"externalCommit", @"state": @"running", @"updatedAt": @1300};
+        NSDictionary *uncertainCheckout = @{@"id": checkoutID, @"request": @"Review checkout",
+            @"phase": @"running", @"updatedAt": @1300,
+            @"operations": uncertainOperations};
+        [[NSJSONSerialization dataWithJSONObject:uncertainCheckout options:0 error:nil]
+            writeToFile:checkoutPath atomically:YES];
+        chmod(checkoutPath.fileSystemRepresentation, 0600);
+        NSDictionary *uncertainDetails = BBWorkflowDetails(@{@"workflow_id": checkoutID});
+        if (!Check([uncertainDetails[@"phase"] isEqualToString:@"needsReconciliation"] &&
+                   [uncertainDetails[@"steps"] count] == 1 &&
+                   [uncertainDetails[@"steps"][0][@"state"] isEqualToString:@"needsReconciliation"],
+                   "Sessions shows an interrupted order as needing review")) return 1;
+        [NSFileManager.defaultManager removeItemAtPath:checkoutFolder error:nil];
         NSString *deliveryFolder = [workflowRoot stringByAppendingPathComponent:deliveryID];
         [NSFileManager.defaultManager createDirectoryAtPath:deliveryFolder withIntermediateDirectories:NO
                                   attributes:@{NSFilePosixPermissions: @0700} error:nil];

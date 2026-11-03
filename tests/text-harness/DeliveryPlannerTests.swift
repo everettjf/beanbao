@@ -191,7 +191,7 @@ final class DeliveryPlannerTests: XCTestCase {
             .contains("private-cart-marker"))
     }
 
-    func testCheckoutReviewRequiresCompleteBoundSummaryWithoutOrderAction() async throws {
+    func testCheckoutReviewRequiresCompleteBoundSummaryAndOneShotCommit() async throws {
         let request = "Add Rice bowl to cart and open checkout to review the total"
         let (journal, file) = try store(request: request)
         let merchantKey = "delivery-execute-v1-merchant"
@@ -248,6 +248,34 @@ final class DeliveryPlannerTests: XCTestCase {
         let journalText = String(decoding: try Data(contentsOf: file), as: UTF8.self)
         XCTAssertFalse(journalText.contains("private-checkout-marker"))
         XCTAssertFalse(journalText.contains("Place order"))
+        guard case .string(let digest)? = fields["cart_digest"] else {
+            return XCTFail("Checkout digest missing")
+        }
+        do {
+            try await BeanBaoDeliveryPlanner.beginOrderCommit(
+                approvedDigest: String(repeating: "f", count: 64), on: checkout, store: journal)
+            XCTFail("A different displayed digest must not authorize an order")
+        } catch BeanBaoDeliveryReviewError.approvalRequired { }
+        let otherScreen = observation(checkout.url.absoluteString,
+            text.replacingOccurrences(of: "private-checkout-marker", with: "new checkout copy"))
+        do {
+            try await BeanBaoDeliveryPlanner.beginOrderCommit(
+                approvedDigest: digest, on: otherScreen, store: journal)
+            XCTFail("A changed checkout screen must not authorize an order")
+        } catch BeanBaoDeliveryReviewError.changedCart { }
+        try await BeanBaoDeliveryPlanner.beginOrderCommit(
+            approvedDigest: digest, on: checkout, store: journal)
+        let begun = await journal.snapshot()
+        XCTAssertEqual(begun.operations["delivery-order-v1"]?.effect, .externalCommit)
+        XCTAssertEqual(begun.operations["delivery-order-v1"]?.state, .running)
+        let restored = try BeanBaoWorkflowStore(existingURL: file)
+        let restoredRecord = await restored.snapshot()
+        XCTAssertEqual(restoredRecord.phase, .needsReconciliation)
+        do {
+            try await BeanBaoDeliveryPlanner.beginOrderCommit(
+                approvedDigest: digest, on: checkout, store: restored)
+            XCTFail("An interrupted order commit must never be replayed")
+        } catch BeanBaoDeliveryReviewError.approvalRequired { }
     }
 
     func testIncompleteCheckoutCannotBeRecorded() throws {

@@ -27,6 +27,7 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     // timeout on a busy phone. A lost reply must not masquerade as a failed
     // click after the Agent has already verified and committed the step.
     int timeoutSeconds = [@[@"delivery_verify_action", @"delivery_action_result",
+                            @"delivery_order_begin",
                             @"delivery_action_aborted"] containsObject:request[@"op"]] ? 15 : 3;
     if (deliveryBrowser) {
         NSString *token = nil;
@@ -39,7 +40,8 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     }
     NSData *json = [NSJSONSerialization dataWithJSONObject:request options:0 error:nil];
     NSUInteger requestLimit = [@[@"delivery_observe", @"delivery_plan",
-                                 @"delivery_verify_action", @"delivery_action_result"]
+                                 @"delivery_verify_action", @"delivery_action_result",
+                                 @"delivery_order_begin"]
         containsObject:request[@"op"]] ?
         65536 : 4096;
     if (json.length >= requestLimit) return @{@"ok": @NO, @"error": @"Request is too long"};
@@ -87,7 +89,8 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     }
     NSMutableData *reply = [NSMutableData data];
     char byte = 0;
-    NSUInteger replyLimit = [@[@"list_workflows", @"workflow_details"] containsObject:request[@"op"]] ?
+    NSUInteger replyLimit = [@[@"list_workflows", @"workflow_details",
+                               @"delivery_checkout_summary"] containsObject:request[@"op"]] ?
         32768 : 4096;
     BOOL completeReply = NO;
     while (reply.length < replyLimit) {

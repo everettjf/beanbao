@@ -24,6 +24,10 @@ The current test scripts are `scripts/accept_text_device.py` and `scripts/accept
 
 The connected phone passed two uninterrupted runs from an empty cart, including one with the final merchant, item, and option check. Other sites, accounts, and devices still require separate acceptance.
 
+## Food delivery checkout and order
+
+The connected browser still reaches Uber Eats sign-in before checkout. After signing in on the phone, run a checkout-only request and verify that **Review** displays the exact merchant, items, options, address, every charge, and total. Change the address or price before confirming; the order must not be clicked. A live final order test needs the owner's separate approval of a specific real cart and amount. After an approved tap, check the Uber Eats confirmation and order history. If the result is ambiguous, require **Needs review** and no automatic retry. This acceptance has not passed on a real checkout.
+
 ## Voice and independent operation
 
 1. Tap **Voice input**, say **Open Maps**, and tap **Stop recording**. Review the editable transcript before tapping **Start**. Require the correct foreground app and completed Agent task. On-device English language assets may need a first-use download.

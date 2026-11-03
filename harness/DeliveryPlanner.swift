@@ -429,6 +429,52 @@ public enum BeanBaoDeliveryPlanner {
         try await store.setPhase(.completed)
     }
 
+    /// Called only after a person approves the exact displayed checkout digest.
+    /// The journal claim and review gate are both durable before the caller may
+    /// click Place order. Any interruption leaves an uncertain external commit
+    /// that cannot be replayed by planning or by another approval attempt.
+    public static func beginOrderCommit(approvedDigest: String,
+                                        on observation: BeanBaoUberEatsObservation,
+                                        store: BeanBaoWorkflowStore,
+                                        now: Date = Date()) async throws {
+        let record = await store.snapshot()
+        guard record.phase == .completed, !record.hasUnresolvedMutation,
+              !record.operations.values.contains(where: { $0.state == .running }),
+              approvedDigest.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+              let review = record.operations.filter({
+                  $0.key.hasPrefix("delivery-review-v1-") &&
+                  $0.value.tool == "delivery_review_checkout" &&
+                  $0.value.state == .completed
+              }).max(by: { $0.value.updatedAt < $1.value.updatedAt }),
+              let suffix = review.key.hasPrefix("delivery-review-v1-") ?
+                  String(review.key.dropFirst("delivery-review-v1-".count)) : nil,
+              let plan = record.operations["delivery-plan-v1-\(suffix)"],
+              plan.state == .completed,
+              let planResult = plan.result,
+              let proposal = Self.proposal(from: planResult),
+              proposal.action == "review_checkout", proposal.observationID == suffix,
+              let draft = Self.checkoutDraft(from: planResult),
+              let merchantID = Self.lastMerchantID(in: record),
+              case .object(let reviewed)? = review.value.result,
+              case .string(let savedDigest)? = reviewed["cart_digest"],
+              savedDigest == approvedDigest else {
+            throw BeanBaoDeliveryReviewError.approvalRequired
+        }
+        let cart = draft.cart(merchantID: merchantID)
+        guard try cart.digest() == approvedDigest else {
+            throw BeanBaoDeliveryReviewError.changedCart
+        }
+        let evidence = try BeanBaoUberEatsAdapter.checkoutEvidence(observation, cart: cart)
+        let gate = try BeanBaoDeliveryReviewGate(journalURL: await store.checkoutReviewURL())
+        let approval = try await gate.approve(cart, evidence: evidence, now: now)
+        switch try await store.claim(key: "delivery-order-v1", tool: "delivery_place_order",
+                                     effect: .externalCommit) {
+        case .execute: break
+        case .cached: throw BeanBaoDeliveryReviewError.outcomeUnconfirmed
+        }
+        try await gate.beginCommit(cart, evidence: evidence, approval: approval, now: now)
+    }
+
     public static func begin(_ proposal: BeanBaoDeliveryProposal,
                              store: BeanBaoWorkflowStore) async throws {
         let saved = await store.snapshot()
@@ -668,6 +714,40 @@ public func BBDeliveryReadOnlyReviewFinish(_ idPointer: UnsafePointer<CChar>?,
             let store = try BeanBaoWorkflowStore(existingURL: deliveryStoreURL(id))
             try await BeanBaoDeliveryPlanner.completeReadOnlyReview(
                 proposal, on: observation, store: store)
+            outcome.set()
+        } catch { }
+        done.signal()
+    }
+    return done.wait(timeout: .now() + .seconds(10)) == .success && outcome.get() ? 0 : 1
+}
+
+@_cdecl("BBDeliveryOrderBegin")
+public func BBDeliveryOrderBegin(_ idPointer: UnsafePointer<CChar>?,
+                                 _ digestPointer: UnsafePointer<CChar>?,
+                                 _ snapshotPointer: UnsafePointer<CChar>?) -> Int32 {
+    guard let idPointer, let digestPointer, let snapshotPointer,
+          strlen(digestPointer) == 64, strlen(snapshotPointer) < 65_536,
+          let id = UUID(uuidString: String(cString: idPointer)),
+          let fields = try? JSONSerialization.jsonObject(
+              with: Data(String(cString: snapshotPointer).utf8)) as? [String: Any],
+          let urlString = fields["url"] as? String, let url = URL(string: urlString),
+          let text = fields["visible_text"] as? String,
+          let selectedOptions = beanBaoSelectedOptions(fields),
+          let availableOptions = beanBaoAvailableOptions(fields),
+          let bundle = fields["bundle_id"] as? String,
+          let timestamp = fields["observed_at"] as? NSNumber else { return 2 }
+    let observation = BeanBaoUberEatsObservation(
+        url: url, visibleText: text, bundleID: bundle,
+        observedAt: Date(timeIntervalSince1970: timestamp.doubleValue),
+        selectedOptions: selectedOptions, availableOptions: availableOptions)
+    let digest = String(cString: digestPointer)
+    let outcome = DeliveryActionOutcome()
+    let done = DispatchSemaphore(value: 0)
+    Task.detached {
+        do {
+            let store = try BeanBaoWorkflowStore(existingURL: deliveryStoreURL(id))
+            try await BeanBaoDeliveryPlanner.beginOrderCommit(
+                approvedDigest: digest, on: observation, store: store)
             outcome.set()
         } catch { }
         done.signal()

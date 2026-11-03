@@ -85,7 +85,8 @@ static NSString *BBStepName(NSString *tool) {
         @"pdf_render": @"Create PDF", @"mail_prepare": @"Prepare email draft",
         @"app_lookup": @"Find app", @"app_prepare": @"Save app listing",
         @"delivery_choose": @"Choose next action", @"delivery_execute": @"Perform delivery action",
-        @"delivery_review_cart": @"Review cart", @"delivery_review_checkout": @"Review checkout"
+        @"delivery_review_cart": @"Review cart", @"delivery_review_checkout": @"Review checkout",
+        @"delivery_place_order": @"Order attempt"
     };
     return names[tool] ?: @"Workflow step";
 }

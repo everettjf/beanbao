@@ -30,7 +30,54 @@ def browser_capture_script():
     return "".join(json.loads(piece.removeprefix("@")) for piece in pieces)
 
 
+def browser_order_script(payload):
+    source = SOURCE.read_text()
+    start = source.index('NSString *orderScript = [NSString stringWithFormat:@"(() => {"')
+    end = source.index(', literal];', start)
+    pieces = re.findall(r'@?"(?:\\.|[^"\\])*"', source[start:end])
+    script = "".join(json.loads(piece.removeprefix("@")) for piece in pieces)
+    return script.replace("%@", json.dumps(payload, separators=(",", ":")))
+
+
 class DeliveryBrowserJavaScriptTests(unittest.TestCase):
+    def run_order_fixture(self, payload, controls, page_text=None, sensitive=False):
+        script = browser_order_script(payload)
+        fixture = f"""
+        const controls = {json.dumps(controls)}.map(value => ({{
+          textContent: value.text, disabled: !!value.disabled, clicked: false,
+          getBoundingClientRect() {{return {{width:80,height:30,top:value.top||200,left:20}}}},
+          contains(hit) {{return hit===this}},
+          click() {{this.clicked=true}}
+        }}));
+        globalThis.location={{href:{json.dumps(payload['url'])}}};
+        globalThis.innerWidth=414;globalThis.innerHeight=896;
+        globalThis.getComputedStyle=()=>({{display:'block',visibility:'visible',opacity:'1'}});
+        const sensitiveInput={{getBoundingClientRect() {{return {{width:80,height:30,top:100,left:20}}}}}};
+        globalThis.document={{body:{{innerText:{json.dumps(page_text if page_text is not None else payload['text'])}}},
+          querySelectorAll(selector) {{return selector.includes('input[type=password]') ?
+            ({json.dumps(sensitive)} ? [sensitiveInput] : []) : controls}},
+          elementFromPoint(x,y) {{return controls.find(e=>{{const r=e.getBoundingClientRect();return y>=r.top&&y<r.top+r.height}})||null}}
+        }};
+        process.stdout.write(JSON.stringify({{result:{script},clicks:controls.filter(e=>e.clicked).length}}));
+        """
+        completed = subprocess.run([shutil.which("node"), "-e", fixture],
+                                   check=True, capture_output=True, text=True)
+        return json.loads(completed.stdout)
+
+    def test_order_click_requires_exact_checkout_and_one_visible_control(self):
+        payload = {"url": "https://www.ubereats.com/checkout",
+                   "text": "Subtotal $18.00 Total $26.49 Place order"}
+        button = {"text": "Place order", "top": 200}
+        self.assertEqual(self.run_order_fixture(payload, [button]),
+                         {"result": {"ok": True}, "clicks": 1})
+        for controls, page_text in [([button, button], None),
+                                    ([{"text": "Place order", "disabled": True}], None),
+                                    ([button], "Subtotal $18.00 Total $28.49 Place order")]:
+            self.assertEqual(self.run_order_fixture(payload, controls, page_text)["clicks"], 0)
+        other = dict(payload, url="https://www.ubereats.com/store/example/id")
+        self.assertEqual(self.run_order_fixture(other, [button])["clicks"], 0)
+        self.assertEqual(self.run_order_fixture(payload, [button], sensitive=True)["clicks"], 0)
+
     def run_fixture(self, payload, controls, page_text=None):
         script = browser_action_script(payload)
         fixture = f"""
