@@ -8,7 +8,7 @@ Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
 2. `dev.beanbao.agent` 0.3.115: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
-3. `dev.beanbao.deliverybrowser` 0.1.19: sandboxed Uber Eats browser with visible page checks, bounded Palmino-driven Run control, explicit checkout review, and an actionable reconnect message after an Agent restart.
+3. `dev.beanbao.deliverybrowser` 0.1.20: sandboxed Uber Eats browser with visible page checks, bounded Palmino-driven Run control, explicit checkout review, a clearable request field, and an actionable reconnect message after an Agent restart.
 4. `dev.beanbao.app` 0.3.70: native text, Apple voice transcription, Sessions with step history and order-history review, App Store review, Activity, shortcut, and model settings UI.
 
 The packages are under `bridge/packages/`, `agent-native/packages/`, `delivery-browser/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
@@ -30,14 +30,14 @@ sh install.sh --dry-run
 sh install.sh
 ```
 
-The script checks every package checksum, package ID, architecture, and version before changing anything. It installs only changed versions in dependency order and refuses a downgrade. It never reloads SpringBoard automatically. On the connected phone, extracting the `.tar`, the dry run, and a same-version install passed; all four packages were skipped and the Agent service ID stayed the same. Deliberately corrupting one package made the installer stop at checksum verification before an install. An actual upgrade with this script still needs validation on a test device.
+The script checks every package checksum, package ID, architecture, and version before changing anything. It installs only changed versions in dependency order and refuses a downgrade. It never reloads SpringBoard automatically. On the connected phone, extracting the `.tar`, the dry run, and a same-version install passed; all four packages were skipped and the Agent service ID stayed the same. Deliberately corrupting one package made the installer stop at checksum verification before an install. A later release upgraded only the Delivery Browser from 0.1.19 to 0.1.20 using this script, refreshed its icon, and left Agent running with the same service ID. A second run skipped every package. First installation on a different phone still needs validation.
 
 For manual installation, copy the packages to a root shell on the jailbroken phone and install them in this order:
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.agent_0.3.115_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.deliverybrowser_0.1.19_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.deliverybrowser_0.1.20_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.70_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app
 ```

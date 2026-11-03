@@ -67,6 +67,7 @@ static NSDictionary *BBDeliveryRequest(NSDictionary *request) {
     self.goalField.borderStyle = UITextBorderStyleRoundedRect;
     self.goalField.placeholder = @"What would you like to order?";
     self.goalField.autocorrectionType = UITextAutocorrectionTypeNo;
+    self.goalField.clearButtonMode = UITextFieldViewModeWhileEditing;
     self.goalField.returnKeyType = UIReturnKeyDone;
     [self.goalField addTarget:self action:@selector(deliveryGoalReturn)
              forControlEvents:UIControlEventEditingDidEndOnExit];
