@@ -27,7 +27,7 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     // timeout on a busy phone. A lost reply must not masquerade as a failed
     // click after the Agent has already verified and committed the step.
     int timeoutSeconds = [@[@"delivery_verify_action", @"delivery_action_result",
-                            @"delivery_order_begin",
+                            @"delivery_order_begin", @"delivery_order_report_placed",
                             @"delivery_action_aborted"] containsObject:request[@"op"]] ? 15 : 3;
     if (deliveryBrowser) {
         NSString *token = nil;

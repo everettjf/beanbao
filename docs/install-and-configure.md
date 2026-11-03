@@ -8,8 +8,8 @@ Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
 2. `dev.beanbao.agent` 0.3.110: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
-3. `dev.beanbao.deliverybrowser` 0.1.17: sandboxed Uber Eats browser with visible page checks, bounded Palmino-driven Run control, and explicit checkout review.
-4. `dev.beanbao.app` 0.3.67: native text, Apple voice transcription, Sessions with step history and order-history review, App Store review, Activity, shortcut, and model settings UI.
+3. `dev.beanbao.deliverybrowser` 0.1.18: sandboxed Uber Eats browser with visible page checks, bounded Palmino-driven Run control, and explicit checkout review.
+4. `dev.beanbao.app` 0.3.68: native text, Apple voice transcription, Sessions with step history and order-history review, App Store review, Activity, shortcut, and model settings UI.
 
 The packages are under `bridge/packages/`, `agent-native/packages/`, `delivery-browser/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
 
@@ -25,8 +25,8 @@ With a root shell on the jailbroken phone, copy over the packages and install th
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.agent_0.3.110_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.deliverybrowser_0.1.17_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.67_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.deliverybrowser_0.1.18_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.68_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app
 ```
 
