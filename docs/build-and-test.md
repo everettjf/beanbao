@@ -2,6 +2,12 @@
 
 Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 2 exact-citation retry check
+
+The 0.3.111 research run below finished after a failed `report_compose`: the model first reconstructed an Apple URL with a different path and suffix, and the exact retrieved-source check rejected it. The model retried with the returned URL and succeeded. Agent 0.3.112 now tells both the workflow planner and the compose tool to copy retrieved URLs verbatim. The full build again passed 87 Swift Harness tests, native and delivery-browser checks, and the four-package audit. The Agent-only update was installed without a SpringBoard reload; device verification showed Agent 0.3.112, the other three expected packages, a responsive service and Bridge, and an unlocked screen-on phone.
+
+A repeat live request, **Research on-device speech recognition on iOS, create a short sourced PDF with sources**, completed in session `3617385B-06DD-4B51-A355-B0E13222C36B`. Its three `web_search` receipts, one `report_compose`, and one `pdf_render` all completed with no failed step. The two-page PDF was visually inspected and has 5,721 extractable characters; all 19 listed source URLs appear as PDF links, and ten use `developer.apple.com`. One successful run shows this failure did not recur in that run; it does not establish a general first-pass success rate. No email was sent, app installed, or order placed.
+
 ## November 2 primary-source research check
 
 Agent 0.3.111 asks Claude's web search and report stages to prefer official documentation and original evidence, and rejects search citations without a title or quoted passage. The complete build passed 87 Swift Harness tests, native and delivery-browser checks, and the four-package audit. The Agent package was installed on the connected phone without a SpringBoard reload; `verify_device.py --expect-bundle` confirmed all four installed versions, a responsive Agent and Bridge, and an unlocked screen-on phone.

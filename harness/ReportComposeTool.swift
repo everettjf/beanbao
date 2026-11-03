@@ -55,7 +55,7 @@ public struct BeanBaoReportDocument: Codable, Sendable {
 
 public struct BeanBaoReportComposeTool: PHKNativeTool {
     public let definition = PHKToolDefinition(
-        name: "report_compose", description: "Save a structured research report. Every paragraph must cite one or more URLs returned by web_search.",
+        name: "report_compose", description: "Save a structured research report. Every paragraph must cite one or more exact, unmodified URLs returned by web_search. Copy each URL verbatim; do not rewrite its case, path, suffix, or query.",
         parameters: .object([
             "type": .string("object"),
             "properties": .object([
