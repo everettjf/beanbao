@@ -26,7 +26,7 @@ button { font: inherit; }
 
 .site-header { position: relative; z-index: 5; display: flex; align-items: center; gap: 44px; min-height: 92px; padding: 17px clamp(28px, 5.4vw, 96px); background: #fff9f1; border-bottom: 1px solid var(--line); }
 .brand, .footer-brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 780; letter-spacing: -.05em; font-size: 24px; white-space: nowrap; }
-.brand img, .footer-brand img { border-radius: 12px; box-shadow: 0 5px 24px rgba(44, 61, 46, .17); }
+.brand img, .footer-brand img { border-radius: 12px; box-shadow: 0 5px 24px rgba(74, 45, 34, .17); }
 .brand-dot { color: var(--peach); }
 .site-header nav { display: flex; align-items: center; gap: clamp(18px, 2.3vw, 38px); margin-left: auto; }
 .site-header nav a { color: #6d5145; font-size: 14px; font-weight: 610; transition: color .18s ease; }
@@ -130,7 +130,7 @@ h1 em, h2 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400;
 .example-command { display: inline-flex; align-items: center; gap: 13px; margin-top: 27px; padding: 14px 18px; background: rgba(247, 216, 185, .7); border: 1px solid rgba(154, 84, 55, .18); border-radius: 10px; color: #74402d; font-size: 12px; }
 .prompt-mark { color: var(--accent); font-size: 22px; line-height: 12px; }
 .artifact-stack { position: absolute; right: 27px; bottom: -30px; display: grid; gap: 7px; width: 200px; transform: rotate(-9deg); }
-.artifact-stack span { padding: 11px 13px; border-radius: 9px; background: #fffaf0; color: #765746; font-size: 10px; font-weight: 700; box-shadow: 0 6px 14px rgba(73, 68, 48, .14); }
+.artifact-stack span { padding: 11px 13px; border-radius: 9px; background: #fffaf0; color: #765746; font-size: 10px; font-weight: 700; box-shadow: 0 6px 14px rgba(82, 52, 39, .14); }
 .artifact-stack span:nth-child(2) { margin-left: 15px; opacity: .9; }.artifact-stack span:nth-child(3) { margin-left: 30px; opacity: .8; }
 .capability-card:not(.card-large):not(.card-accent) .card-top { margin-bottom: 45px; }
 
