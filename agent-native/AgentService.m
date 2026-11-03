@@ -302,6 +302,38 @@ static BOOL BBWorkflowHasUnresolvedMutation(NSDictionary *record) {
     return NO;
 }
 
+static BOOL BBWorkflowHasUnresolvedOrder(NSDictionary *record) {
+    NSDictionary *operations = record[@"operations"];
+    if (![operations isKindOfClass:NSDictionary.class]) return NO;
+    for (NSDictionary *operation in operations.allValues) {
+        if (![operation isKindOfClass:NSDictionary.class] ||
+            ![operation[@"tool"] isEqualToString:@"delivery_place_order"]) continue;
+        NSString *state = operation[@"state"];
+        if ([state isEqualToString:@"running"] ||
+            [state isEqualToString:@"needsReconciliation"]) return YES;
+    }
+    return NO;
+}
+
+static BOOL BBAnyUnresolvedDeliveryOrder(void) {
+    struct stat root = {0};
+    if (lstat(BBWorkflowRoot.fileSystemRepresentation, &root))
+        return errno != ENOENT;
+    if (!S_ISDIR(root.st_mode) || root.st_uid != 501 || (root.st_mode & 077))
+        return YES;
+    NSError *error = nil;
+    NSArray<NSString *> *entries = [NSFileManager.defaultManager
+        contentsOfDirectoryAtPath:BBWorkflowRoot error:&error];
+    if (!entries || error) return YES;
+    for (NSString *identity in entries) {
+        if (!BBWorkflowFolder(identity)) continue;
+        NSDictionary *record = BBReadWorkflowRecord(identity);
+        // A damaged saved session may be the only evidence of a previous order.
+        if (!record || BBWorkflowHasUnresolvedOrder(record)) return YES;
+    }
+    return NO;
+}
+
 static NSString *BBWorkflowEffectivePhase(NSDictionary *record) {
     return BBWorkflowHasUnresolvedMutation(record) ? @"needsReconciliation" : record[@"phase"];
 }
@@ -1007,6 +1039,8 @@ static NSDictionary *BBDeleteWorkflow(NSDictionary *request) {
     @synchronized (BBState) {
         if (BBState.child > 0 || [BBState.phase isEqualToString:@"executing"])
             return @{@"ok": @NO, @"error": @"A task is already running"};
+        if (BBWorkflowHasUnresolvedOrder(record))
+            return @{@"ok": @NO, @"error": @"Review the previous order outcome before deleting this session"};
         NSString *folder = BBWorkflowFolder(identity);
         NSSet<NSString *> *known = [NSSet setWithArray:
             @[@"session.json", @"report.json", @"report.pdf", @"mail-draft.json",
@@ -1186,8 +1220,6 @@ static NSDictionary *BBDeliveryPlan(NSDictionary *request) {
     NSData *snapshotData = [NSJSONSerialization dataWithJSONObject:snapshot options:0 error:nil];
     if (!snapshotData || snapshotData.length >= 65536)
         return @{@"ok": @NO, @"error": @"Delivery page is too large"};
-    if (![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
-        return @{@"ok": @NO, @"error": @"Delivery planning currently requires Claude"};
     if (resumeID) {
         NSDictionary *saved = BBReadWorkflowRecord(resumeID);
         NSDictionary *operations = saved[@"operations"];
@@ -1203,6 +1235,10 @@ static NSDictionary *BBDeliveryPlan(NSDictionary *request) {
             ([BBState.phase isEqualToString:@"needs_reconciliation"] &&
              [BBState.app isEqualToString:@"DeliveryPlan"]))
             return @{@"ok": @NO, @"error": @"A task is already running or needs review"};
+        if (BBAnyUnresolvedDeliveryOrder())
+            return @{@"ok": @NO, @"error": @"Review the previous order outcome before starting another delivery task"};
+        if (![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
+            return @{@"ok": @NO, @"error": @"Delivery planning currently requires Claude"};
         int inputPipe[2], outputPipe[2];
         if (pipe(inputPipe)) return @{@"ok": @NO, @"error": @"Could not create the task pipe"};
         if (pipe(outputPipe)) {
@@ -1417,6 +1453,8 @@ static NSDictionary *BBDeliveryOrderBeginRequest(NSDictionary *request) {
             ![BBState.phase isEqualToString:@"done"] || BBState.child > 0 ||
             BBState.deliveryAction)
             return @{@"ok": @NO, @"error": @"The checkout session changed"};
+        if (BBAnyUnresolvedDeliveryOrder())
+            return @{@"ok": @NO, @"error": @"Review the previous order outcome before placing another order"};
         NSDictionary *record = BBReadWorkflowRecord(taskID);
         NSDictionary *summary = BBCheckoutSummaryFromOperations(record[@"operations"]);
         if (![summary[@"cart_digest"] isEqualToString:digest])

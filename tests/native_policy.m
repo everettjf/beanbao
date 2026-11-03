@@ -425,7 +425,37 @@ int main(void) {
                    [uncertainDetails[@"steps"] count] == 1 &&
                    [uncertainDetails[@"steps"][0][@"state"] isEqualToString:@"needsReconciliation"],
                    "Sessions shows an interrupted order as needing review")) return 1;
+        if (!Check(BBAnyUnresolvedDeliveryOrder() &&
+                   ![BBDeleteWorkflow(@{@"workflow_id": checkoutID})[@"ok"] boolValue] &&
+                   [NSFileManager.defaultManager fileExistsAtPath:checkoutPath],
+                   "an uncertain order survives session selection and cannot be deleted")) return 1;
+        NSString *otherCheckoutID = NSUUID.UUID.UUIDString;
+        NSString *otherCheckoutFolder = [workflowRoot stringByAppendingPathComponent:otherCheckoutID];
+        [NSFileManager.defaultManager createDirectoryAtPath:otherCheckoutFolder
+            withIntermediateDirectories:NO attributes:@{NSFilePosixPermissions: @0700} error:nil];
+        NSString *otherCheckoutPath = [otherCheckoutFolder stringByAppendingPathComponent:@"session.json"];
+        NSDictionary *otherCheckout = @{@"id": otherCheckoutID, @"request": @"Review another checkout",
+            @"phase": @"completed", @"updatedAt": @1400, @"operations": checkoutOps};
+        [[NSJSONSerialization dataWithJSONObject:otherCheckout options:0 error:nil]
+            writeToFile:otherCheckoutPath atomically:YES];
+        chmod(otherCheckoutPath.fileSystemRepresentation, 0600);
+        BBState.taskID = otherCheckoutID;
+        BBState.phase = @"done";
+        NSDictionary *crossSessionOrder = BBDeliveryOrderBeginRequest(@{@"task_id": otherCheckoutID,
+            @"service_id": @"checkout-service", @"cart_digest": safeSummary[@"cart_digest"],
+            @"snapshot": @{@"visible_text": @"Place order"}});
+        if (!Check(![crossSessionOrder[@"ok"] boolValue] && DeliveryOrderBeginCalls == 1,
+                   "an uncertain order blocks a second session's final click")) return 1;
+        BBState.app = @"ResearchPDF";
+        NSDictionary *crossWorkflowPlan = BBDeliveryPlan(@{@"task": @"Find dinner",
+            @"snapshot": @{@"visible_text": @"Go to checkout"}});
+        if (!Check(![crossWorkflowPlan[@"ok"] boolValue] &&
+                   [crossWorkflowPlan[@"error"] containsString:@"previous order"],
+                   "switching workflows cannot start another delivery plan")) return 1;
+        [NSFileManager.defaultManager removeItemAtPath:otherCheckoutFolder error:nil];
         [NSFileManager.defaultManager removeItemAtPath:checkoutFolder error:nil];
+        if (!Check(!BBAnyUnresolvedDeliveryOrder(),
+                   "other saved workflows do not block delivery planning")) return 1;
         NSString *deliveryFolder = [workflowRoot stringByAppendingPathComponent:deliveryID];
         [NSFileManager.defaultManager createDirectoryAtPath:deliveryFolder withIntermediateDirectories:NO
                                   attributes:@{NSFilePosixPermissions: @0700} error:nil];
