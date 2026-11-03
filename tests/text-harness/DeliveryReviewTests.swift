@@ -22,8 +22,8 @@ final class DeliveryReviewTests: XCTestCase {
         let now = Date()
         let evidence = BeanBaoDeliveryScreenEvidence(bundleID: "com.example.delivery",
             checkoutFingerprint: String(repeating: "a", count: 64), observedAt: now)
-        let digest = try await gate.present(cart(), evidence: evidence, now: now)
-        let approval = try await gate.approve(digest: digest, now: now)
+        _ = try await gate.present(cart(), evidence: evidence, now: now)
+        let approval = try await gate.approve(cart(), evidence: evidence, now: now)
         try await gate.beginCommit(cart(), evidence: evidence, approval: approval, now: now)
         do {
             try await gate.beginCommit(cart(), evidence: evidence, approval: approval, now: now)
@@ -43,8 +43,8 @@ final class DeliveryReviewTests: XCTestCase {
                         cart(tip: 200),
                         cart(merchant: "Other Kitchen")] {
             let gate = BeanBaoDeliveryReviewGate()
-            let digest = try await gate.present(cart(), evidence: evidence, now: now)
-            let approval = try await gate.approve(digest: digest, now: now)
+            _ = try await gate.present(cart(), evidence: evidence, now: now)
+            let approval = try await gate.approve(cart(), evidence: evidence, now: now)
             do {
                 try await gate.beginCommit(changed, evidence: evidence, approval: approval, now: now)
                 XCTFail("Changed cart must invalidate approval")
@@ -54,8 +54,8 @@ final class DeliveryReviewTests: XCTestCase {
         do { try changedPrice.validate(); XCTFail("Inconsistent total must be rejected") }
         catch BeanBaoDeliveryReviewError.invalidCart { }
         let gate = BeanBaoDeliveryReviewGate()
-        let digest = try await gate.present(cart(), evidence: evidence, now: now)
-        let approval = try await gate.approve(digest: digest, now: now)
+        _ = try await gate.present(cart(), evidence: evidence, now: now)
+        let approval = try await gate.approve(cart(), evidence: evidence, now: now)
         let changedScreen = BeanBaoDeliveryScreenEvidence(bundleID: "com.example.delivery",
             checkoutFingerprint: String(repeating: "b", count: 64), observedAt: now)
         do {
@@ -75,11 +75,40 @@ final class DeliveryReviewTests: XCTestCase {
         } catch BeanBaoDeliveryReviewError.staleObservation { }
         let current = BeanBaoDeliveryScreenEvidence(bundleID: "com.example.delivery",
             checkoutFingerprint: String(repeating: "a", count: 64), observedAt: now)
-        let digest = try await gate.present(cart(), evidence: current, now: now)
+        _ = try await gate.present(cart(), evidence: current, now: now)
         do {
-            _ = try await gate.approve(digest: digest, now: now.addingTimeInterval(121))
+            _ = try await gate.approve(cart(), evidence: current,
+                                       now: now.addingTimeInterval(121))
             XCTFail("Old cart approval must expire")
         } catch BeanBaoDeliveryReviewError.approvalExpired { }
+    }
+
+    func testApprovalNeedsFreshMatchingCheckoutAndRevokesOlderToken() async throws {
+        let gate = BeanBaoDeliveryReviewGate()
+        let now = Date()
+        let shown = BeanBaoDeliveryScreenEvidence(bundleID: "com.example.delivery",
+            checkoutFingerprint: String(repeating: "a", count: 64), observedAt: now)
+        _ = try await gate.present(cart(), evidence: shown, now: now)
+        let stale = BeanBaoDeliveryScreenEvidence(bundleID: shown.bundleID,
+            checkoutFingerprint: shown.checkoutFingerprint,
+            observedAt: now.addingTimeInterval(-16))
+        do {
+            _ = try await gate.approve(cart(), evidence: stale, now: now)
+            XCTFail("Approval cannot use an old screen observation")
+        } catch BeanBaoDeliveryReviewError.staleObservation { }
+        let changed = BeanBaoDeliveryScreenEvidence(bundleID: shown.bundleID,
+            checkoutFingerprint: String(repeating: "b", count: 64), observedAt: now)
+        do {
+            _ = try await gate.approve(cart(), evidence: changed, now: now)
+            XCTFail("Approval must be tied to the shown checkout screen")
+        } catch BeanBaoDeliveryReviewError.changedCart { }
+        let first = try await gate.approve(cart(), evidence: shown, now: now)
+        let second = try await gate.approve(cart(), evidence: shown, now: now)
+        do {
+            try await gate.beginCommit(cart(), evidence: shown, approval: first, now: now)
+            XCTFail("A replaced approval token must not start an order")
+        } catch BeanBaoDeliveryReviewError.approvalRequired { }
+        try await gate.beginCommit(cart(), evidence: shown, approval: second, now: now)
     }
 
     func testUncertainOrderAttemptSurvivesProcessRestart() async throws {
@@ -93,8 +122,8 @@ final class DeliveryReviewTests: XCTestCase {
         let evidence = BeanBaoDeliveryScreenEvidence(bundleID: "com.example.delivery",
             checkoutFingerprint: String(repeating: "a", count: 64), observedAt: now)
         let original = try BeanBaoDeliveryReviewGate(journalURL: url)
-        let digest = try await original.present(cart(), evidence: evidence, now: now)
-        let approval = try await original.approve(digest: digest, now: now)
+        _ = try await original.present(cart(), evidence: evidence, now: now)
+        let approval = try await original.approve(cart(), evidence: evidence, now: now)
         try await original.beginCommit(cart(), evidence: evidence, approval: approval, now: now)
         let resumed = try BeanBaoDeliveryReviewGate(journalURL: url)
         do {
@@ -117,8 +146,8 @@ final class DeliveryReviewTests: XCTestCase {
         let evidence = BeanBaoDeliveryScreenEvidence(bundleID: "com.example.delivery",
             checkoutFingerprint: String(repeating: "a", count: 64), observedAt: now)
         let gate = BeanBaoDeliveryReviewGate()
-        let digest = try await gate.present(original, evidence: evidence, now: now)
-        let approval = try await gate.approve(digest: digest, now: now)
+        _ = try await gate.present(original, evidence: evidence, now: now)
+        let approval = try await gate.approve(original, evidence: evidence, now: now)
         let changedFee = cart(adjustments: [
             .init(name: "Small order fee", amountMinor: 300),
             .init(name: "Promotion", amountMinor: -100)

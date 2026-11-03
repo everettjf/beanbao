@@ -57,8 +57,8 @@ final class UberEatsAdapterTests: XCTestCase {
         XCTAssertEqual(evidence.checkoutFingerprint.count, 64)
 
         let gate = BeanBaoDeliveryReviewGate()
-        let digest = try await gate.present(cart(), evidence: evidence, now: now)
-        let approval = try await gate.approve(digest: digest, now: now)
+        _ = try await gate.present(cart(), evidence: evidence, now: now)
+        let approval = try await gate.approve(cart(), evidence: evidence, now: now)
         try await gate.beginCommit(cart(), evidence: evidence, approval: approval, now: now)
     }
 

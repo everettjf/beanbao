@@ -219,11 +219,23 @@ public actor BeanBaoDeliveryReviewGate {
         return digest
     }
 
-    public func approve(digest: String, now: Date = Date()) throws -> UUID {
+    public func approve(_ cart: BeanBaoDeliveryCart,
+                        evidence: BeanBaoDeliveryScreenEvidence,
+                        now: Date = Date()) throws -> UUID {
         guard var review = current else { throw BeanBaoDeliveryReviewError.approvalRequired }
         guard now <= review.expiresAt else { throw BeanBaoDeliveryReviewError.approvalExpired }
-        guard review.digest == digest else { throw BeanBaoDeliveryReviewError.changedCart }
         guard !review.commitStarted else { throw BeanBaoDeliveryReviewError.outcomeUnconfirmed }
+        guard evidence.observedAt <= now,
+              now.timeIntervalSince(evidence.observedAt) <= 15 else {
+            throw BeanBaoDeliveryReviewError.staleObservation
+        }
+        guard review.digest == (try cart.digest()),
+              review.evidence.bundleID == evidence.bundleID,
+              review.evidence.checkoutFingerprint == evidence.checkoutFingerprint else {
+            review.approval = nil
+            try save(review)
+            throw BeanBaoDeliveryReviewError.changedCart
+        }
         let approval = UUID()
         review.approval = approval
         try save(review)
