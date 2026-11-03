@@ -29,7 +29,9 @@ public func BBMarkResearchMailQueued(_ idPointer: UnsafePointer<CChar>?) -> Int3
         do {
             let store = try BeanBaoWorkflowStore(existingURL: folder.appendingPathComponent("session.json"))
             let saved = await store.snapshot()
-            guard saved.id == id, saved.phase == .waitingForUser else {
+            guard saved.id == id,
+                  (try? BeanBaoMailDraftTool.verifyForCompletion(record: saved,
+                                                                 folder: folder)) != nil else {
                 semaphore.signal()
                 return
             }

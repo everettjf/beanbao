@@ -806,6 +806,8 @@ static NSDictionary *BBMailResult(NSDictionary *request) {
             ![serviceID isKindOfClass:NSString.class] ||
             ![taskID isEqualToString:BBState.taskID] ||
             ![serviceID isEqualToString:BBState.serviceID] ||
+            ![BBState.app isEqualToString:@"ResearchMailDraft"] ||
+            ![BBState.mailDraftPath isKindOfClass:NSString.class] ||
             ![BBState.phase isEqualToString:@"waiting_for_user"] ||
             ![@[@"sent", @"cancelled", @"failed"] containsObject:result])
             return @{@"ok": @NO, @"error": @"The email draft changed or the result is invalid"};

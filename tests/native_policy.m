@@ -21,7 +21,10 @@ int32_t BBRunHarnessAppStore(const char *task, const char *workflowID) {
 int32_t BBRunHarnessDeliveryPlan(const char *task, const char *workflowID) {
     (void)task; (void)workflowID; return 1;
 }
-int32_t BBMarkResearchMailQueued(const char *workflowID) { (void)workflowID; return 0; }
+static int MailQueuedCalls = 0;
+int32_t BBMarkResearchMailQueued(const char *workflowID) {
+    (void)workflowID; MailQueuedCalls++; return 0;
+}
 int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID) {
     (void)workflowID; (void)bundleID; return 0;
 }
@@ -190,7 +193,23 @@ int main(void) {
                    BBState.deliveryAction == nil,
                    "browser pre-click rejection closes the pending action")) return 1;
         BBState.phase = @"waiting_for_user";
+        BBState.app = @"AppStoreReview";
+        BBState.mailDraftPath = @"/tmp/test-draft.json";
+        if (!Check(![BBMailResult(@{@"task_id": @"task-A", @"service_id": @"service-A",
+                                    @"result": @"sent"})[@"ok"] boolValue] &&
+                   MailQueuedCalls == 0 && [BBState.phase isEqualToString:@"waiting_for_user"],
+                   "App Store workflow rejects a forged Mail result")) return 1;
+        BBState.app = @"DeliveryPlan";
+        if (!Check(![BBMailResult(@{@"task_id": @"task-A", @"service_id": @"service-A",
+                                    @"result": @"cancelled"})[@"ok"] boolValue] &&
+                   MailQueuedCalls == 0,
+                   "delivery workflow rejects a forged Mail result")) return 1;
         BBState.app = @"ResearchMailDraft";
+        BBState.mailDraftPath = nil;
+        if (!Check(![BBMailResult(@{@"task_id": @"task-A", @"service_id": @"service-A",
+                                    @"result": @"sent"})[@"ok"] boolValue] &&
+                   MailQueuedCalls == 0,
+                   "Mail result requires a prepared draft")) return 1;
         BBState.mailDraftPath = @"/tmp/test-draft.json";
         if (!Check(![BBMailResult(@{@"task_id": @"task-B", @"service_id": @"service-A",
                                    @"result": @"sent"})[@"ok"] boolValue],
@@ -198,6 +217,8 @@ int main(void) {
             !Check([BBMailResult(@{@"task_id": @"task-A", @"service_id": @"service-A",
                                   @"result": @"sent"})[@"phase"] isEqualToString:@"done"],
                    "mail sent callback changes waiting task to queued") ||
+            !Check(MailQueuedCalls == 1,
+                   "only the valid Mail result can queue a workflow") ||
             !Check(!BBState.mailDraftPath,
                    "queued mail no longer exposes the draft action") ||
             !Check(![BBMailResult(@{@"task_id": @"task-A", @"service_id": @"service-A",

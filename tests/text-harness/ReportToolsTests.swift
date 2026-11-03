@@ -137,6 +137,25 @@ final class ReportToolsTests: XCTestCase {
         XCTAssertEqual(draft.recipient, "Test@example.com")
         XCTAssertEqual(draft.attachmentName, "report.pdf")
 
+        let store = try BeanBaoWorkflowStore(url: parent.appendingPathComponent("session.json"),
+                                             request: request)
+        let unprepared = await store.snapshot()
+        XCTAssertThrowsError(try BeanBaoMailDraftTool.verifyForCompletion(
+            record: unprepared, folder: parent))
+        _ = try await store.claim(key: "mail-prepare-test", tool: "mail_prepare",
+                                  effect: .localMutation)
+        try await store.finish(key: "mail-prepare-test", result: .bool(true))
+        try await store.setPhase(.waitingForUser)
+        let prepared = await store.snapshot()
+        XCTAssertNoThrow(try BeanBaoMailDraftTool.verifyForCompletion(
+            record: prepared, folder: parent))
+        var unrelated = BeanBaoWorkflowRecord(request:
+            "Research iOS speech and email it to other@example.com")
+        unrelated.phase = .waitingForUser
+        unrelated.operations = prepared.operations
+        XCTAssertThrowsError(try BeanBaoMailDraftTool.verifyForCompletion(
+            record: unrelated, folder: parent))
+
         let invented: PHKJSONValue = .object([
             "recipient": .string("other@example.com"),
             "subject": .string("iOS speech report"),
@@ -146,5 +165,8 @@ final class ReportToolsTests: XCTestCase {
             _ = try await tool.execute(arguments: invented)
             XCTFail("The model cannot choose a different recipient")
         } catch BeanBaoMailError.recipientNotInRequest { }
+        try FileManager.default.removeItem(at: pdfURL)
+        XCTAssertThrowsError(try BeanBaoMailDraftTool.verifyForCompletion(
+            record: prepared, folder: parent))
     }
 }

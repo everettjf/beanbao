@@ -97,4 +97,24 @@ public struct BeanBaoMailDraftTool: PHKNativeTool {
               draft.attachmentName == "report.pdf" else { throw BeanBaoMailError.invalidDraft }
         return draft
     }
+
+    /// A Mail composer callback may complete only the research session that
+    /// actually prepared this draft and its verified PDF attachment.
+    public static func verifyForCompletion(record: BeanBaoWorkflowRecord,
+                                           folder: URL) throws {
+        guard record.phase == .waitingForUser,
+              record.operations.values.contains(where: {
+                  $0.tool == "mail_prepare" && $0.state == .completed
+              }) else { throw BeanBaoMailError.invalidDraft }
+        let draft = try readDraft(at: folder.appendingPathComponent("mail-draft.json"))
+        guard requestRecipients(record.request).contains(draft.recipient.lowercased()),
+              !draft.subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let data = try? BeanBaoWorkflowStore.readPrivateFile(
+                  folder.appendingPathComponent("report.pdf")),
+              let provider = CGDataProvider(data: data as CFData),
+              let pdf = CGPDFDocument(provider), pdf.numberOfPages > 0 else {
+            throw BeanBaoMailError.invalidDraft
+        }
+    }
 }
