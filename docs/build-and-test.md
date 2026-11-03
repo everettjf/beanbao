@@ -1,6 +1,14 @@
 # Build and device test record
 
-Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
+Updated November 3, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
+
+## November 3 public-preview build
+
+Bridge 0.2.14 / Agent 0.3.118 / Delivery Browser 0.1.21 / App 0.3.72 passed the complete source build. It ran native policy, activity, Python, browser JavaScript, installer, and 90 Swift Harness tests, then audited the four signed `iphoneos-arm64e` packages. The Bridge now withholds UI, OCR, and screenshot payloads unless the phone is unlocked and the foreground app is supported. The rebuilt archive SHA-256 is recorded in [the 0.3.72 release record](release-0.3.72.md).
+
+The paired iPhone passed the archive's transferred `--check-only` preflight; all four installed versions matched and the service was not changed. `verify_device.py --expect-bundle` then confirmed Agent 0.3.118, Bridge 0.2.14, and an unlocked screen-on BeanBao App. Earlier real text, voice, PDF, and cart acceptance is listed below. The 0.3.72 package bytes did not receive a fresh full scenario run after this rebuild.
+
+The attempted three-package in-app WebView variant compiled and passed offline tests but rendered an empty viewport on the phone. The device was restored to the four-package build without another SpringBoard reload; the three-package variant was not released.
 
 ## November 2 in-app review and Session feedback check
 

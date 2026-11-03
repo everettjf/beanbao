@@ -1,5 +1,7 @@
 # BeanBao
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 <img src="design/beanbao-icon-1024.png" alt="BeanBao, a smiling steamed bun" width="112" />
 
 **A voice and text assistant that can carry out bounded tasks on a jailbroken iPhone.**
@@ -8,11 +10,10 @@ Bridge and task Agent on the device. A Mac is not needed after installation.
 
 [Get started](#quick-start) · [Full installation guide](docs/install-and-configure.md) · [What works today](#what-works-today) · [Website source](web/README.md)
 
-> **Release status:** developer release candidate. It has been installed and
+> **Release status:** public developer preview. It has been installed and
 > tested on one iPhone 11 with iOS 26.0.1, Relaxin 0.5.5, and RootHide. Other
-> devices, jailbreaks, and iOS versions have not been validated. The repository
-> and GitHub release are still private drafts until publication. See the
-> [public release checklist](docs/public-release-checklist.md) for the remaining gates.
+> devices, jailbreaks, and iOS versions have not been validated. See the
+> [release record](docs/release-0.3.72.md) for exact packages and checksums.
 
 ## What works today
 
@@ -24,7 +25,7 @@ Bridge and task Agent on the device. A Mac is not needed after installation.
 | Triple press Volume Down | Shows one bottom overlay, starts Apple speech transcription, and lets you review the text before **Run**. The shortcut is off by default. |
 | “Research on-device speech recognition on iOS, create a PDF with sources” | Runs a saved multi-step research workflow and opens its sourced PDF from **Sessions**. |
 | Research + addressed email draft + App Store lookup | Prepares independent review steps. The user handles sending in Apple Mail and installing in the App Store. |
-| Food delivery | Experimental Uber Eats browser can find an item, configure options, and review a cart. Real checkout is unverified; a final order requires an explicit review and tap. |
+| Food delivery | A sandboxed Uber Eats browser can find an item, configure options, and review a cart. Real checkout is unverified; a final order requires an explicit review and tap. |
 
 BeanBao is deliberately bounded. It does not offer arbitrary-app tapping,
 silent App Store installation, automatic email sending, or unattended payment.
@@ -42,16 +43,15 @@ install or configure the jailbreak.
 ### 2. Get and verify the release archive
 
 Download the uncompressed `BeanBao-RootHide-*.tar` from the [GitHub Releases
-page](https://github.com/everettjf/beanbao/releases) once a release is
-published. Compare its SHA-256 with the value in that release's notes:
+page](https://github.com/everettjf/beanbao/releases). Compare its SHA-256 with
+the value in that release's notes:
 
 ```sh
 shasum -a 256 BeanBao-RootHide-*.tar
 ```
 
-The current candidate's package versions and archive hashes are in the
-[release candidate record](docs/release-candidate-0.3.71.md). The draft release
-is only accessible to repository collaborators until publication.
+The current package versions and archive hashes are in the
+[release record](docs/release-0.3.72.md).
 
 ### 3. Install from a root shell on the phone
 
@@ -113,7 +113,7 @@ this `iphoneos-arm64e` release. See [build and device tests](docs/build-and-test
 | `bridge/` | Restricted SpringBoard observation, input actions, and voice overlay. |
 | `agent-native/` and `harness/` | On-device task service, model clients, policy, and resumable workflows. |
 | `app/` | BeanBao UI, Apple speech transcription, model settings, Sessions, Activity, and review screens. |
-| `delivery-browser/` | Separate sandboxed Uber Eats browser for the experimental delivery flow. |
+| `delivery-browser/` | Sandboxed Uber Eats browser for the experimental delivery flow. |
 | `vendor/` | Pinned ios-mcp and PalminoHarnessKit source snapshots with their original notices. |
 | `scripts/` and `tests/` | Build, package audit, installer, and acceptance tooling. |
 | `web/` | Buildless GitHub Pages website. |

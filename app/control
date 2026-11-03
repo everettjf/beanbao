@@ -1,8 +1,8 @@
 Package: dev.beanbao.app
 Name: BeanBao
-Version: 0.3.71
+Version: 0.3.72
 Architecture: iphoneos-arm
-Depends: dev.beanbao.agent (>= 0.3.83), dev.beanbao.deliverybrowser (>= 0.1.14)
+Depends: dev.beanbao.agent (>= 0.3.118), dev.beanbao.deliverybrowser (>= 0.1.21)
 Description: On-device text entry and task controls for BeanBao.
 Maintainer: BeanBao contributors
 Section: Applications

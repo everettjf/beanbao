@@ -228,7 +228,8 @@ static NSString *BBTokenFromFile(void) {
                                      @"timestamp": @(self.observationTime), @"device_state": state,
                                      @"frontmost_app": frontmost,
                                      @"screen": [[ScreenManager sharedInstance] screenInfo] ?: @{}} mutableCopy];
-    if ([request[@"ui"] boolValue] && [self unlocked]) {
+    BOOL canReadContent = [self unlocked] && BBIsAllowedApp(app);
+    if ([request[@"ui"] boolValue] && canReadContent) {
         dispatch_semaphore_t done = dispatch_semaphore_create(0);
         __block NSDictionary *ui = nil;
         __block NSString *error = nil;
@@ -245,14 +246,14 @@ static NSString *BBTokenFromFile(void) {
             if (error) payload[@"ui_error"] = error;
         } else payload[@"ui_error"] = @"UI query timed out";
     }
-    if ([request[@"ocr"] boolValue] && [self unlocked]) {
+    if ([request[@"ocr"] boolValue] && canReadContent) {
         NSString *error = nil;
         NSDictionary *ocr = [[VisionOCREngine sharedInstance] recognizeTextWithLanguages:@[@"zh-Hans", @"en-US"]
                                                                          minConfidence:0.3 region:nil fast:NO error:&error];
         if (ocr) payload[@"ocr"] = ocr;
         if (error) payload[@"ocr_error"] = error;
     }
-    if ([request[@"screenshot"] boolValue] && [self unlocked]) {
+    if ([request[@"screenshot"] boolValue] && canReadContent) {
         NSDictionary *shot = [[ScreenManager sharedInstance] takeScreenshotPayload];
         if (shot) payload[@"screenshot"] = shot;
     }

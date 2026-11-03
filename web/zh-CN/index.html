@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f6ef">
+  <meta name="description" content="BeanBao 是运行在越狱 iPhone 上的开源语音与文字助手。核对需求后，让它完成有边界的手机任务与可恢复的多步流程。">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="BeanBao — 一句话，让 iPhone 帮你完成任务">
+  <meta property="og:description" content="越狱 iPhone 上的语音与文字助手：操作可见、关键步骤需审阅、多步进度可恢复。">
+  <meta property="og:image" content="https://everettjf.github.io/beanbao/assets/beanbao-icon.png">
+  <link rel="alternate" hreflang="en" href="https://everettjf.github.io/beanbao/">
+  <link rel="alternate" hreflang="zh-CN" href="https://everettjf.github.io/beanbao/zh-CN/">
+  <title>BeanBao — 一句话，让 iPhone 帮你完成任务</title>
+  <link rel="icon" type="image/png" href="../assets/beanbao-icon.png">
+  <link rel="stylesheet" href="../styles.css">
+  <script src="../site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳转到正文</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="BeanBao 首页">
+        <img src="../assets/beanbao-icon.png" width="42" height="42" alt="">
+        <span>BeanBao<span class="brand-dot">.</span></span>
+      </a>
+      <nav aria-label="主导航">
+        <a href="#how-it-works">工作方式</a>
+        <a href="#capabilities">目前能做什么</a>
+        <a href="#install">安装</a>
+        <a class="nav-github" href="https://github.com/everettjf/beanbao">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+      <a class="header-cta" href="../" lang="en" hreflang="en" aria-label="Read in English">English <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="status-dot"></span> 开源项目 · RootHide 开发者候选版</p>
+          <h1 id="hero-title">一句话，<br><em>让 iPhone 帮你做事。</em></h1>
+          <p class="hero-lede">说出需求，核对文字，交给 BeanBao。它在手机上完成有边界的操作，让过程和结果始终清楚可见。</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#install">安装 BeanBao <span aria-hidden="true">↗</span></a>
+            <a class="button button-secondary" href="https://github.com/everettjf/beanbao">查看源码 <span aria-hidden="true">↗</span></a>
+          </div>
+          <div class="hero-proof" aria-label="候选版现状">
+            <div><strong>01</strong><span>台已验证 iPhone</span></div>
+            <div><strong>04</strong><span>个 RootHide 安装包</span></div>
+            <div><strong>∞</strong><span>继续扩展的空间</span></div>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-label="BeanBao 语音浮层在 iPhone 上的示意图">
+          <div class="orbit orbit-one" aria-hidden="true"></div>
+          <div class="orbit orbit-two" aria-hidden="true"></div>
+          <div class="float-card float-card-left" aria-hidden="true"><span class="mini-icon">✦</span><span>任务完成<br><small>设置已打开</small></span></div>
+          <div class="float-card float-card-right" aria-hidden="true"><span class="mini-icon">↗</span><span>在手机上运行<br><small>无需保持 USB 连接</small></span></div>
+          <div class="phone">
+            <div class="phone-inner">
+              <div class="phone-status"><span>9:41</span><span class="dynamic-island"></span><span>●●● ▰</span></div>
+              <div class="phone-screen">
+                <div class="phone-topline"><span>‹</span><span>Maps</span><span>•••</span></div>
+                <div class="map-art" aria-hidden="true"><span class="map-road road-a"></span><span class="map-road road-b"></span><span class="map-road road-c"></span><span class="map-water"></span><span class="map-pin">●</span></div>
+                <div class="overlay-card">
+                  <div class="overlay-head"><span class="overlay-spark">✦</span><strong>BeanBao</strong><span class="overlay-close">×</span></div>
+                  <div class="listening"><span class="pulse"></span> Listening…</div>
+                  <div class="waveform" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                  <div class="transcript">“Find the California Academy of Sciences in Maps”</div>
+                  <div class="overlay-button">Stop recording</div>
+                </div>
+              </div>
+              <div class="home-indicator"></div>
+            </div>
+          </div>
+          <span class="visual-note">界面示意图</span>
+        </div>
+      </section>
+
+      <section class="trust-strip" aria-label="产品原则">
+        <div><span class="strip-symbol">◎</span><span>在越狱 iPhone 上运行</span></div>
+        <div><span class="strip-symbol">◇</span><span>关键操作由你审阅</span></div>
+        <div><span class="strip-symbol">↺</span><span>多步任务保存进度</span></div>
+        <div><span class="strip-symbol">⌁</span><span>源码可以检查</span></div>
+      </section>
+
+      <section class="section intro-section" id="how-it-works" aria-labelledby="how-title">
+        <div class="section-heading">
+          <p class="section-kicker">01 / 工作方式</p>
+          <h2 id="how-title">少点几下，<br><em>多做一点。</em></h2>
+          <p>BeanBao 把输入的需求变成经过检查的小步骤。它观察当前手机状态，在支持的应用中执行操作，并报告实际结果。</p>
+        </div>
+        <div class="process-grid">
+          <article class="process-card"><span class="step-number">01</span><div class="process-icon">◉</div><h3>说出或输入需求</h3><p>输入文字，或连按三次音量下键，在当前应用上启动语音输入。</p></article>
+          <article class="process-card"><span class="step-number">02</span><div class="process-icon">⌕</div><h3>核对识别文字</h3><p>看清转写结果，再确认运行。音量键快捷方式可以自行开启。</p></article>
+          <article class="process-card"><span class="step-number">03</span><div class="process-icon">↗</div><h3>看得见的执行</h3><p>每一步受支持的操作都会核对前台应用和最新屏幕状态。</p></article>
+          <article class="process-card"><span class="step-number">04</span><div class="process-icon">▤</div><h3>之后继续</h3><p>调研和审阅流程会把步骤与文件保存在 Sessions 中，Agent 重启后仍可查看。</p></article>
+        </div>
+      </section>
+
+      <section class="section capabilities-section" id="capabilities" aria-labelledby="capabilities-title">
+        <div class="section-heading compact-heading">
+          <p class="section-kicker">02 / 目前能做什么</p>
+          <h2 id="capabilities-title">实用，也有<em>明确边界。</em></h2>
+          <p>从日常操作开始；需要可检查的成果时，再使用多步任务。</p>
+        </div>
+        <div class="capability-grid">
+          <article class="capability-card card-large">
+            <div class="card-top"><span class="card-glyph">✳</span><span class="card-tag">文字 + 语音</span></div>
+            <h3>完成手机上的基本操作。</h3>
+            <p>打开设置、地图、通讯录或备忘录。新建备忘录，搜索地图地点，并核对结果。</p>
+            <div class="example-command"><span class="prompt-mark">›</span> Search Maps for Golden Gate Bridge</div>
+          </article>
+          <article class="capability-card card-accent">
+            <div class="card-top"><span class="card-glyph">▧</span><span class="card-tag">可保存的流程</span></div>
+            <h3>把调研变成文档。</h3>
+            <p>查找来源、编写报告，再从 Sessions 打开 PDF。也可以准备带收件人的邮件草稿，供你审阅。</p>
+            <div class="artifact-stack" aria-hidden="true"><span>01 · 查找来源</span><span>02 · 编写报告</span><span>03 · 打开 PDF</span></div>
+          </article>
+          <article class="capability-card">
+            <div class="card-top"><span class="card-glyph">◫</span><span class="card-tag">由用户审阅</span></div>
+            <h3>找到应用，再由你决定。</h3>
+            <p>BeanBao 显示 App Store 应用的名称、开发者和价格；是否安装由你决定。</p>
+          </article>
+          <article class="capability-card">
+            <div class="card-top"><span class="card-glyph">◌</span><span class="card-tag">实验性功能</span></div>
+            <h3>谨慎处理外卖任务。</h3>
+            <p>独立浏览器可以在 Uber Eats 查找商品并核对购物车；真实结账尚未验证。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section install-section" id="install" aria-labelledby="install-title">
+        <div class="install-copy">
+          <p class="section-kicker">03 / 快速上手</p>
+          <h2 id="install-title">从安装包到<em>第一条指令。</em></h2>
+          <p>这是面向已越狱 RootHide 手机的开发者安装方式。目前只在 iOS 26.0.1、Relaxin 0.5.5 的一台 iPhone 11 上验证；其他组合需要单独测试。</p>
+          <div class="requirements"><span>RootHide</span><span>iphoneos-arm64e</span><span>root shell 或已配对 SSH</span></div>
+          <a class="text-link" href="https://github.com/everettjf/beanbao/blob/main/README.zh-CN.md">阅读中文快速安装指南 <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="install-steps">
+          <div class="install-step"><span class="install-number">01</span><div><h3>下载并校验</h3><p>从 <a href="https://github.com/everettjf/beanbao/releases">GitHub Releases</a> 下载 `.tar`，对照发布说明检查 SHA-256。</p></div></div>
+          <div class="install-step"><span class="install-number">02</span><div><h3>运行安装器</h3><p>把归档传到手机。在 root shell 中解压，先预检，再安装。</p>
+            <div class="code-box"><div class="code-title"><span>在 iPhone 的 root shell 中</span><button type="button" data-copy-target="install-code" aria-label="复制安装命令">复制</button></div><pre id="install-code"><code>mkdir -p beanbao-release
+tar -xf RELEASE.tar -C beanbao-release
+cd beanbao-release
+sh install.sh --dry-run
+sh install.sh</code></pre></div>
+            <p class="step-note">把 <code>RELEASE.tar</code> 换成传入手机的实际文件名。</p>
+          </div></div>
+          <div class="install-step"><span class="install-number">03</span><div><h3>激活并配置</h3><p>安装 Bridge 后重载一次 SpringBoard，解锁并打开 BeanBao。在 Model service 中填入自己的 Claude Key，然后试试 <strong>Open Settings</strong>。</p></div></div>
+        </div>
+      </section>
+
+      <section class="boundary-section" aria-labelledby="boundary-title">
+        <div class="boundary-mark">✦</div>
+        <div><p class="section-kicker">关键步骤会停下来等待你</p><h2 id="boundary-title">重要决定，<br>始终由你确认。</h2><p>应用由你在 App Store 安装，邮件由你在 Apple Mail 发送。外卖订单需要完整结账审阅和最后一次明确点击。如果外部操作的结果不确定，BeanBao 会停下来等待核对，不会盲目重试。</p></div>
+        <a href="https://github.com/everettjf/beanbao/blob/main/docs/complex-workflows.md">了解任务边界 <span aria-hidden="true">↗</span></a>
+      </section>
+
+      <section class="section source-section" aria-labelledby="source-title">
+        <div><p class="section-kicker">04 / 开源与边界</p><h2 id="source-title">源码可检查，<br><em>限制说清楚。</em></h2></div>
+        <div><p>BeanBao 自有代码采用 Apache-2.0。ios-mcp 和 PalminoHarnessKit 源码快照保留各自许可和说明。目前的候选版通过了包检查与单设备验收，尚未验证的部分也有明确记录。</p><div class="source-links"><a href="https://github.com/everettjf/beanbao">查看源码 ↗</a><a href="https://github.com/everettjf/beanbao/blob/main/docs/build-and-test.md">查看测试记录 ↗</a><a href="https://github.com/everettjf/beanbao/blob/main/THIRD_PARTY.md">查看第三方说明 ↗</a></div></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand"><img src="../assets/beanbao-icon.png" width="38" height="38" alt=""><span>BeanBao.</span></div>
+      <p>让 iPhone 更能帮忙，也让每一步更清楚。</p>
+      <div class="footer-links"><a href="https://github.com/everettjf/beanbao/blob/main/LICENSE">Apache-2.0</a><a href="https://github.com/everettjf/beanbao/releases">发布包</a><a href="https://github.com/everettjf/beanbao/blob/main/README.zh-CN.md">中文文档</a><a href="../" lang="en" hreflang="en">English</a></div>
+      <small>开发者候选版 · 一台已验证设备 · 无人值守付款不受支持</small>
+    </footer>
+  </div>
+  <div id="copy-status" class="sr-only" role="status" aria-live="polite"></div>
+</body>
+</html>

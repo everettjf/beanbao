@@ -1,11 +1,8 @@
 # BeanBao app icon
 
-Generated with the built-in image generation tool on 2026-10-30 for the BeanBao
-iPhone app. `beanbao-icon-master.png` is the unmodified 1254 px generation;
-`beanbao-icon-1024.png` is the distribution master. The PNGs under
-`app/Resources/` are resized derivatives for the app bundle.
-
-Prompt: A single adorable bean-shaped steamed-bun mascot, rounded ivory/peach
-form, expressive eyes and small smile, a subtle bao fold, and restrained coral
-sound-wave arcs. Premium clean sculpted clay/paper style, centered bold silhouette,
-deep teal-to-indigo opaque square background, no text or rounded-corner mask.
+The 1254 px `beanbao-icon-master.png` was edited with the built-in image
+generation tool on 2026-11-03. It keeps the smiling steamed-bun mascot and
+three coral sound-wave arcs, with a warm terracotta-to-apricot background.
+`beanbao-icon-1024.png` is the distribution master. Run
+`scripts/render_icon_sizes.sh` after changing the master to regenerate the
+website image and all icon sizes in `app/Resources/`. The icon has no text or rounded-corner mask.
