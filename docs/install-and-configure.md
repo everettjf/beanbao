@@ -7,7 +7,7 @@ Updated November 2, 2026. This is a developer installation procedure for a compa
 Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
-2. `dev.beanbao.agent` 0.3.93: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
+2. `dev.beanbao.agent` 0.3.94: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
 3. `dev.beanbao.deliverybrowser` 0.1.14: sandboxed Uber Eats browser with visible page checks and a bounded Palmino-driven multi-step Run control.
 4. `dev.beanbao.app` 0.3.60: native text, Apple voice transcription, Sessions with step history, App Store review, Activity, shortcut, and model settings UI.
 
@@ -24,7 +24,7 @@ With a root shell on the jailbroken phone, copy over the packages and install th
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.93_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.94_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.deliverybrowser_0.1.14_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.app_0.3.60_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app
@@ -45,6 +45,8 @@ To check the connected development device, run `python3 scripts/verify_device.py
 7. For an App Store handoff, enter **Find app Apple Pages** or a natural request such as **Find the Apple Mail app by Apple**. Review the exact name, developer, product ID, bundle ID, and price before opening the official listing. Installing is a separate user action in the App Store. After that, **Check installation** verifies the matching bundle; simply closing the listing leaves the workflow pending. On the tested phone, the natural Apple Mail request completed after verifying its already installed bundle. The Pages listing's **Get** button required Apple ID sign-in; cancelling left the workflow pending and did not install the app.
 8. Tap **Browse food delivery** to open the separate delivery browser. It keeps its own website session and pairs with the Agent for this launch. Tap **Check** to classify the visible page. Set a delivery address on Uber Eats before tapping **Run**. On the connected phone, one uninterrupted text task found Phin & Bowl's Chicken Pho, selected the required Rice Noodle option, added exactly one item, opened the cart, and completed a read-only review. The visible cart showed Chicken Pho, Rice Noodle, and a $27.99 subtotal at the public San Jose City Hall test address. A second full run passed after the Agent gained a final check that the previously executed merchant, item, and option still appear on the cart page. The flow stops before checkout or ordering. Exact checkout totals and approval are still in development.
 9. Open **Sessions** and tap the information button beside a saved workflow to inspect its read-only step history. Tapping the session row itself still opens or resumes that workflow. The history shows step names, states, and times; it does not display website text or model tool results.
+
+For development over the paired SSH connection, `beanbaoagentctl workflow-details ID` displays the same bounded step history and `beanbaoagentctl resume-workflow ID` resumes an interrupted research session by its saved ID. A mutating step with an uncertain outcome is held for reconciliation rather than retried.
 
 The **Quick launch** Volume Down triple-press switch is off by default. A normal press still changes volume. Triple press opens the quick overlay and asks the BeanBao app to start recording. On the tested phone, a real spoken request completed from both an app and the unlocked Home screen. From Home, the overlay started recording and **Open Settings** brought Settings to the foreground.
 
