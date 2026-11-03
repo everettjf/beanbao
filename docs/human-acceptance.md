@@ -14,7 +14,7 @@ Run `scripts/verify_device.py --expect-bundle` with the paired SSH host, port, i
 4. With a configured Claude, OpenAI, or compatible model key, enter **Search Maps for Golden Gate Bridge**. Require both the matching marker and place card, without starting navigation. Test each model service separately; a service without a key is not a passed live model test.
 5. Enter **Open Maps and send a message**. Require a clear rejection, no device action, and no message sent. The Agent may create an incomplete task record before rejecting it; the service must stay the same and the App must remain in the foreground.
 
-The current test scripts are `scripts/accept_text_device.py` and `scripts/accept_app_text_device.py`. Check the app status, Agent task and service IDs, and actual UI together. A package audit or simulated Bridge test does not replace device acceptance.
+The current test scripts are `scripts/accept_text_device.py`, `scripts/accept_app_text_device.py`, and `scripts/accept_saved_workflow_device.py`. Check the app status, Agent task and service IDs, and actual UI together. A package audit or simulated Bridge test does not replace device acceptance.
 
 ## Multi-step research, PDF, email, and app
 
@@ -46,5 +46,7 @@ The connected browser still reaches Uber Eats sign-in before checkout. After sig
 4. Reboot, re-enable Relaxin as needed, confirm Agent starts automatically, and run **Open Notes** and a limited Maps search. On November 3, the owner rebooted and re-enabled Relaxin. All four installed package versions remained present, Agent 0.3.117 responded under new service ID `D12C23D5-DAB2-447F-A230-C02B1B2FB46E` without a manual service start, and Bridge observed an unlocked Home screen. **Open Notes** completed as task `43BCB8E1-EE6E-408F-A367-ECA8AEC7FC05` with Notes independently foreground. The app-level **Search Maps for Golden Gate Bridge** completed as task `C0422F28-4976-4B32-A708-B2672897A702`; the device test confirmed both the map marker and place card. No package reinstall or extra reboot was needed.
 
 After that reboot, the saved six-step research session `297C6C2D-FAA2-4A38-AD37-5BE858F7F5CE` still had six completed step receipts and remained `waitingForUser`. Its 24,399-byte PDF and 638-byte draft file were present. Selecting it in **Sessions** showed **Ready for review**; **View PDF report** opened the document in BeanBao's viewer, and returning preserved the review state. This verifies artifact and session persistence through the reboot. The Mail composer remains outside this run's scope.
+
+The tested iOS 26 Sessions table reported accessibility tap points roughly 100 screen points above its rendered rows. The saved-workflow acceptance script selects the exact workflow ID through the Agent and then checks the visible app review controls and PDF viewer; it does not rely on those row coordinates. This is a test automation limitation, not a failure of finger taps in the app.
 
 The physical-button recording and voice-to-task flow passed over an app and from the unlocked Home screen on the tested phone. The current build completed **Open Settings** after its initiating SSH session ended, with the same task ID and verified foreground bundle. The current-build physical USB-disconnect text task and reboot recovery checks have also passed as recorded above. Other devices require separate validation.
