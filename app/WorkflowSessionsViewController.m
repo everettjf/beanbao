@@ -64,22 +64,38 @@
     if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"Workflow"];
     NSDictionary *item = self.workflows[indexPath.row];
     NSString *phase = item[@"phase"];
-    NSString *status = [phase isEqualToString:@"completed"] ? @"Completed" :
-        ([phase isEqualToString:@"waitingForUser"] ?
-            ([item[@"kind"] isEqualToString:@"research_mail_app"] ?
-                ([item[@"mail_queued"] boolValue] ? @"Review app listing" :
-                 ([item[@"app_installed"] boolValue] ? @"Review email draft" :
-                  @"Review PDF, email and app listing")) :
-             ([item[@"kind"] isEqualToString:@"research_app"] ? @"Review PDF and app listing" :
-             ([item[@"kind"] isEqualToString:@"app_store"] ? @"Review app listing" :
-             ([item[@"kind"] isEqualToString:@"delivery"] ? @"Continue delivery" : @"Review email")))) :
-         ([phase isEqualToString:@"needsReconciliation"] ?
-            ([item[@"kind"] isEqualToString:@"delivery"] ? @"Review delivery action" :
-             ([item[@"kind"] isEqualToString:@"research_mail_app"] ?
-              @"Review email and app outcomes" :
-              ([@[@"app_store", @"research_app"] containsObject:item[@"kind"]] ?
-               @"Check app installation" : @"Check Mail"))) :
-          ([phase isEqualToString:@"running"] ? @"Interrupted · Resume" : @"Resume")));
+    NSString *kind = item[@"kind"];
+    BOOL installRequested = [item[@"install_requested"] boolValue];
+    NSString *status = @"Resume";
+    if ([phase isEqualToString:@"completed"]) {
+        status = @"Completed";
+    } else if ([phase isEqualToString:@"running"]) {
+        status = @"Interrupted · Resume";
+    } else if ([phase isEqualToString:@"waitingForUser"]) {
+        if ([kind isEqualToString:@"research_mail_app"]) {
+            status = [item[@"mail_queued"] boolValue] ?
+                (installRequested ? @"Install selected app" : @"Review app listing") :
+                ([item[@"app_installed"] boolValue] ? @"Review email draft" :
+                 (installRequested ? @"Review PDF and email; install app" :
+                  @"Review PDF, email and app listing"));
+        } else if ([kind isEqualToString:@"research_app"]) {
+            status = installRequested ? @"Review PDF and install app" :
+                @"Review PDF and app listing";
+        } else if ([kind isEqualToString:@"app_store"]) {
+            status = @"Review app listing";
+        } else if ([kind isEqualToString:@"delivery"]) {
+            status = @"Continue delivery";
+        } else {
+            status = @"Review email";
+        }
+    } else if ([phase isEqualToString:@"needsReconciliation"]) {
+        if ([kind isEqualToString:@"delivery"]) status = @"Review delivery action";
+        else if ([kind isEqualToString:@"research_mail_app"])
+            status = @"Review email and app outcomes";
+        else if ([@[@"app_store", @"research_app"] containsObject:kind])
+            status = @"Check app installation";
+        else status = @"Check Mail";
+    }
     cell.textLabel.text = item[@"request"];
     cell.textLabel.numberOfLines = 2;
     cell.textLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];

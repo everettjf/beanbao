@@ -96,15 +96,23 @@ int main(void) {
                    "a negated research request cannot start the PDF workflow") ||
             !Check(!BBIsResearchPDFTask(@"Research speech APIs, create a PDF, and install Pages") &&
                    !BBResearchPDFCandidate(@"Research speech APIs, create a PDF, and install Pages") &&
+                   BBResearchAppCandidate(@"Research speech APIs, create a PDF, and install Pages") &&
                    BBResolvedTask(@"Research speech APIs, create a PDF, and install Pages",
                                   researchChoice) == nil,
-                   "research plus app installation cannot silently drop installation") ||
+                   "research plus installation enters the composite route, not PDF-only") ||
             !Check(!BBResearchPDFCandidate(@"Research speech APIs, create a PDF; install Pages") &&
                    !BBIsResearchPDFTask(@"Research speech APIs, create a PDF, install Pages"),
                    "punctuation cannot hide a second installation step") ||
             !Check(BBResearchAppCandidate(@"Research iOS speech, create a PDF, and find app Pages") &&
                    !BBResearchPDFCandidate(@"Research iOS speech, create a PDF, and find app Pages"),
                    "research plus app lookup enters the composite route, not PDF-only") ||
+            !Check(BBResearchAppCandidate(@"Research iOS speech, create a PDF, then download the app Pages") &&
+                   BBResearchAppCandidate(@"Research iOS speech, create a PDF, then get app Pages") &&
+                   BBResearchAppInstallationCandidate(@"Research iOS speech, create a PDF, and install Pages") &&
+                   BBResearchAppInstallationCandidate(@"Research iOS speech, create a PDF, then download app Pages") &&
+                   BBResearchAppInstallationCandidate(@"Research iOS speech, create a PDF, then get app Pages") &&
+                   !BBResearchAppInstallationCandidate(@"Research iOS speech, create a PDF, and find app Pages"),
+                   "download and Get requests enter the guarded App Store handoff") ||
             !Check(!BBResearchAppCandidate(@"Research iOS speech, create a PDF, and find app Pages and Numbers") &&
                    !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and find app Pages, then order lunch") &&
                    !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and email it, then find app Pages") &&

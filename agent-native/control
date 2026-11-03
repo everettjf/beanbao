@@ -1,6 +1,6 @@
 Package: dev.beanbao.agent
 Name: BeanBao Device Agent
-Version: 0.3.100
+Version: 0.3.101
 Architecture: iphoneos-arm
 Depends: dev.beanbao.bridge (>= 0.2.13)
 Description: Device-native text and multi-provider model agent for the restricted BeanBao bridge.

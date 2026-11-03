@@ -29,10 +29,24 @@ final class AppCatalogTests: XCTestCase {
     func testCompositeRequestKeepsBothRequestedOutputs() {
         XCTAssertEqual(BeanBaoCompositeRequest.appQuery(
             "Research iOS speech, create a PDF, and find app Pages"), "Pages")
+        XCTAssertEqual(BeanBaoCompositeRequest.appRequest(
+            "Research iOS speech, create a PDF, then install Pages"),
+            .init(query: "Pages", installationRequested: true))
+        XCTAssertEqual(BeanBaoCompositeRequest.appRequest(
+            "Research iOS speech, create a PDF, then download the app Pages"),
+            .init(query: "Pages", installationRequested: true))
+        XCTAssertEqual(BeanBaoCompositeRequest.appRequest(
+            "Research iOS speech, create a PDF, then get app Pages"),
+            .init(query: "Pages", installationRequested: true))
+        XCTAssertEqual(BeanBaoCompositeRequest.appRequest(
+            "Research iOS speech, create a PDF, and find app Pages"),
+            .init(query: "Pages", installationRequested: false))
         XCTAssertNil(BeanBaoCompositeRequest.appQuery(
             "Research iOS speech, create a PDF, and find app Pages and Numbers"))
         XCTAssertNil(BeanBaoCompositeRequest.appQuery(
             "Research iOS speech, create a PDF, and find app Pages, then order lunch"))
+        XCTAssertNil(BeanBaoCompositeRequest.appQuery(
+            "Research iOS speech, create a PDF, then install Pages and Numbers"))
         XCTAssertEqual(BeanBaoCompositeRequest.appQuery(
             "Research iOS speech, create a PDF, and email it to test@example.com, then find app Pages"),
             "Pages")
