@@ -556,9 +556,9 @@ static NSDictionary *BBStart(NSDictionary *request) {
                                  selectedProvider.UTF8String, NULL};
         const char *argvNote[] = {executable, "--harness-note", task.UTF8String, NULL};
         const char *argvText[] = {executable, "--harness-text", task.UTF8String, NULL};
-        const char *argvResolve[] = {executable, "--resolve-task", task.UTF8String,
-                                     selectedProvider.UTF8String, NULL};
         NSString *taskID = resumeID ?: NSUUID.UUID.UUIDString;
+        const char *argvResolve[] = {executable, "--resolve-task", task.UTF8String,
+                                     selectedProvider.UTF8String, taskID.UTF8String, NULL};
         const char *argvResearch[] = {executable, "--workflow-research", task.UTF8String,
                                       taskID.UTF8String, NULL};
         const char *argvAppStore[] = {executable, "--workflow-app-store", task.UTF8String,

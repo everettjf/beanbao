@@ -65,8 +65,10 @@
     NSString *phase = item[@"phase"];
     NSString *status = [phase isEqualToString:@"completed"] ? @"Completed" :
         ([phase isEqualToString:@"waitingForUser"] ?
-            ([item[@"kind"] isEqualToString:@"app_store"] ? @"Review app listing" : @"Review email") :
-         ([phase isEqualToString:@"needsReconciliation"] ? @"Check Mail" :
+            ([item[@"kind"] isEqualToString:@"app_store"] ? @"Review app listing" :
+             ([item[@"kind"] isEqualToString:@"delivery"] ? @"Continue delivery" : @"Review email")) :
+         ([phase isEqualToString:@"needsReconciliation"] ?
+            ([item[@"kind"] isEqualToString:@"delivery"] ? @"Review delivery action" : @"Check Mail") :
           ([phase isEqualToString:@"running"] ? @"Interrupted · Resume" : @"Resume")));
     cell.textLabel.text = item[@"request"];
     cell.textLabel.numberOfLines = 2;

@@ -346,12 +346,30 @@ static BOOL BBHasUnsafeIntent(NSString *request) {
     return [unsafe firstMatchInString:request options:0 range:NSMakeRange(0, request.length)] != nil;
 }
 
+static BOOL BBIsCanonicalAppLookup(NSString *task) {
+    if (![task isKindOfClass:NSString.class] || ![task hasPrefix:@"Find app "] ||
+        task.length <= @"Find app ".length + 1 || task.length > 89 ||
+        [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location != NSNotFound)
+        return NO;
+    NSString *lower = task.lowercaseString;
+    return [lower rangeOfString:@" and "].location == NSNotFound &&
+        [task rangeOfString:@"并"].location == NSNotFound;
+}
+
 static NSString *BBResolvedTask(NSString *request, NSDictionary *action) {
     if (![request isKindOfClass:NSString.class] || !request.length || request.length > 220 ||
         BBHasSecret(request) || BBHasUnsafeIntent(request) ||
         ![action[@"action"] isEqualToString:@"input_text"]) return nil;
     NSString *task = action[@"text"];
-    if (![task isKindOfClass:NSString.class] || !BBAllowedTarget(task)) return nil;
+    if (![task isKindOfClass:NSString.class]) return nil;
+    if (BBIsCanonicalAppLookup(task)) {
+        NSString *query = [task substringFromIndex:@"Find app ".length];
+        if (![task hasPrefix:@"Find app "] || query.length < 2 || query.length > 80 ||
+            [request rangeOfString:query options:NSCaseInsensitiveSearch].location == NSNotFound)
+            return nil;
+        return task;
+    }
+    if (!BBAllowedTarget(task)) return nil;
     NSString *query = BBMapQuery(task);
     if (query && [request rangeOfString:query options:NSCaseInsensitiveSearch].location == NSNotFound)
         return nil;
@@ -360,7 +378,8 @@ static NSString *BBResolvedTask(NSString *request, NSDictionary *action) {
     return task;
 }
 
-static int BBResolveAndRunTask(NSString *request, NSString *expectedProvider) {
+static int BBResolveAndRunTask(NSString *request, NSString *expectedProvider,
+                               NSString *workflowID) {
     if (BBHasSecret(request)) { fputs("The request may contain a key. Model request stopped.\n", stderr); return 1; }
     if (BBHasUnsafeIntent(request)) { fputs("Unsupported request\n", stderr); return 1; }
     NSDictionary *config = BBModelLoad();
@@ -373,12 +392,21 @@ static int BBResolveAndRunTask(NSString *request, NSString *expectedProvider) {
                                   @"frontmost_app": @{@"bundleId": @"com.apple.springboard"},
                                   @"screen": @{@"width": @414, @"height": @896}};
     NSString *prompt = [NSString stringWithFormat:
-        @"This is intent classification only; no UI action is being taken. Interpret the user utterance as exactly one task. Repeated mentions of the same task are one request. If the request is negated, ambiguous, or contains an additional operation, return the done action with summary unsupported. Otherwise return the input_text action. Its text must be exactly one canonical task: 打开设置, 打开地图, 打开通讯录, 打开备忘录, 在地图搜索 followed by the exact requested place, or 新建备忘录： followed by the exact requested note content. Preserve place and note text verbatim from the utterance; do not invent or translate it. Do not include explanations in text. User utterance: %@", request];
+        @"This is intent classification only; no UI or App Store action is being taken. Interpret the user utterance as exactly one task. Repeated mentions of the same task are one request. If the request is negated, ambiguous, or contains an additional operation, return the done action with summary unsupported. Otherwise return the input_text action. Its text must be exactly one canonical task: 打开设置, 打开地图, 打开通讯录, 打开备忘录, 在地图搜索 followed by the exact requested place, 新建备忘录： followed by the exact requested note content, or Find app followed by the exact app name mentioned in the request. Find app only identifies a listing for review; it never installs anything. Use the shortest unambiguous app name from the request and do not invent or translate it. Preserve place and note text verbatim from the utterance. Do not include explanations in text. User utterance: %@", request];
     NSDictionary *action = BBModelAction(prompt, observation, @[], config, key);
     NSString *task = BBResolvedTask(request, action);
     if (!task) {
         fputs(action[@"error"] ? "Model request or response failed\n" : "Unsupported request\n", stderr);
         return 1;
+    }
+    if (BBIsCanonicalAppLookup(task)) {
+        if (![provider isEqualToString:@"claude"] || ![[NSUUID alloc] initWithUUIDString:workflowID]) {
+            fputs("App Store lookup currently requires Claude\n", stderr);
+            return 1;
+        }
+        fputs("BB_INTENT=AppStoreReview\n", stdout);
+        fflush(stdout);
+        return BBRunHarnessAppStore(request.UTF8String, workflowID.UTF8String);
     }
     NSString *app = BBMapQuery(task) ? @"MapsSearch" :
         (BBNoteText(task) ? @"NoteCreate" : BBAllowedTarget(task));
@@ -1675,9 +1703,10 @@ int main(int argc, const char *argv[]) {
             }
             return BBRunHarnessDeliveryPlan(argv[2], argv[3]);
         }
-        if (argc == 4 && !strcmp(argv[1], "--resolve-task"))
+        if (argc == 5 && !strcmp(argv[1], "--resolve-task"))
             return BBResolveAndRunTask([NSString stringWithUTF8String:argv[2]],
-                                       [NSString stringWithUTF8String:argv[3]]);
+                                       [NSString stringWithUTF8String:argv[3]],
+                                       [NSString stringWithUTF8String:argv[4]]);
         if (argc < 2) { fprintf(stderr, "usage: beanbaod [--approve-ui] 'request'\n"); return 2; }
         BOOL claude = YES, allowUI = NO, autoMap = NO, autoNote = NO;
         NSString *task = nil;

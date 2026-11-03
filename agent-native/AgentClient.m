@@ -87,13 +87,19 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     }
     NSMutableData *reply = [NSMutableData data];
     char byte = 0;
-    while (reply.length < 4096) {
+    NSUInteger replyLimit = [request[@"op"] isEqualToString:@"list_workflows"] ? 32768 : 4096;
+    BOOL completeReply = NO;
+    while (reply.length < replyLimit) {
         ssize_t count = read(fd, &byte, 1);
         if (count < 0 && errno == EINTR) continue;
-        if (count <= 0 || byte == '\n') break;
+        if (count <= 0) break;
+        if (byte == '\n') { completeReply = YES; break; }
         [reply appendBytes:&byte length:1];
     }
     close(fd);
+    if (!completeReply)
+        return @{ @"ok": @NO, @"error": reply.length == replyLimit ?
+            @"Service response is too long" : @"Incomplete service response" };
     id parsed = [NSJSONSerialization JSONObjectWithData:reply options:0 error:nil];
     return [parsed isKindOfClass:NSDictionary.class] ? parsed : @{@"ok": @NO, @"error": @"Invalid service response"};
 }

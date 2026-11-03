@@ -281,6 +281,18 @@ int main(void) {
                    !BBIsAppStoreTask(@"Install Example Notes and send an email") &&
                    !BBIsAppStoreTask(@"Open Maps"),
                    "App Store routing accepts a single explicit acquisition request")) return 1;
+        if (!Check([BBResolvedTask(@"Find the Apple Mail app by Apple",
+                                   @{@"action": @"input_text", @"text": @"Find app Apple Mail"})
+                       isEqualToString:@"Find app Apple Mail"] &&
+                   BBResolvedTask(@"Find the Apple Mail app by Apple",
+                                  @{@"action": @"input_text", @"text": @"Find app Notes"}) == nil &&
+                   BBResolvedTask(@"Find the Apple Mail app and send a message",
+                                  @{@"action": @"input_text", @"text": @"Find app Apple Mail"}) == nil &&
+                   BBResolvedTask(@"Find the Apple Mail app by Apple",
+                                  @{@"action": @"done", @"text": @"Find app Apple Mail"}) == nil &&
+                   BBResolvedTask(@"Find the Apple Mail app by Apple",
+                                  @{@"action": @"input_text", @"text": @"Find app Apple Mail and pay"}) == nil,
+                   "model-routed App Store lookup stays bound to one named app and one safe action")) return 1;
         char *invalidNoteJSON = BBNoteStepJSON("打开地图", "[]");
         NSDictionary *invalidNote = invalidNoteJSON ?
             [NSJSONSerialization JSONObjectWithData:

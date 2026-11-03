@@ -2,6 +2,12 @@
 
 Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 2 natural App Store request and Sessions acceptance
+
+Agent 0.3.86 and App 0.3.57 were built, audited, and installed on the connected phone without reloading SpringBoard. The full build passed native and Python policy checks, 13 delivery-browser JavaScript tests, and 63 Swift Harness tests. The phrase **Find the Apple Mail app by Apple**, which the previous UI-only intent classifier rejected, now reached the model-routed App Store workflow. Its saved candidate was Mail by Apple, product ID `1108187098`, bundle ID `com.apple.mobilemail`, Free. Selecting its session displayed the candidate for review; **Check installation** completed the workflow only after exact installed-bundle verification. No App Store install occurred.
+
+This run created the twenty-sixth saved workflow and exposed the App's 4 KB service-reply limit: Sessions initially showed **Invalid service response**. App 0.3.57 reads up to 32 KB for this bounded list and labels waiting delivery sessions **Continue delivery** instead of **Review email**. The installed App then displayed all 26 saved sessions, selected the natural-request session, and showed its completed status. `verify_device.py --expect-bundle` confirmed all four installed package versions, the Agent protocol, Bridge observation, and the unlocked, screen-on state. The phone remained unlocked throughout.
+
 ## November 2 delivery cart acceptance
 
 Bridge 0.2.13, Agent 0.3.84, Delivery Browser 0.1.14, and App 0.3.55 built successfully. The full build ran 63 Swift Harness tests, the browser JavaScript tests, native policy tests, and the four-package release audit. Agent, Browser, and App updates were installed on the connected phone without reloading SpringBoard or locking it.
