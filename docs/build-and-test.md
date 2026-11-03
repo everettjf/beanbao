@@ -2,6 +2,12 @@
 
 Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 2 App Store authentication boundary
+
+The saved **Find app Apple Pages** workflow opened the official StoreKit listing for Apple's free Pages app (product ID `361309726`, bundle ID `com.apple.Pages`). Tapping **Get** displayed the system **Sign In to Complete Purchase** prompt. No Apple ID was entered; the prompt was cancelled. The StoreKit listing returned to **Get**, and BeanBao remained `waiting_for_user` with **App is not installed yet. Review the listing or check again.** This verifies the authentication stop and absence of a false install claim, but a fresh download still awaits an App Store account.
+
+App 0.3.60 fixes a stale **Loading the official App Store listing…** message exposed when closing StoreKit. Loading now clears on the main UI thread before presentation. The installed build reopened and closed the same listing without leaving that message behind; the Pages workflow remained pending. No SpringBoard reload or device lock was used.
+
 ## November 2 workflow step history acceptance
 
 Agent 0.3.88 and App 0.3.59 were built, audited, and installed without a SpringBoard reload. The complete build passed native and Python checks, 13 delivery-browser JavaScript tests, 63 Swift Harness tests, and the four-package audit. The Agent's new `workflow_details` response returns only a bounded list of step names, states, and timestamps; the native policy test verifies that private tool results and receipt keys are absent. The App's Sessions information button opened read-only timelines on the connected phone. The saved research session displayed two web searches, report composition, and PDF creation. The saved Uber Eats cart session displayed search, merchant and item opening, Rice Noodle selection, add to cart, cart opening, and review; completed plan/execution pairs were shown as one step. A saved App Store session returned lookup and listing preparation. These are histories of previously executed workflows, not new external actions.

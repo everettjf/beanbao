@@ -581,15 +581,18 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
                                                candidate[@"productID"]}
                 completionBlock:^(BOOL loaded, NSError *error) {
                     (void)error;
-                    self.storeLoading = NO;
-                    self.storeButton.enabled = YES;
-                    if (![reviewTaskID isEqualToString:self.activeTaskID] ||
-                        ![reviewURL isEqual:self.appCandidateURL]) return;
-                    if (!loaded) {
-                        self.feedbackLabel.text = @"The App Store listing is unavailable in this region";
-                        return;
-                    }
-                    [self presentViewController:store animated:YES completion:nil];
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        self.storeLoading = NO;
+                        self.storeButton.enabled = YES;
+                        if (![reviewTaskID isEqualToString:self.activeTaskID] ||
+                            ![reviewURL isEqual:self.appCandidateURL]) return;
+                        if (!loaded) {
+                            self.feedbackLabel.text = @"The App Store listing is unavailable in this region";
+                            return;
+                        }
+                        self.feedbackLabel.text = nil;
+                        [self presentViewController:store animated:YES completion:nil];
+                    });
                 }];
         }]];
     [self presentViewController:alert animated:YES completion:nil];
