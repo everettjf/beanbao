@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
-from beanbao import SSHBridgeClient
+from beanbao import BridgeError, SSHBridgeClient
 
 CASES = ("open_contacts", "create_test_note", "map_search", "forbidden_compound")
 
@@ -66,21 +66,27 @@ def main() -> int:
         if before.get("ok") is not True or before.get("running"):
             raise RuntimeError("Agent unavailable or busy before App submission")
         remote("uiopen --bundleid dev.beanbao.app")
-        for _ in range(16):
-            source = observe()
-            if source.get("frontmost_app", {}).get("bundleId") == "dev.beanbao.app":
+        # uiopen may briefly show a restored session before the composer is ready.
+        for _ in range(24):
+            try:
+                source = observe()
+            except BridgeError:
+                time.sleep(.25)
+                continue
+            if source.get("frontmost_app", {}).get("bundleId") != "dev.beanbao.app":
+                time.sleep(.25)
+                continue
+            if any(e.get("text") == "Clear" for e in source.get("ui", {}).get("elements", [])):
                 break
+            back = next((e.get("tap") for e in source.get("ui", {}).get("elements", [])
+                         if e.get("text") == "BeanBao" and "Back" in (e.get("aliases") or [])
+                         and isinstance(e.get("tap"), dict)), None)
+            if back:
+                if bridge.act(source["observation_id"], {"action": "tap", **back}).get("ok") is not True:
+                    raise RuntimeError("Could not return to BeanBao's task composer")
             time.sleep(.25)
         else:
-            raise RuntimeError("BeanBao did not become foreground")
-
-        # uiopen resumes the last navigation screen, including Activity.
-        if not any(e.get("text") == "Clear" for e in source.get("ui", {}).get("elements", [])):
-            back = next((e.get("tap") for e in source.get("ui", {}).get("elements", [])
-                         if e.get("text") == "BeanBao" and "Back" in e.get("aliases", [])
-                         and isinstance(e.get("tap"), dict)), None)
-            if not back or bridge.act(source["observation_id"], {"action": "tap", **back}).get("ok") is not True:
-                raise RuntimeError("Could not return to BeanBao's task composer")
+            raise RuntimeError("BeanBao's task composer did not become ready")
 
         tap_label("Clear")
         tap_label("e.g. Open Maps")

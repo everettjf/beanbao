@@ -238,12 +238,14 @@ An earlier build (Bridge 0.2.4 / Agent 0.3.49 / App 0.3.12) passed one physical 
 
 On November 3, the owner repeated the physical USB-disconnect **Open Settings** task on the installed Bridge 0.2.13 / Agent 0.3.117 / App 0.3.71 build and reported that Settings opened. After the USB connection returned, `verify_device.py --expect-bundle` confirmed the installed versions, a responsive Agent, and `com.apple.Preferences` in the foreground. `beanbaoagentctl status` reported `done` for new task `823313A8-E787-4D08-855C-715C45478397`; the limited audit recorded Settings task `start` and `done` events. The phone remained unlocked and no SpringBoard reload or reboot was used.
 
+Later on November 3, the owner rebooted and re-enabled Relaxin. The four installed BeanBao package versions remained unchanged. Agent 0.3.117 responded under a new service ID without a manual restart, and Bridge reported an unlocked, screen-on Home screen. **Open Notes** completed as task `43BCB8E1-EE6E-408F-A367-ECA8AEC7FC05` with `com.apple.mobilenotes` independently foreground. The app-level **Search Maps for Golden Gate Bridge** completed as task `C0422F28-4976-4B32-A708-B2672897A702` under the same Agent service; `accept_app_text_device.py --cases map_search` confirmed both the map marker and place card. The first script attempt stopped before submitting a task because `uiopen` briefly restored a saved session instead of the composer. The script now waits for the composer or navigates back when a Back control appears. No package was reinstalled and the phone was not rebooted again.
+
 Earlier supervised tests established that Claude could complete several Maps searches, including Golden Gate Bridge, San Francisco City Hall, California Academy of Sciences, and additional landmarks, while requiring matching map results and cards before reporting success. A map UI change or uncertain result can stop a task. The fixed note flow returns to the Notes list and checks the complete new title before reporting success. A service restart and cancellation were tested on an earlier build. These observations do not imply reliable success for every place or UI state.
 
 ## Remaining acceptance
 
 - Exercise rapid extra Volume Down presses on Bridge 0.2.13 to confirm the cooldown behavior on the current build.
-- Run the full reboot recovery test with the current versions. The physical USB-disconnect text task passed on November 3.
+- The physical USB-disconnect text task and reboot recovery test passed on November 3. Repeat only if a later build changes these runtime paths.
 - Configure OpenAI and a compatible HTTPS service with their own keys, then perform live Maps tests. The current evidence covers request construction and parsing, not those providers' live responses.
 - Validate other iPhone models, iOS versions, and jailbreak environments separately. A public package source and one-tap installer do not exist yet.
 
