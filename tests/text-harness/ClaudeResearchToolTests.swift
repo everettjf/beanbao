@@ -92,4 +92,16 @@ final class ClaudeResearchToolTests: XCTestCase {
         ]
         XCTAssertThrowsError(try BeanBaoClaudeWebSearch.parseFinding(content))
     }
+
+    func testCitationWithoutQuotedEvidenceIsRejected() throws {
+        let url = "https://developer.apple.com/documentation/speech"
+        let content: [[String: Any]] = [
+            ["type": "web_search_tool_result", "content": [[
+                "type": "web_search_result", "url": url, "title": "Speech"]]],
+            ["type": "text", "text": "Apple documents speech APIs.",
+             "citations": [["type": "web_search_result_location", "url": url,
+                             "title": "Speech", "cited_text": "  "]]]
+        ]
+        XCTAssertThrowsError(try BeanBaoClaudeWebSearch.parseFinding(content))
+    }
 }
