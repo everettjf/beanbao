@@ -1,23 +1,148 @@
 # BeanBao
 
-BeanBao is a personal GUI assistant for a jailbroken iPhone. The first target device is an iPhone 11 running iOS 26.0.1 with Relaxin 0.5.5 and RootHide.
+<img src="design/beanbao-icon-1024.png" alt="BeanBao, a smiling steamed bun" width="112" />
 
-The current release candidate uses a restricted Bridge, an on-device Agent, and a native app. It supports typed and spoken English requests to open Settings, Maps, Contacts, or Notes; create a new note; and search Maps for a place. Existing Chinese commands remain accepted. Exact supported phrases take a fast local path; other natural requests are interpreted by the selected model into one of the same bounded tasks. App launches and note creation execute locally. Maps search can also use Claude, OpenAI, or an OpenAI-compatible HTTPS API when an action cannot be determined locally. Each model service has its own on-device key. There is no mock-model option in the app.
+**A voice and text assistant that can carry out bounded tasks on a jailbroken iPhone.**
+Speak or type a request, review it, and let BeanBao use the phone. It runs its
+Bridge and task Agent on the device. A Mac is not needed after installation.
 
-BeanBao checks the foreground app, screen freshness, sensitive content, and action policy at every step. It does not silently install apps, send messages, or delete content. The delivery browser has an experimental order action that requires the user to review the exact checkout and tap **Place order**; its final click has only been tested against synthetic pages because Uber Eats currently requires sign-in on the connected phone. The connected device has passed text-command and Claude Maps search tests; OpenAI and compatible endpoints still need live tests with their own keys. Other devices and jailbreak environments need separate validation.
+[Get started](#quick-start) · [Full installation guide](docs/install-and-configure.md) · [What works today](#what-works-today) · [Website source](web/README.md)
 
-The app has an Activity view for recent task outcomes. It derives short summaries from a private on-device audit and does not store request text, note contents, screenshots, or model replies. The separate Sessions view saves research, App Store, and delivery workflow requests, checkpoints, and artifacts in private on-device storage. Its detail view shows a read-only history of step names and states without website text or tool results. One research session can prepare a cited PDF, an addressed email draft, and a selected App Store listing for review. It reports installation only after a matching bundle is found on the device, and keeps the mail and installation reviews independent. The sandboxed delivery browser can search Uber Eats, configure an item, review a cart, and prepare a checked checkout for explicit user approval. An order attempt is never replayed automatically. Other task types remain independent and do not have conversational memory.
+> **Release status:** developer release candidate. It has been installed and
+> tested on one iPhone 11 with iOS 26.0.1, Relaxin 0.5.5, and RootHide. Other
+> devices, jailbreaks, and iOS versions have not been validated. The repository
+> and GitHub release are still private drafts until publication. See the
+> [public release checklist](docs/public-release-checklist.md) for the remaining gates.
 
-The offline release includes a phone-extractable `.tar` and an installer that verifies the four packages, skips matching versions, checks the running Agent version, and leaves SpringBoard reload to the owner. A Mac helper transfers the archive over paired root SSH after checking its published hash and contents. The installer has passed a same-version run and a Delivery Browser-only upgrade on the connected RootHide phone; other devices still need separate validation. There is no public package source yet.
+## What works today
 
-- [Installation and configuration](docs/install-and-configure.md)
-- [Current release candidate and checksums](docs/release-candidate-0.3.71.md)
-- [Device test record](docs/build-and-test.md)
-- [Human acceptance checklist](docs/human-acceptance.md)
-- [UI and Activity design](docs/ui-and-activity.md)
-- [Common requests](docs/common-cases.md)
-- [Device recovery](docs/device-recovery.md)
-- [Architecture and implementation plan](docs/relaxin-ios26-plan.md)
-- [Palmino Harness reuse](docs/palmino-harness-reuse.md)
-- [Upstream ios-mcp snapshot](vendor/UPSTREAM.md)
-- [BeanBao icon assets](design/README.md)
+| Request or flow | Current behavior |
+| --- | --- |
+| “Open Settings”, “Open Maps”, “Open Contacts”, “Open Notes” | Opens the app and verifies that it reached the foreground. |
+| “Create note: BeanBao test note” | Creates a new note and checks its title in Notes. |
+| “Search Maps for Golden Gate Bridge” | Searches Maps and checks the place card. The selected model may receive a Maps screenshot when needed. |
+| Triple press Volume Down | Shows one bottom overlay, starts Apple speech transcription, and lets you review the text before **Run**. The shortcut is off by default. |
+| “Research on-device speech recognition on iOS, create a PDF with sources” | Runs a saved multi-step research workflow and opens its sourced PDF from **Sessions**. |
+| Research + addressed email draft + App Store lookup | Prepares independent review steps. The user handles sending in Apple Mail and installing in the App Store. |
+| Food delivery | Experimental Uber Eats browser can find an item, configure options, and review a cart. Real checkout is unverified; a final order requires an explicit review and tap. |
+
+BeanBao is deliberately bounded. It does not offer arbitrary-app tapping,
+silent App Store installation, automatic email sending, or unattended payment.
+See [common requests](docs/common-cases.md) and [complex workflow limits](docs/complex-workflows.md).
+
+## Quick start
+
+### 1. Check your device
+
+You need an already jailbroken iPhone with a working **RootHide** environment,
+`iphoneos-arm64e` package support, and a root shell or paired root SSH for
+installation. The only verified combination is listed above. BeanBao does not
+install or configure the jailbreak.
+
+### 2. Get and verify the release archive
+
+Download the uncompressed `BeanBao-RootHide-*.tar` from the [GitHub Releases
+page](https://github.com/everettjf/beanbao/releases) once a release is
+published. Compare its SHA-256 with the value in that release's notes:
+
+```sh
+shasum -a 256 BeanBao-RootHide-*.tar
+```
+
+The current candidate's package versions and archive hashes are in the
+[release candidate record](docs/release-candidate-0.3.71.md). The draft release
+is only accessible to repository collaborators until publication.
+
+### 3. Install from a root shell on the phone
+
+Transfer the verified `.tar` to the phone, then run these commands in the
+directory containing it. Substitute its exact filename for `RELEASE.tar`:
+
+```sh
+mkdir -p beanbao-release
+tar -xf RELEASE.tar -C beanbao-release
+cd beanbao-release
+sh install.sh --dry-run
+sh install.sh
+```
+
+The installer checks all four package hashes, package IDs, architecture, and
+versions before changing the device. It installs only changed packages. If you
+already have paired root SSH, the [Mac transfer helper](docs/install-and-configure.md#packages)
+can verify, transfer, preflight, and install the same archive in one command.
+
+### 4. Activate and configure
+
+After a new or updated **Bridge** package, reload SpringBoard once and unlock
+the phone. The installer does not do this automatically. Open BeanBao, tap
+**Change** on the **Model service** card, and enter your own Claude API key and
+model name. Keep the key out of chat, screenshots, release archives, and shell
+history. App opening and note creation run locally; research and delivery
+planning require Claude. OpenAI or a compatible HTTPS model can be selected for
+bounded UI interpretation.
+
+Start with **Open Settings** in the text field and tap **Start**. Then try
+**Create note: BeanBao test note** or **Search Maps for Golden Gate Bridge**.
+Enable **Quick launch** in BeanBao if you want the Volume Down shortcut.
+
+For model settings, voice setup, Sessions, recovery, and the food-delivery
+review flow, follow the [complete installation and configuration guide](docs/install-and-configure.md).
+
+## Build from source
+
+On macOS, install Xcode, Swift, Python 3, and a
+[RootHide-compatible Theos checkout](https://github.com/roothide/Developer).
+Set `THEOS` to that checkout. The build runs the native, Python, browser, and
+Swift Harness checks before auditing and packaging four RootHide `.deb` files:
+
+```sh
+git clone https://github.com/everettjf/beanbao.git
+cd beanbao
+THEOS=/absolute/path/to/roothide-theos ./scripts/build_packages.sh
+python3 scripts/prepare_release_bundle.py
+```
+
+The archives appear in ignored `dist/`. The package build requires the RootHide
+Theos toolchain; stock Theos or rootless packages are not interchangeable with
+this `iphoneos-arm64e` release. See [build and device tests](docs/build-and-test.md).
+
+## How it is put together
+
+| Directory | Purpose |
+| --- | --- |
+| `bridge/` | Restricted SpringBoard observation, input actions, and voice overlay. |
+| `agent-native/` and `harness/` | On-device task service, model clients, policy, and resumable workflows. |
+| `app/` | BeanBao UI, Apple speech transcription, model settings, Sessions, Activity, and review screens. |
+| `delivery-browser/` | Separate sandboxed Uber Eats browser for the experimental delivery flow. |
+| `vendor/` | Pinned ios-mcp and PalminoHarnessKit source snapshots with their original notices. |
+| `scripts/` and `tests/` | Build, package audit, installer, and acceptance tooling. |
+| `web/` | Buildless GitHub Pages website. |
+
+The Bridge accepts one action per fresh observation and checks the unlocked
+state, foreground app, action bounds, and supported app list. Workflow records
+survive an Agent restart; uncertain external actions stop for review rather
+than being repeated. The Agent's private audit stores bounded event metadata,
+while saved **Sessions** also contain the original workflow request and
+artifacts. Model-assisted steps can send task text and selected screen content
+to the configured provider. See [UI and data details](docs/ui-and-activity.md).
+
+## Current limits and testing
+
+- A physical USB-disconnect text task and reboot recovery passed on the paired
+  phone. Text and spoken overlay tasks, Claude Maps search, a six-step research
+  workflow, and PDF preview also passed. See the [device test record](docs/build-and-test.md).
+- Apple Mail composition remains untested on a configured mail account; no
+  email was sent in acceptance testing.
+- Uber Eats required sign-in before a real checkout. The final order click and
+  order-history path have synthetic tests only; no real order was placed.
+- iOS 26 accessibility coordinates for some scrolling rows differ from the
+  visible screen. Arbitrary-app UI automation is not released.
+- This is a developer install, not a one-tap package source. First installation
+  on another phone still needs validation.
+
+## License and upstream code
+
+BeanBao-authored code is [Apache-2.0](LICENSE), copyright 2026 everettjf.
+Vendored code keeps its own licenses and notices; see [THIRD_PARTY.md](THIRD_PARTY.md)
+and [NOTICE](NOTICE). The ios-mcp snapshot is retained as source reference;
+BeanBao builds only selected files into its restricted Bridge.

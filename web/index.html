@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071a35">
+  <meta name="description" content="BeanBao is an open-source voice and text assistant for a jailbroken iPhone. Review a request, then let it handle bounded phone tasks and saved workflows.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="BeanBao — your iPhone, one request away">
+  <meta property="og:description" content="A voice and text assistant for a jailbroken iPhone. Built for clear actions, visible reviews, and recoverable workflows.">
+  <meta property="og:image" content="https://everettjf.github.io/beanbao/assets/beanbao-icon.png">
+  <title>BeanBao — your iPhone, one request away</title>
+  <link rel="icon" type="image/png" href="./assets/beanbao-icon.png">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./site.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="BeanBao home">
+        <img src="./assets/beanbao-icon.png" width="42" height="42" alt="">
+        <span>BeanBao<span class="brand-dot">.</span></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#how-it-works">How it works</a>
+        <a href="#capabilities">What it can do</a>
+        <a href="#install">Install</a>
+        <a class="nav-github" href="https://github.com/everettjf/beanbao">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+      <a class="header-cta" href="#install">Get started <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="status-dot"></span> Open source · RootHide release candidate</p>
+          <h1 id="hero-title">Your iPhone,<br><em>one request away.</em></h1>
+          <p class="hero-lede">Say it. Review it. Let BeanBao do it. A small assistant for real phone tasks, with the controls and the result always in view.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#install">Install BeanBao <span aria-hidden="true">↗</span></a>
+            <a class="button button-secondary" href="https://github.com/everettjf/beanbao">Explore the code <span aria-hidden="true">↗</span></a>
+          </div>
+          <div class="hero-proof" aria-label="Release facts">
+            <div><strong>01</strong><span>tested iPhone</span></div>
+            <div><strong>04</strong><span>RootHide packages</span></div>
+            <div><strong>∞</strong><span>room to build</span></div>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-label="Illustration of the BeanBao voice overlay on an iPhone">
+          <div class="orbit orbit-one" aria-hidden="true"></div>
+          <div class="orbit orbit-two" aria-hidden="true"></div>
+          <div class="float-card float-card-left" aria-hidden="true"><span class="mini-icon">✦</span><span>Task complete<br><small>Settings is open</small></span></div>
+          <div class="float-card float-card-right" aria-hidden="true"><span class="mini-icon">↗</span><span>On your phone<br><small>Even without USB</small></span></div>
+          <div class="phone">
+            <div class="phone-inner">
+              <div class="phone-status"><span>9:41</span><span class="dynamic-island"></span><span>●●● ▰</span></div>
+              <div class="phone-screen">
+                <div class="phone-topline"><span>‹</span><span>Maps</span><span>•••</span></div>
+                <div class="map-art" aria-hidden="true">
+                  <span class="map-road road-a"></span><span class="map-road road-b"></span><span class="map-road road-c"></span>
+                  <span class="map-water"></span><span class="map-pin">●</span>
+                </div>
+                <div class="overlay-card">
+                  <div class="overlay-head"><span class="overlay-spark">✦</span><strong>BeanBao</strong><span class="overlay-close">×</span></div>
+                  <div class="listening"><span class="pulse"></span> Listening…</div>
+                  <div class="waveform" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                  <div class="transcript">“Find the California Academy of Sciences in Maps”</div>
+                  <div class="overlay-button">Stop recording</div>
+                </div>
+              </div>
+              <div class="home-indicator"></div>
+            </div>
+          </div>
+          <span class="visual-note">Interface illustration</span>
+        </div>
+      </section>
+
+      <section class="trust-strip" aria-label="Product principles">
+        <div><span class="strip-symbol">◎</span><span>Runs on a jailbroken iPhone</span></div>
+        <div><span class="strip-symbol">◇</span><span>Review before sensitive actions</span></div>
+        <div><span class="strip-symbol">↺</span><span>Saved workflow progress</span></div>
+        <div><span class="strip-symbol">⌁</span><span>Source you can inspect</span></div>
+      </section>
+
+      <section class="section intro-section" id="how-it-works" aria-labelledby="how-title">
+        <div class="section-heading">
+          <p class="section-kicker">01 / THE IDEA</p>
+          <h2 id="how-title">Less tapping.<br><em>More done.</em></h2>
+          <p>BeanBao turns a typed or spoken request into a small, checked sequence. It looks at the current phone state, acts inside supported apps, and reports what actually happened.</p>
+        </div>
+        <div class="process-grid">
+          <article class="process-card"><span class="step-number">01</span><div class="process-icon">◉</div><h3>Ask naturally</h3><p>Type a request or triple press Volume Down to start speech input over the app you are using.</p></article>
+          <article class="process-card"><span class="step-number">02</span><div class="process-icon">⌕</div><h3>Review the words</h3><p>See the transcript and confirm the task before it runs. The quick shortcut is optional.</p></article>
+          <article class="process-card"><span class="step-number">03</span><div class="process-icon">↗</div><h3>Watch it work</h3><p>BeanBao checks the foreground app and fresh screen state before each supported action.</p></article>
+          <article class="process-card"><span class="step-number">04</span><div class="process-icon">▤</div><h3>Pick up later</h3><p>Research and review workflows keep their steps and files in Sessions across Agent restarts.</p></article>
+        </div>
+      </section>
+
+      <section class="section capabilities-section" id="capabilities" aria-labelledby="capabilities-title">
+        <div class="section-heading compact-heading">
+          <p class="section-kicker">02 / WHAT WORKS TODAY</p>
+          <h2 id="capabilities-title">Useful, with <em>clear edges.</em></h2>
+          <p>Start with everyday actions. Move into multi-step work when you need a result you can inspect.</p>
+        </div>
+        <div class="capability-grid">
+          <article class="capability-card card-large">
+            <div class="card-top"><span class="card-glyph">✳</span><span class="card-tag">TEXT + VOICE</span></div>
+            <h3>Phone basics, handled.</h3>
+            <p>Open Settings, Maps, Contacts, or Notes. Create a new note. Search Maps for a place and verify the result.</p>
+            <div class="example-command"><span class="prompt-mark">›</span> Search Maps for Golden Gate Bridge</div>
+          </article>
+          <article class="capability-card card-accent">
+            <div class="card-top"><span class="card-glyph">▧</span><span class="card-tag">SAVED WORKFLOWS</span></div>
+            <h3>Research that becomes a document.</h3>
+            <p>Gather sources, compose a report, and open a PDF from Sessions. Prepare an addressed mail draft for your review.</p>
+            <div class="artifact-stack" aria-hidden="true"><span>01 · Search sources</span><span>02 · Write report</span><span>03 · Open PDF</span></div>
+          </article>
+          <article class="capability-card">
+            <div class="card-top"><span class="card-glyph">◫</span><span class="card-tag">USER REVIEW</span></div>
+            <h3>Find an app, then choose.</h3>
+            <p>BeanBao finds an App Store listing and shows its identity and price. You decide whether to install it.</p>
+          </article>
+          <article class="capability-card">
+            <div class="card-top"><span class="card-glyph">◌</span><span class="card-tag">EXPERIMENTAL</span></div>
+            <h3>A careful path to delivery.</h3>
+            <p>The separate browser can find an Uber Eats item and review a cart. Real checkout has not been verified.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section install-section" id="install" aria-labelledby="install-title">
+        <div class="install-copy">
+          <p class="section-kicker">03 / GET STARTED</p>
+          <h2 id="install-title">From release to <em>first request.</em></h2>
+          <p>This is a developer install for an already jailbroken RootHide phone. The tested device is an iPhone 11 on iOS 26.0.1 with Relaxin 0.5.5; other combinations need their own validation.</p>
+          <div class="requirements"><span>RootHide</span><span>iphoneos-arm64e</span><span>Root shell or paired SSH</span></div>
+          <a class="text-link" href="https://github.com/everettjf/beanbao/blob/main/docs/install-and-configure.md">Read the full installation guide <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="install-steps">
+          <div class="install-step"><span class="install-number">01</span><div><h3>Download and verify</h3><p>Get the `.tar` archive from a published <a href="https://github.com/everettjf/beanbao/releases">GitHub release</a>. Compare its SHA-256 with the release notes before transfer.</p></div></div>
+          <div class="install-step"><span class="install-number">02</span><div><h3>Run the installer</h3><p>Transfer the archive to the phone. In a root shell, extract it, run the dry run, then install.</p>
+            <div class="code-box"><div class="code-title"><span>On the iPhone · root shell</span><button type="button" data-copy-target="install-code" aria-label="Copy install commands">Copy</button></div><pre id="install-code"><code>mkdir -p beanbao-release
+tar -xf RELEASE.tar -C beanbao-release
+cd beanbao-release
+sh install.sh --dry-run
+sh install.sh</code></pre></div>
+            <p class="step-note">Replace <code>RELEASE.tar</code> with the exact filename you transferred.</p>
+          </div></div>
+          <div class="install-step"><span class="install-number">03</span><div><h3>Activate and configure</h3><p>Reload SpringBoard once after installing Bridge, unlock, then open BeanBao. Enter your own Claude key in Model service and try <strong>Open Settings</strong>.</p></div></div>
+        </div>
+      </section>
+
+      <section class="boundary-section" aria-labelledby="boundary-title">
+        <div class="boundary-mark">✦</div>
+        <div><p class="section-kicker">BUILT TO STOP AND ASK</p><h2 id="boundary-title">You stay in control<br>of the consequential steps.</h2><p>App installation happens in the App Store. Email sending happens in Apple Mail. A delivery order requires an explicit checkout review and final tap. If an external action is uncertain, BeanBao pauses for reconciliation instead of replaying it.</p></div>
+        <a href="https://github.com/everettjf/beanbao/blob/main/docs/complex-workflows.md">Explore workflow limits <span aria-hidden="true">↗</span></a>
+      </section>
+
+      <section class="section source-section" aria-labelledby="source-title">
+        <div><p class="section-kicker">04 / OPEN SOURCE</p><h2 id="source-title">Built in the open.<br><em>Honest about the edges.</em></h2></div>
+        <div><p>BeanBao-authored code is Apache-2.0. The ios-mcp and PalminoHarnessKit source snapshots retain their own licenses and notices. The current release candidate has passed package checks and one-device acceptance, with a clear record of what still needs testing.</p><div class="source-links"><a href="https://github.com/everettjf/beanbao">Browse source ↗</a><a href="https://github.com/everettjf/beanbao/blob/main/docs/build-and-test.md">Read the test record ↗</a><a href="https://github.com/everettjf/beanbao/blob/main/THIRD_PARTY.md">See upstream credits ↗</a></div></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand"><img src="./assets/beanbao-icon.png" width="38" height="38" alt=""><span>BeanBao.</span></div>
+      <p>Made for a more capable, more inspectable iPhone.</p>
+      <div class="footer-links"><a href="https://github.com/everettjf/beanbao/blob/main/LICENSE">Apache-2.0</a><a href="https://github.com/everettjf/beanbao/releases">Releases</a><a href="https://github.com/everettjf/beanbao/blob/main/docs/install-and-configure.md">Docs</a></div>
+      <small>Developer release candidate · One tested device · No unattended purchases</small>
+    </footer>
+  </div>
+  <div id="copy-status" class="sr-only" role="status" aria-live="polite"></div>
+</body>
+</html>

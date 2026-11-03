@@ -1,0 +1,10 @@
+BeanBao
+Copyright 2026 everettjf
+
+BeanBao-authored source is licensed under the Apache License, Version 2.0.
+The complete license text is in LICENSE.
+
+This repository also contains third-party source snapshots. Their original
+licenses, copyright notices, and attribution files remain in their vendor
+directories. See THIRD_PARTY.md for the source revisions and scope used by
+BeanBao. A top-level license does not replace those upstream notices.

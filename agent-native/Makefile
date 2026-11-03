@@ -1,4 +1,4 @@
-THEOS ?= /Users/xnu/sec/jailbreak/toolchains/theos-roothide
+THEOS ?= $(HOME)/theos
 THEOS_PACKAGE_SCHEME = roothide
 TARGET = iphone:clang:latest:17.0
 ARCHS = arm64e

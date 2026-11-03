@@ -1,6 +1,6 @@
 # Palmino Harness reuse in BeanBao
 
-Assessed October 30, 2026; updated November 2. Source baseline: `/Users/xnu/products/appstore/palmino` at `8a70981` and PalminoHarnessKit `v2.0.0`. Earlier detailed Chinese-language assessment notes remain in Git history through commit `b55e882`.
+Assessed October 30, 2026; updated November 2. Source baseline: [Palmino](https://github.com/everettjf/palmino) at `8a70981` and PalminoHarnessKit `v2.0.0`. Earlier detailed Chinese-language assessment notes remain in Git history through commit `b55e882`.
 
 ## Decision
 
