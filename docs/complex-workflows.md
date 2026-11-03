@@ -18,6 +18,8 @@ The existing UI task path interprets a request as one canonical action. It can o
 
 On the tested iOS 26 phone, direct accessibility coordinates for scroll content can be offset from the rendered screen. The error appeared in both BeanBao Sessions and system Settings; a Settings comparison of three controls against screenshot OCR found a consistent 154–156 point vertical offset. The current Maps adapter corroborates shifted result rows with OCR, and the saved-workflow test selects by workflow ID. General UI-tree-driven tapping across arbitrary apps needs coordinate calibration or screenshot-backed verification before it is enabled.
 
+The compact ios-mcp AX serializer currently emits the center of the reported frame as `tap` and converts only interface orientation. Its screen hit-test samples are not returned as point evidence. A reversible Settings trial confirmed that the OCR point for **General** opens the intended page and returns cleanly, while the AX point is 155 points higher. A general adapter should expose point provenance, require unique text or visual corroboration for a proposed tap, and stop when screen geometry cannot be reconciled; applying one global offset to every element would also shift fixed navigation controls that are already correct.
+
 ## Proposed execution model
 
 Use a workflow coordinator in the mobile-owned Agent. The model may propose a typed plan and select the next available tool, while the coordinator owns execution, authorization, evidence, and persistence. Keep the SpringBoard Bridge limited to foreground observation and UI interaction. Put network research, artifact creation, and mail composition in dedicated Agent/App components instead of widening the Bridge into a general-purpose process runner.

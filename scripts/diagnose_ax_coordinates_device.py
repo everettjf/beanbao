@@ -10,6 +10,7 @@ import argparse
 import json
 import statistics
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
@@ -27,6 +28,8 @@ def main() -> int:
     parser.add_argument("--known-hosts", type=Path, required=True)
     parser.add_argument("--require-aligned", action="store_true",
                         help="fail if AX and OCR points differ by more than 20 screen points")
+    parser.add_argument("--verify-ocr-tap", action="store_true",
+                        help="open General at its OCR point, then return to Settings")
     args = parser.parse_args()
 
     bridge = SSHBridgeClient(args.host, args.identity, args.port, args.known_hosts)
@@ -50,9 +53,33 @@ def main() -> int:
     median = round(statistics.median(offsets.values()))
     aligned = all(abs(delta) <= 20 for delta in offsets.values())
     consistent = all(abs(delta - median) <= 20 for delta in offsets.values())
-    print(json.dumps({"bundle_id": "com.apple.Preferences", "offset_y_by_label": offsets,
-                      "median_offset_y": median, "aligned": aligned,
-                      "consistent_translation": consistent}, sort_keys=True))
+    result = {"bundle_id": "com.apple.Preferences", "offset_y_by_label": offsets,
+              "median_offset_y": median, "aligned": aligned,
+              "consistent_translation": consistent}
+    if args.verify_ocr_tap:
+        if "General" not in ocr:
+            raise RuntimeError("OCR did not find General")
+        try:
+            tapped = bridge.act(screen["observation_id"],
+                                {"action": "tap", **ocr["General"]})
+            if tapped.get("ok") is not True:
+                raise RuntimeError("OCR tap was rejected")
+            time.sleep(.5)
+            opened = bridge.observe(ui=True)
+            if not any(e.get("text") == "About" for e in opened.get("ui", {}).get("elements", [])):
+                raise RuntimeError("General did not open at the OCR point")
+            result["ocr_tap_verified"] = True
+        finally:
+            current = bridge.observe(ui=True)
+            back = next((e for e in current.get("ui", {}).get("elements", [])
+                         if e.get("text") == "Settings" and isinstance(e.get("tap"), dict)), None)
+            if back:
+                bridge.act(current["observation_id"], {"action": "tap", **back["tap"]})
+            time.sleep(.4)
+            restored = bridge.observe(ui=True)
+            if not any(e.get("text") == "General" for e in restored.get("ui", {}).get("elements", [])):
+                raise RuntimeError("Settings top level was not restored")
+    print(json.dumps(result, sort_keys=True))
     return 0 if aligned or not args.require_aligned else 1
 
 
