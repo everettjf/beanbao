@@ -55,6 +55,8 @@ public struct BeanBaoWorkflowRecord: Codable, Sendable {
     public var checkpoint: PHKAgentCheckpoint?
     public var operations: [String: BeanBaoWorkflowOperation]
     public var sources: [BeanBaoResearchSource]
+    public var mailQueuedAt: Date?
+    public var installedAppBundleID: String?
     public var updatedAt: Date
 
     public var hasUnresolvedMutation: Bool {
@@ -71,6 +73,8 @@ public struct BeanBaoWorkflowRecord: Codable, Sendable {
         self.checkpoint = nil
         self.operations = [:]
         self.sources = []
+        self.mailQueuedAt = nil
+        self.installedAppBundleID = nil
         self.updatedAt = Date()
     }
 }
@@ -114,6 +118,35 @@ public actor BeanBaoWorkflowStore: PHKExecutionCheckpointPersisting {
 
     public func setPhase(_ phase: BeanBaoWorkflowPhase) throws {
         try mutate { $0.phase = phase }
+    }
+
+    public func markMailQueued() throws {
+        try mutate {
+            guard $0.phase == .waitingForUser, !$0.hasUnresolvedMutation,
+                  $0.operations.values.contains(where: {
+                      $0.tool == "mail_prepare" && $0.state == .completed
+                  }) else { throw BeanBaoWorkflowError.completionUnverified }
+            $0.mailQueuedAt = Date()
+            let appPending = $0.operations.values.contains(where: {
+                $0.tool == "app_prepare" && $0.state == .completed
+            }) && $0.installedAppBundleID == nil
+            $0.phase = appPending ? .waitingForUser : .completed
+        }
+    }
+
+    public func markAppInstalled(bundleID: String) throws {
+        try mutate {
+            guard $0.phase == .waitingForUser, !$0.hasUnresolvedMutation,
+                  !bundleID.isEmpty,
+                  $0.operations.values.contains(where: {
+                      $0.tool == "app_prepare" && $0.state == .completed
+                  }) else { throw BeanBaoWorkflowError.completionUnverified }
+            $0.installedAppBundleID = bundleID
+            let mailPending = $0.operations.values.contains(where: {
+                $0.tool == "mail_prepare" && $0.state == .completed
+            }) && $0.mailQueuedAt == nil
+            $0.phase = mailPending ? .waitingForUser : .completed
+        }
     }
 
     public func addSources(_ values: [BeanBaoResearchSource]) throws {

@@ -107,9 +107,17 @@ int main(void) {
                    "research plus app lookup enters the composite route, not PDF-only") ||
             !Check(!BBResearchAppCandidate(@"Research iOS speech, create a PDF, and find app Pages and Numbers") &&
                    !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and find app Pages, then order lunch") &&
-                   !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and email it to test@example.com, then find app Pages") &&
-                   !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and send it to test@example.com, then find app Pages"),
-                   "composite route rejects multiple app targets and unrelated actions") ||
+                   !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and email it, then find app Pages") &&
+                   !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and send a message to test@example.com, then find app Pages"),
+                   "composite route rejects multiple targets and unaddressed or unrelated actions") ||
+            !Check(BBResearchAppCandidate(@"Research iOS speech, create a PDF, and prepare an email to test@example.com, then find app Pages") &&
+                   BBResearchAppCandidate(@"Research iOS speech, create a PDF, and send it to test@example.com, then find app Pages"),
+                   "addressed mail draft and app lookup share the research workflow") ||
+            !Check([BBWorkflowKind(@"test", @{@"request":
+                    @"Research iOS speech, create a PDF, and prepare an email to test@example.com, then find app Pages",
+                    @"operations": @{@"mail": @{@"tool": @"mail_prepare", @"state": @"completed"}}})
+                    isEqualToString:@"research_mail_app"],
+                   "Sessions identifies a combined mail and app workflow") ||
             !Check(!BBResearchPDFCandidate(@"Compare speech APIs, make a PDF, and send a message to test@example.com") &&
                    BBResolvedTask(@"Compare speech APIs, make a PDF, and send a message to test@example.com",
                                   researchChoice) == nil,

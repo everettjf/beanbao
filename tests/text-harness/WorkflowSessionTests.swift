@@ -184,6 +184,39 @@ final class WorkflowSessionTests: XCTestCase {
         XCTAssertEqual(completed.operations.values.filter { $0.state == .completed }.count, 1)
     }
 
+    func testMailAndAppReviewGatesCompleteOnlyAfterBothOutcomes() async throws {
+        for mailFirst in [true, false] {
+            let url = try location()
+            let store = try BeanBaoWorkflowStore(url: url,
+                request: "Research, create PDF, prepare email and find app")
+            _ = try await store.claim(key: "mail", tool: "mail_prepare", effect: .localMutation)
+            try await store.finish(key: "mail", result: .bool(true))
+            _ = try await store.claim(key: "app", tool: "app_prepare", effect: .localMutation)
+            try await store.finish(key: "app", result: .bool(true))
+            try await store.setPhase(.waitingForUser)
+            if mailFirst {
+                try await store.markMailQueued()
+                let pending = await store.snapshot()
+                XCTAssertEqual(pending.phase, .waitingForUser)
+                XCTAssertNotNil(pending.mailQueuedAt)
+                XCTAssertNil(pending.installedAppBundleID)
+                try await store.markAppInstalled(bundleID: "com.example.notes")
+            } else {
+                try await store.markAppInstalled(bundleID: "com.example.notes")
+                let pending = await store.snapshot()
+                XCTAssertEqual(pending.phase, .waitingForUser)
+                XCTAssertNil(pending.mailQueuedAt)
+                XCTAssertEqual(pending.installedAppBundleID, "com.example.notes")
+                try await store.markMailQueued()
+            }
+            let restored = try BeanBaoWorkflowStore(existingURL: url)
+            let done = await restored.snapshot()
+            XCTAssertEqual(done.phase, .completed)
+            XCTAssertNotNil(done.mailQueuedAt)
+            XCTAssertEqual(done.installedAppBundleID, "com.example.notes")
+        }
+    }
+
     func testPalminoRetriesInvalidReportArgumentsAndCompletesCleanly() async throws {
         let store = try BeanBaoWorkflowStore(url: location(), request: "Compose report")
         let counter = WorkflowCallCounter()

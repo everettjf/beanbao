@@ -66,13 +66,19 @@
     NSString *phase = item[@"phase"];
     NSString *status = [phase isEqualToString:@"completed"] ? @"Completed" :
         ([phase isEqualToString:@"waitingForUser"] ?
-            ([item[@"kind"] isEqualToString:@"research_app"] ? @"Review PDF and app listing" :
+            ([item[@"kind"] isEqualToString:@"research_mail_app"] ?
+                ([item[@"mail_queued"] boolValue] ? @"Review app listing" :
+                 ([item[@"app_installed"] boolValue] ? @"Review email draft" :
+                  @"Review PDF, email and app listing")) :
+             ([item[@"kind"] isEqualToString:@"research_app"] ? @"Review PDF and app listing" :
              ([item[@"kind"] isEqualToString:@"app_store"] ? @"Review app listing" :
-             ([item[@"kind"] isEqualToString:@"delivery"] ? @"Continue delivery" : @"Review email"))) :
+             ([item[@"kind"] isEqualToString:@"delivery"] ? @"Continue delivery" : @"Review email")))) :
          ([phase isEqualToString:@"needsReconciliation"] ?
             ([item[@"kind"] isEqualToString:@"delivery"] ? @"Review delivery action" :
-             ([@[@"app_store", @"research_app"] containsObject:item[@"kind"]] ?
-              @"Check app installation" : @"Check Mail")) :
+             ([item[@"kind"] isEqualToString:@"research_mail_app"] ?
+              @"Review email and app outcomes" :
+              ([@[@"app_store", @"research_app"] containsObject:item[@"kind"]] ?
+               @"Check app installation" : @"Check Mail"))) :
           ([phase isEqualToString:@"running"] ? @"Interrupted · Resume" : @"Resume")));
     cell.textLabel.text = item[@"request"];
     cell.textLabel.numberOfLines = 2;

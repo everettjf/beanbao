@@ -33,8 +33,18 @@ final class AppCatalogTests: XCTestCase {
             "Research iOS speech, create a PDF, and find app Pages and Numbers"))
         XCTAssertNil(BeanBaoCompositeRequest.appQuery(
             "Research iOS speech, create a PDF, and find app Pages, then order lunch"))
+        XCTAssertEqual(BeanBaoCompositeRequest.appQuery(
+            "Research iOS speech, create a PDF, and email it to test@example.com, then find app Pages"),
+            "Pages")
+        XCTAssertEqual(BeanBaoCompositeRequest.appQuery(
+            "Research speech-to-text APIs, create a PDF, email it to test@example.com, then find app Pages"),
+            "Pages")
         XCTAssertNil(BeanBaoCompositeRequest.appQuery(
-            "Research iOS speech, create a PDF, and email it to test@example.com, then find app Pages"))
+            "Research iOS speech, create a PDF, and email it, then find app Pages"))
+        XCTAssertNil(BeanBaoCompositeRequest.appQuery(
+            "Research iOS speech, create a PDF, and send a message to test@example.com, then find app Pages"))
+        XCTAssertNil(BeanBaoCompositeRequest.appQuery(
+            "Research iOS speech, create a PDF, and send a text to test@example.com, then find app Pages"))
     }
 
     func testCompositeInstallCompletionRequiresPDFAndPreparedListing() async throws {

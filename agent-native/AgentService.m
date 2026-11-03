@@ -139,9 +139,6 @@ BOOL BBResearchAppCandidate(NSString *task) {
         query.length >= 2 && query.length <= 80 &&
         [lowerQuery rangeOfString:@" and "].location == NSNotFound &&
         [lowerQuery rangeOfString:@" then "].location == NSNotFound &&
-        [lowerResearch rangeOfString:@"email"].location == NSNotFound &&
-        [lowerResearch rangeOfString:@"mail to"].location == NSNotFound &&
-        [lowerResearch rangeOfString:@"send"].location == NSNotFound &&
         BBResearchPDFCandidate(research);
 }
 
@@ -288,7 +285,15 @@ static NSString *BBWorkflowEffectivePhase(NSDictionary *record) {
 
 static NSString *BBWorkflowKind(NSString *identity, NSDictionary *record) {
     if (BBIsDeliveryRecord(record)) return @"delivery";
-    if (BBResearchAppCandidate(record[@"request"])) return @"research_app";
+    if (BBResearchAppCandidate(record[@"request"])) {
+        NSDictionary *operations = record[@"operations"];
+        for (NSDictionary *operation in operations.allValues)
+            if ([operation isKindOfClass:NSDictionary.class] &&
+                [operation[@"tool"] isEqualToString:@"mail_prepare"] &&
+                [operation[@"state"] isEqualToString:@"completed"])
+                return @"research_mail_app";
+        return @"research_app";
+    }
     return BBReadAppCandidate(identity) ? @"app_store" : @"research";
 }
 
@@ -319,6 +324,8 @@ static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
         NSString *kind = BBWorkflowKind(identity, record);
         [items addObject:@{@"id": identity, @"request": request, @"kind": kind,
                            @"phase": BBWorkflowEffectivePhase(record),
+                           @"mail_queued": @([record[@"mailQueuedAt"] isKindOfClass:NSNumber.class]),
+                           @"app_installed": @([record[@"installedAppBundleID"] isKindOfClass:NSString.class]),
                            @"updated_at": @([updated doubleValue] + 978307200.0)}];
     }
     [items sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
@@ -430,6 +437,8 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
     BOOL hasCandidate = BBPrivateWorkflowFile(candidatePath, 1, 16 * 1024);
     BOOL hasDelivery = BBIsDeliveryRecord(record);
     BOOL composite = BBResearchAppCandidate(record[@"request"]);
+    BOOL mailQueued = [record[@"mailQueuedAt"] isKindOfClass:NSNumber.class];
+    BOOL appInstalled = [record[@"installedAppBundleID"] isKindOfClass:NSString.class];
     BBState.app = hasDelivery ? @"DeliveryPlan" :
         (composite ? @"ResearchAppStoreReview" :
          (hasCandidate ? @"AppStoreReview" :
@@ -449,18 +458,26 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
     } else if ([phase isEqualToString:@"waitingForUser"] && hasDelivery) {
         BBState.phase = @"waiting_for_user";
         BBState.message = @"Open food delivery to continue";
+    } else if ([phase isEqualToString:@"waitingForUser"] && hasCandidate && hasDraft) {
+        BBState.phase = @"waiting_for_user";
+        BBState.mailDraftPath = mailQueued ? nil : draftPath;
+        BBState.appCandidatePath = appInstalled ? nil : candidatePath;
+        BBState.message = mailQueued ? @"Email queued; review the App Store listing" :
+            (appInstalled ? @"Selected app is installed; review the email draft" :
+             @"Review PDF, email draft and App Store listing");
     } else if ([phase isEqualToString:@"waitingForUser"] && hasCandidate) {
         BBState.phase = @"waiting_for_user";
         BBState.message = hasPDF ? @"Review PDF and App Store listing" : @"Review the App Store listing";
-        BBState.appCandidatePath = candidatePath;
+        BBState.appCandidatePath = appInstalled ? nil : candidatePath;
     } else if ([phase isEqualToString:@"waitingForUser"] && hasPDF && hasDraft) {
         BBState.phase = @"waiting_for_user";
         BBState.message = @"Review the email draft";
         BBState.mailDraftPath = draftPath;
     } else if ([phase isEqualToString:@"completed"] && hasCandidate) {
         BBState.phase = @"done";
-        BBState.message = hasPDF ? @"Research PDF available; selected app is installed" :
-            @"Selected app is installed";
+        BBState.message = mailQueued ? @"Research PDF available; email queued; selected app is installed" :
+            (hasPDF ? @"Research PDF available; selected app is installed" :
+             @"Selected app is installed");
     } else if ([phase isEqualToString:@"completed"] && hasPDF) {
         BBState.phase = @"done";
         BBState.message = @"Research PDF available";
@@ -670,15 +687,19 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
         BBState.reportPath = reportReady ?
             [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/report.pdf",
                                        BBState.taskID ?: @""] : nil;
-        BBState.mailDraftPath = succeeded && [resolvedApp isEqualToString:@"ResearchMailDraft"] ?
-            [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/mail-draft.json",
-                                       BBState.taskID ?: @""] : nil;
+        NSString *draftPath = [NSString stringWithFormat:
+            @"/var/mobile/Library/Application Support/BeanBao/workflows/%@/mail-draft.json",
+            BBState.taskID ?: @""];
+        BBState.mailDraftPath = succeeded &&
+            ([@[@"ResearchMailDraft", @"ResearchAppStoreReview"] containsObject:resolvedApp]) &&
+            BBPrivateWorkflowFile(draftPath, 1, 16 * 1024) ? draftPath : nil;
         BBState.appCandidatePath = succeeded &&
             ([@[@"AppStoreReview", @"ResearchAppStoreReview"] containsObject:resolvedApp]) ?
             [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/app-candidate.json",
                                        BBState.taskID ?: @""] : nil;
         BBState.message = stopped ? @"Task stopped" :
-            (succeeded ? completionMessage :
+            (succeeded ? (BBState.mailDraftPath && BBState.appCandidatePath ?
+                          @"Review PDF, email draft and App Store listing" : completionMessage) :
              (uncertain ? @"Workflow outcome needs review" : BBFailureMessage(summary)));
         auditAction = BBState.phase;
         auditResult = succeeded ? @"ok" : @"failed";
@@ -878,7 +899,7 @@ static NSDictionary *BBMailResult(NSDictionary *request) {
             ![serviceID isKindOfClass:NSString.class] ||
             ![taskID isEqualToString:BBState.taskID] ||
             ![serviceID isEqualToString:BBState.serviceID] ||
-            ![BBState.app isEqualToString:@"ResearchMailDraft"] ||
+            !([@[@"ResearchMailDraft", @"ResearchAppStoreReview"] containsObject:BBState.app]) ||
             ![BBState.mailDraftPath isKindOfClass:NSString.class] ||
             ![BBState.phase isEqualToString:@"waiting_for_user"] ||
             ![@[@"sent", @"cancelled", @"failed"] containsObject:result])
@@ -891,10 +912,15 @@ static NSDictionary *BBMailResult(NSDictionary *request) {
                 BBAudit(@"task", @"ResearchMailDraft", @"needs_reconciliation", @"record_failed");
                 return BBStatus();
             }
-            BBState.phase = @"done";
-            BBState.message = @"Email queued in Mail";
+            BOOL appPending = [BBWorkflowEffectivePhase(BBReadWorkflowRecord(taskID))
+                isEqualToString:@"waitingForUser"];
+            BBState.phase = appPending ? @"waiting_for_user" : @"done";
+            BBState.message = appPending ? @"Email queued in Mail; review the App Store listing" :
+                ([BBState.app isEqualToString:@"ResearchAppStoreReview"] ?
+                 @"Email queued in Mail; selected app is installed" :
+                 @"Email queued in Mail");
             BBState.mailDraftPath = nil;
-            BBAudit(@"task", @"ResearchMailDraft", @"done", @"queued");
+            BBAudit(@"task", BBState.app, BBState.phase, @"queued");
         } else {
             BBState.message = [result isEqualToString:@"cancelled"] ?
                 @"Email draft saved for review" : @"Mail could not queue the message";
@@ -931,11 +957,14 @@ static NSDictionary *BBVerifyAppInstall(NSDictionary *request) {
             BBAudit(@"task", @"AppStoreReview", @"needs_reconciliation", @"record_failed");
             return BBStatus();
         }
-        BBState.phase = @"done";
-        BBState.message = [BBState.app isEqualToString:@"ResearchAppStoreReview"] ?
-            @"Research PDF available; selected app is installed" : @"Selected app is installed";
+        BOOL mailPending = [BBWorkflowEffectivePhase(BBReadWorkflowRecord(taskID))
+            isEqualToString:@"waitingForUser"];
+        BBState.phase = mailPending ? @"waiting_for_user" : @"done";
+        BBState.message = mailPending ? @"Selected app is installed; review the email draft" :
+            ([BBState.app isEqualToString:@"ResearchAppStoreReview"] ?
+             @"Research PDF available; selected app is installed" : @"Selected app is installed");
         BBState.appCandidatePath = nil;
-        BBAudit(@"task", @"AppStoreReview", @"done", @"installed");
+        BBAudit(@"task", BBState.app, BBState.phase, @"installed");
         NSMutableDictionary *status = [BBStatus() mutableCopy];
         status[@"installed"] = @YES;
         return status;

@@ -58,6 +58,52 @@ private actor SearchCounter {
     func value() -> Int { count }
 }
 
+private struct ScriptedResearchAppMailPlanner: PHKModelClient {
+    let sourceURL: String
+
+    func stream(request: PHKCompletionRequest) -> AsyncThrowingStream<PHKModelEvent, Error> {
+        let completed = request.messages.filter { $0.role == .tool }.count
+        return AsyncThrowingStream { continuation in
+            let name: String
+            let arguments: String
+            switch completed {
+            case 0:
+                name = "web_search"
+                arguments = "{\"query\":\"iOS speech recognition APIs\"}"
+            case 1:
+                name = "report_compose"
+                let report: [String: Any] = ["title": "iOS speech research",
+                    "sections": [["heading": "Overview", "paragraphs": [[
+                        "text": "Apple documents speech transcription APIs.",
+                        "source_urls": [sourceURL]]]]]]
+                arguments = String(decoding: try! JSONSerialization.data(withJSONObject: report),
+                                   as: UTF8.self)
+            case 2:
+                name = "pdf_render"
+                arguments = "{}"
+            case 3:
+                name = "mail_prepare"
+                arguments = "{\"recipient\":\"test@example.com\",\"subject\":\"Speech report\",\"body\":\"Please review the attached report.\"}"
+            case 4:
+                name = "app_lookup"
+                arguments = "{\"query\":\"Example Notes\"}"
+            case 5:
+                name = "app_prepare"
+                arguments = "{\"product_id\":123456789}"
+            default:
+                continuation.yield(.contentDelta("All three outputs are ready for review."))
+                continuation.yield(.completed(.stop))
+                continuation.finish()
+                return
+            }
+            continuation.yield(.toolCallDelta(.init(index: 0, id: "triple-\(completed)",
+                                                    name: name, arguments: arguments)))
+            continuation.yield(.completed(.toolCalls))
+            continuation.finish()
+        }
+    }
+}
+
 final class ResearchWorkflowTests: XCTestCase {
     private let sourceURL = "https://developer.apple.com/documentation/speech"
     private let request = "Research iOS speech recognition, create a PDF and email it to test@example.com"
@@ -167,5 +213,72 @@ final class ResearchWorkflowTests: XCTestCase {
         XCTAssertEqual(after.operations.count, 4)
         let searches = await counter.value()
         XCTAssertEqual(searches, 1)
+    }
+
+    func testPalminoCreatesPDFDraftAndAppListingInOneSession() async throws {
+        let (folder, url) = try fixture()
+        let request = "Research iOS speech, create a PDF, prepare an email to test@example.com, then find app Example Notes"
+        XCTAssertEqual(BeanBaoCompositeRequest.appQuery(request), "Example Notes")
+        let store = try BeanBaoWorkflowStore(url: url, request: request)
+        let evidence = BeanBaoResearchEvidence(store: store)
+        let response = try searchResponse()
+        let webClient = BeanBaoClaudeWebSearch(model: "claude-test", apiKey: "placeholder") { _ in
+            (response, 200)
+        }
+        let search = BeanBaoWebSearchTool(client: webClient, evidence: evidence)
+        let reportURL = folder.appendingPathComponent("report.json")
+        let pdfURL = folder.appendingPathComponent("report.pdf")
+        let draftURL = folder.appendingPathComponent("mail-draft.json")
+        let candidateURL = folder.appendingPathComponent("app-candidate.json")
+        let compose = BeanBaoReportComposeTool(evidence: evidence, reportURL: reportURL)
+        let pdf = BeanBaoPDFRenderTool(reportURL: reportURL, pdfURL: pdfURL)
+        let mail = BeanBaoMailDraftTool(request: request, pdfURL: pdfURL, draftURL: draftURL)
+        let catalogResponse = try JSONSerialization.data(withJSONObject: ["results": [[
+            "wrapperType": "software", "trackId": 123456789,
+            "trackName": "Example Notes", "artistName": "Example Studio",
+            "bundleId": "com.example.notes", "price": 0, "currency": "USD"
+        ]]])
+        let catalog = try BeanBaoAppCatalogEvidence(
+            storeURL: folder.appendingPathComponent("app-search.json"))
+        let lookup = BeanBaoAppSearchTool(client: BeanBaoAppCatalogClient(country: "US") { _ in
+            (catalogResponse, 200)
+        }, evidence: catalog)
+        let prepare = BeanBaoAppPrepareTool(evidence: catalog, outputURL: candidateURL)
+        let tools: [any PHKNativeTool] = [
+            BeanBaoGuardedWorkflowTool(definition: search.definition, effect: .readOnly,
+                                       store: store, operation: search.execute),
+            BeanBaoGuardedWorkflowTool(definition: compose.definition, effect: .localMutation,
+                                       store: store, operation: compose.execute),
+            BeanBaoGuardedWorkflowTool(definition: pdf.definition, effect: .localMutation,
+                                       store: store, operation: pdf.execute),
+            BeanBaoGuardedWorkflowTool(definition: mail.definition, effect: .localMutation,
+                                       store: store, operation: mail.execute),
+            BeanBaoGuardedWorkflowTool(definition: lookup.definition, effect: .readOnly,
+                                       store: store, operation: lookup.execute),
+            BeanBaoGuardedWorkflowTool(definition: prepare.definition, effect: .localMutation,
+                                       store: store, operation: prepare.execute)
+        ]
+        let session = await BeanBaoWorkflowSession(store: store,
+            client: ScriptedResearchAppMailPlanner(sourceURL: sourceURL),
+            model: "scripted", systemPrompt: "Create all three outputs", tools: tools,
+            completionCheck: {
+                (try? BeanBaoMailDraftTool.readDraft(at: draftURL)) != nil &&
+                (try? BeanBaoAppPrepareTool.read(at: candidateURL)) != nil &&
+                (try? Data(contentsOf: pdfURL)).flatMap(PDFDocument.init(data:))?.pageCount ?? 0 > 0
+            }, successPhase: .waitingForUser)
+        _ = try await session.run(request)
+        let saved = await store.snapshot()
+        XCTAssertEqual(saved.phase, .waitingForUser)
+        XCTAssertEqual(saved.operations.values.filter { $0.state == .completed }.count, 6)
+        XCTAssertEqual(try BeanBaoMailDraftTool.readDraft(at: draftURL).recipient,
+                       "test@example.com")
+        XCTAssertEqual(try BeanBaoAppPrepareTool.read(at: candidateURL).bundleID,
+                       "com.example.notes")
+        try await store.markAppInstalled(bundleID: "com.example.notes")
+        let waiting = await store.snapshot()
+        XCTAssertEqual(waiting.phase, .waitingForUser)
+        try await store.markMailQueued()
+        let done = await store.snapshot()
+        XCTAssertEqual(done.phase, .completed)
     }
 }

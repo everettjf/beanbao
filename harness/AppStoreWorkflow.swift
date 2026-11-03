@@ -37,7 +37,7 @@ public func BBMarkAppStoreInstalled(_ idPointer: UnsafePointer<CChar>?,
                 done.signal()
                 return
             }
-            try await store.setPhase(.completed)
+            try await store.markAppInstalled(bundleID: bundle)
             result.set(true)
         } catch { }
         done.signal()

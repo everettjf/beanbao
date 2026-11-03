@@ -35,7 +35,7 @@ public func BBMarkResearchMailQueued(_ idPointer: UnsafePointer<CChar>?) -> Int3
                 semaphore.signal()
                 return
             }
-            try await store.setPhase(.completed)
+            try await store.markMailQueued()
             result.set(true)
         } catch { }
         semaphore.signal()
@@ -53,7 +53,10 @@ public func BBRunHarnessResearch(_ taskPointer: UnsafePointer<CChar>?,
     let task = String(cString: taskPointer)
     let mailRequested = !BeanBaoMailDraftTool.requestRecipients(task).isEmpty
     let appQuery = BeanBaoCompositeRequest.appQuery(task)
-    guard !(mailRequested && appQuery != nil) else { return 2 }
+    if task.range(of: #"\b(?:and|then)\s+find\s+(?:the\s+)?app\b"#,
+                  options: [.regularExpression, .caseInsensitive]) != nil && appQuery == nil {
+        return 2
+    }
     let configData = Data(String(cString: configPointer).utf8)
     guard let config = try? JSONSerialization.jsonObject(with: configData) as? [String: String],
           let model = config["model"], let key = config["key"],
@@ -72,8 +75,9 @@ public func BBRunHarnessResearch(_ taskPointer: UnsafePointer<CChar>?,
     }
     fputs(appQuery != nil ? "BB_INTENT=ResearchAppStoreReview\n" :
           (mailRequested ? "BB_INTENT=ResearchMailDraft\n" : "BB_INTENT=ResearchPDF\n"), stdout)
-    fputs(appQuery != nil ? "PDF report and App Store listing ready for review\n" :
-          (mailRequested ? "PDF report and email draft created\n" : "PDF report created\n"), stdout)
+    fputs(mailRequested && appQuery != nil ? "Review PDF, email draft and App Store listing\n" :
+          (appQuery != nil ? "PDF report and App Store listing ready for review\n" :
+          (mailRequested ? "PDF report and email draft created\n" : "PDF report created\n")), stdout)
     return 0
 }
 
@@ -144,6 +148,12 @@ private func runResearchWorkflow(task: String, id: UUID, model: String,
         store: store, client: BeanBaoClaudeWorkflowClient(apiKey: key),
         model: model, systemPrompt: system, tools: tools,
         completionCheck: {
+            let receipt = await store.snapshot()
+            guard receipt.operations.values.contains(where: {
+                $0.tool == "report_compose" && $0.state == .completed
+            }), receipt.operations.values.contains(where: {
+                $0.tool == "pdf_render" && $0.state == .completed
+            }) else { return false }
             guard let document = try? BeanBaoReportComposeTool.readReport(at: reportURL),
                   !document.sources.isEmpty,
                   let data = try? BeanBaoWorkflowStore.readPrivateFile(pdfURL),
@@ -151,6 +161,9 @@ private func runResearchWorkflow(task: String, id: UUID, model: String,
                   let pdf = CGPDFDocument(provider), pdf.numberOfPages > 0 else { return false }
             if mailRequested {
                 guard let draft = try? BeanBaoMailDraftTool.readDraft(at: draftURL),
+                      receipt.operations.values.contains(where: {
+                          $0.tool == "mail_prepare" && $0.state == .completed
+                      }),
                       BeanBaoMailDraftTool.requestRecipients(task)
                         .contains(draft.recipient.lowercased()) else { return false }
             }
@@ -158,15 +171,15 @@ private func runResearchWorkflow(task: String, id: UUID, model: String,
                 guard let candidate = try? BeanBaoAppPrepareTool.read(at: candidateURL),
                       candidate.productID > 0,
                       candidate.bundleID.count >= 3,
-                      await store.snapshot().operations.values.contains(where: {
+                      receipt.operations.values.contains(where: {
                           $0.tool == "app_prepare" && $0.state == .completed
                       }) else { return false }
             }
             return true
         },
         successPhase: mailRequested || appQuery != nil ? .waitingForUser : .completed,
-        budget: .init(maximumSteps: appQuery != nil ? 20 : 16,
-                      maximumToolCalls: appQuery != nil ? 16 : 12,
+        budget: .init(maximumSteps: appQuery != nil ? 24 : 16,
+                      maximumToolCalls: appQuery != nil ? 20 : 12,
                       maximumModelRequestDuration: .seconds(120),
                       maximumToolDuration: .seconds(420), maximumDuration: .seconds(900)))
     if saved.checkpoint == nil {

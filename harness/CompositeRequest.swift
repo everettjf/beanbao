@@ -1,8 +1,7 @@
 import Foundation
 
-/// The first cross-domain route deliberately has an explicit boundary: one
-/// research PDF followed by one App Store listing for review. The original
-/// request is kept as the session identity and is never shortened to one task.
+/// A research PDF may be combined with one App Store listing and an addressed
+/// email draft. The original request remains the session identity.
 public enum BeanBaoCompositeRequest {
     public static func appQuery(_ request: String) -> String? {
         let pattern = #"\b(?:and|then)\s+find\s+(?:the\s+)?app\s+([A-Za-z0-9][A-Za-z0-9 .&'-]{1,79})\s*[.!?]?\s*$"#
@@ -17,8 +16,13 @@ public enum BeanBaoCompositeRequest {
         let lower = research.lowercased()
         guard (lower.hasPrefix("research ") || lower.hasPrefix("investigate ")),
               lower.contains("pdf"),
-              lower.range(of: #"\b(?:install|download|order|buy|purchase|pay|delete|remove|send|message|email|mail)\b"#,
+              lower.range(of: #"\b(?:install|download|order|buy|purchase|pay|delete|remove|open|launch|post|share|change|edit|set|update|toggle|enable|disable|turn|call|navigate|route)\b"#,
+                          options: .regularExpression) == nil,
+              lower.range(of: #"\b(?:and|then|also)\s+(?:send\s+(?:a\s+)?(?:message|text)|message)\b"#,
                           options: .regularExpression) == nil else { return nil }
+        let asksForMail = lower.range(of: #"\b(?:send|email|mail)\b"#,
+                                         options: .regularExpression) != nil
+        if asksForMail && BeanBaoMailDraftTool.requestRecipients(research).isEmpty { return nil }
         let query = request[capture].trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
             .trimmingCharacters(in: .whitespacesAndNewlines)
