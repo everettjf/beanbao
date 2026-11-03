@@ -249,6 +249,90 @@ static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
     return items;
 }
 
+static NSString *BBDeliveryStepTitle(NSDictionary *result) {
+    if (![result isKindOfClass:NSDictionary.class]) return @"Delivery step";
+    NSString *action = result[@"action"];
+    NSString *target = result[@"target"];
+    if (![action isKindOfClass:NSString.class]) return @"Delivery step";
+    NSDictionary<NSString *, NSString *> *plain = @{
+        @"open_search": @"Open search", @"review_options": @"Review options",
+        @"add_to_cart": @"Add item to cart", @"open_cart": @"Open cart",
+        @"review_cart": @"Review cart", @"open_checkout": @"Open checkout",
+        @"review_checkout": @"Review checkout"
+    };
+    if (plain[action]) return plain[action];
+    NSDictionary<NSString *, NSString *> *targeted = @{
+        @"search": @"Search for", @"open_merchant": @"Open merchant",
+        @"open_item": @"Open item", @"choose_option": @"Choose option"
+    };
+    NSString *verb = targeted[action];
+    if (!verb || ![target isKindOfClass:NSString.class] || !target.length || target.length > 80 ||
+        [target rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location != NSNotFound)
+        return @"Delivery step";
+    return [NSString stringWithFormat:@"%@: %@", verb, target];
+}
+
+static NSDictionary *BBWorkflowDetails(NSDictionary *request) {
+    NSString *identity = request[@"workflow_id"];
+    NSDictionary *record = BBReadWorkflowRecord(identity);
+    if (!record) return @{@"ok": @NO, @"error": @"Workflow not found"};
+    NSDictionary *operations = record[@"operations"];
+    BOOL delivery = BBIsDeliveryRecord(record);
+    NSMutableArray<NSDictionary *> *steps = [NSMutableArray array];
+    if ([operations isKindOfClass:NSDictionary.class]) {
+        for (NSString *key in operations) {
+            NSDictionary *operation = operations[key];
+            if (![operation isKindOfClass:NSDictionary.class]) continue;
+            NSString *tool = operation[@"tool"];
+            NSString *state = operation[@"state"];
+            NSNumber *updated = operation[@"updatedAt"];
+            if (![tool isKindOfClass:NSString.class] || !tool.length || tool.length > 64 ||
+                ![@[@"running", @"completed", @"failed", @"needsReconciliation"] containsObject:state] ||
+                ![updated isKindOfClass:NSNumber.class]) continue;
+            NSString *title = nil;
+            if (delivery && [tool isEqualToString:@"delivery_choose"] &&
+                [key hasPrefix:@"delivery-plan-v1-"]) {
+                NSString *suffix = [key substringFromIndex:@"delivery-plan-v1-".length];
+                NSDictionary *receipt = operations[[@"delivery-execute-v1-" stringByAppendingString:suffix]] ?:
+                    operations[[@"delivery-review-v1-" stringByAppendingString:suffix]];
+                title = BBDeliveryStepTitle(operation[@"result"]);
+                if ([receipt isKindOfClass:NSDictionary.class] &&
+                    [@[@"running", @"completed", @"failed", @"needsReconciliation"]
+                        containsObject:receipt[@"state"]] &&
+                    [receipt[@"updatedAt"] isKindOfClass:NSNumber.class]) {
+                    state = receipt[@"state"];
+                    updated = receipt[@"updatedAt"];
+                } else if ([state isEqualToString:@"completed"]) {
+                    state = @"proposed";
+                }
+            } else if (delivery &&
+                       ([@[@"delivery_execute", @"delivery_review_cart"] containsObject:tool])) {
+                NSString *prefix = [tool isEqualToString:@"delivery_execute"] ?
+                    @"delivery-execute-v1-" : @"delivery-review-v1-";
+                if ([key hasPrefix:prefix]) {
+                    NSString *planKey = [@"delivery-plan-v1-" stringByAppendingString:
+                        [key substringFromIndex:prefix.length]];
+                    if ([operations[planKey] isKindOfClass:NSDictionary.class]) continue;
+                }
+            }
+            NSMutableDictionary *step = [@{@"tool": tool, @"state": state,
+                @"updated_at": @([updated doubleValue] + 978307200.0)} mutableCopy];
+            if (title) step[@"title"] = title;
+            [steps addObject:step];
+        }
+    }
+    [steps sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [a[@"updated_at"] compare:b[@"updated_at"]];
+    }];
+    NSUInteger total = steps.count;
+    if (steps.count > 40) [steps removeObjectsInRange:NSMakeRange(0, steps.count - 40)];
+    NSString *kind = delivery ? @"delivery" :
+        (BBReadAppCandidate(identity) ? @"app_store" : @"research");
+    return @{@"ok": @YES, @"id": identity, @"request": record[@"request"],
+             @"kind": kind, @"phase": record[@"phase"], @"steps": steps,
+             @"total_steps": @(total)};
+}
+
 static void BBRestoreWorkflowIdentity(NSString *identity) {
     NSDictionary *record = BBReadWorkflowRecord(identity);
     if (!record) return;
@@ -1016,6 +1100,8 @@ static NSDictionary *BBHandle(NSDictionary *request) {
     if ([op isEqualToString:@"delivery_action_result"]) return BBDeliveryActionResult(request);
     if ([op isEqualToString:@"list_workflows"])
         return @{@"ok": @YES, @"workflows": BBWorkflowSummaries()};
+    if ([op isEqualToString:@"workflow_details"])
+        return BBWorkflowDetails(request);
     if ([op isEqualToString:@"resume_workflow"]) return BBResumeWorkflow(request);
     if ([op isEqualToString:@"select_workflow"]) return BBSelectWorkflow(request);
     if ([op isEqualToString:@"delete_workflow"]) return BBDeleteWorkflow(request);

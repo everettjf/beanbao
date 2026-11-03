@@ -4,7 +4,7 @@ Updated November 2, 2026. This plan targets the on-device BeanBao Agent, App, sa
 
 ## Current boundary
 
-The existing UI task path interprets a request as one canonical action. It can open four allowed apps, search Maps, or create a note. A separate research path now executes a bounded Palmino model/tool loop and persists its checkpoints. The Bridge still has no general app installation, file, purchase, or messaging route. Activity remains a bounded audit log; Sessions holds research workflow progress and artifacts.
+The existing UI task path interprets a request as one canonical action. It can open four allowed apps, search Maps, or create a note. A separate research path now executes a bounded Palmino model/tool loop and persists its checkpoints. The Bridge still has no general app installation, file, purchase, or messaging route. Activity remains a bounded audit log; Sessions holds research, App Store, and delivery workflow progress, artifacts, and a read-only step history.
 
 ## Proposed execution model
 

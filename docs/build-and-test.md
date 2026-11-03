@@ -2,6 +2,10 @@
 
 Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 2 workflow step history acceptance
+
+Agent 0.3.88 and App 0.3.59 were built, audited, and installed without a SpringBoard reload. The complete build passed native and Python checks, 13 delivery-browser JavaScript tests, 63 Swift Harness tests, and the four-package audit. The Agent's new `workflow_details` response returns only a bounded list of step names, states, and timestamps; the native policy test verifies that private tool results and receipt keys are absent. The App's Sessions information button opened read-only timelines on the connected phone. The saved research session displayed two web searches, report composition, and PDF creation. The saved Uber Eats cart session displayed search, merchant and item opening, Rice Noodle selection, add to cart, cart opening, and review; completed plan/execution pairs were shown as one step. A saved App Store session returned lookup and listing preparation. These are histories of previously executed workflows, not new external actions.
+
 ## November 2 natural App Store request and Sessions acceptance
 
 Agent 0.3.86 and App 0.3.57 were built, audited, and installed on the connected phone without reloading SpringBoard. The full build passed native and Python policy checks, 13 delivery-browser JavaScript tests, and 63 Swift Harness tests. The phrase **Find the Apple Mail app by Apple**, which the previous UI-only intent classifier rejected, now reached the model-routed App Store workflow. Its saved candidate was Mail by Apple, product ID `1108187098`, bundle ID `com.apple.mobilemail`, Free. Selecting its session displayed the candidate for review; **Check installation** completed the workflow only after exact installed-bundle verification. No App Store install occurred.

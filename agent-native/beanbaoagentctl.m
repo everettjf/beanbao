@@ -14,6 +14,9 @@ int main(int argc, const char *argv[]) {
         if (argc == 2 && !strcmp(argv[1], "status")) request = @{@"op": @"status"};
         else if (argc == 2 && !strcmp(argv[1], "list-workflows"))
             request = @{@"op": @"list_workflows"};
+        else if (argc == 3 && !strcmp(argv[1], "workflow-details"))
+            request = @{@"op": @"workflow_details",
+                        @"workflow_id": [NSString stringWithUTF8String:argv[2]]};
         else if (argc == 2 && !strcmp(argv[1], "stop")) request = @{@"op": @"stop"};
         else if (argc == 3 && !strcmp(argv[1], "delete-workflow"))
             request = @{@"op": @"delete_workflow",
@@ -49,7 +52,7 @@ int main(int argc, const char *argv[]) {
                         @"service_id": [NSString stringWithUTF8String:argv[3]],
                         @"snapshot": snapshot};
         }
-        else { fputs("usage: beanbaoagentctl status | list-workflows | stop | delete-workflow ID | start 'Open Maps' | inspect-delivery '<snapshot JSON>' | plan-delivery 'Find lunch' '<snapshot JSON>' | verify-delivery TASK_ID SERVICE_ID '<snapshot JSON>' | complete-delivery TASK_ID SERVICE_ID '<snapshot JSON>'\n", stderr); return 2; }
+        else { fputs("usage: beanbaoagentctl status | list-workflows | workflow-details ID | stop | delete-workflow ID | start 'Open Maps' | inspect-delivery '<snapshot JSON>' | plan-delivery 'Find lunch' '<snapshot JSON>' | verify-delivery TASK_ID SERVICE_ID '<snapshot JSON>' | complete-delivery TASK_ID SERVICE_ID '<snapshot JSON>'\n", stderr); return 2; }
         NSDictionary *reply = BBAgentRequest(request);
         NSData *encoded = [NSJSONSerialization dataWithJSONObject:reply options:0 error:nil];
         puts([[NSString alloc] initWithData:encoded encoding:NSUTF8StringEncoding].UTF8String);

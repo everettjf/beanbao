@@ -241,23 +241,41 @@ int main(void) {
         NSDictionary *deliveryRecord = @{@"id": deliveryID, @"request": @"Find a rice bowl",
             @"phase": @"waitingForUser", @"updatedAt": @1200,
             @"operations": @{@"delivery-plan-v1-abc":
-                @{@"tool": @"delivery_choose", @"state": @"completed"}}};
+                @{@"tool": @"delivery_choose", @"state": @"completed", @"updatedAt": @1190,
+                  @"result": @{@"action": @"search", @"target": @"rice bowl",
+                               @"page_text": @"private website content"}}}};
         NSString *deliverySession = [deliveryFolder stringByAppendingPathComponent:@"session.json"];
         [[NSJSONSerialization dataWithJSONObject:deliveryRecord options:0 error:nil]
             writeToFile:deliverySession atomically:YES];
         chmod(deliverySession.fileSystemRepresentation, 0600);
         NSDictionary *deliveryStatus = BBSelectWorkflow(@{@"workflow_id": deliveryID});
+        NSDictionary *deliveryDetails = BBWorkflowDetails(@{@"workflow_id": deliveryID});
         if (!Check([BBWorkflowSummaries().firstObject[@"kind"] isEqualToString:@"delivery"] &&
                    [deliveryStatus[@"app"] isEqualToString:@"DeliveryPlan"] &&
                    [deliveryStatus[@"phase"] isEqualToString:@"waiting_for_user"],
-                   "delivery session is listed and restores as a delivery task")) return 1;
+                   "delivery session is listed and restores as a delivery task") ||
+            !Check([deliveryDetails[@"ok"] boolValue] &&
+                   [deliveryDetails[@"steps"] count] == 1 &&
+                   [deliveryDetails[@"steps"][0][@"tool"] isEqualToString:@"delivery_choose"] &&
+                   [deliveryDetails[@"steps"][0][@"state"] isEqualToString:@"proposed"] &&
+                   [deliveryDetails[@"steps"][0][@"title"] isEqualToString:@"Search for: rice bowl"] &&
+                   ![deliveryDetails.description containsString:@"private website content"] &&
+                   ![deliveryDetails.description containsString:@"delivery-plan-v1-abc"] &&
+                   ![BBWorkflowDetails(@{@"workflow_id": NSUUID.UUID.UUIDString})[@"ok"] boolValue],
+                   "workflow details expose bounded step status without tool results or receipt keys")) return 1;
         NSMutableDictionary *unfinished = [deliveryRecord mutableCopy];
         unfinished[@"operations"] = @{@"delivery-plan-v1-abc":
-            @{@"tool": @"delivery_choose", @"state": @"completed"},
-            @"delivery-execute-v1-abc": @{@"tool": @"delivery_execute", @"state": @"running"}};
+            @{@"tool": @"delivery_choose", @"state": @"completed", @"updatedAt": @1190,
+              @"result": @{@"action": @"search", @"target": @"rice bowl"}},
+            @"delivery-execute-v1-abc": @{@"tool": @"delivery_execute", @"state": @"running",
+                @"updatedAt": @1200}};
         [[NSJSONSerialization dataWithJSONObject:unfinished options:0 error:nil]
             writeToFile:deliverySession atomically:YES];
         chmod(deliverySession.fileSystemRepresentation, 0600);
+        NSDictionary *unfinishedDetails = BBWorkflowDetails(@{@"workflow_id": deliveryID});
+        if (!Check([unfinishedDetails[@"steps"] count] == 1 &&
+                   [unfinishedDetails[@"steps"][0][@"state"] isEqualToString:@"running"],
+                   "delivery history merges a planned action and its execution receipt")) return 1;
         deliveryStatus = BBSelectWorkflow(@{@"workflow_id": deliveryID});
         if (!Check([deliveryStatus[@"phase"] isEqualToString:@"needs_reconciliation"],
                    "unfinished delivery action survives a service restart as uncertain") ||

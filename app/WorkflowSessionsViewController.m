@@ -1,4 +1,5 @@
 #import "WorkflowSessionsViewController.h"
+#import "WorkflowDetailViewController.h"
 #import "AgentClient.h"
 
 @interface BBWorkflowSessionsViewController ()
@@ -76,8 +77,17 @@
     NSDate *date = [NSDate dateWithTimeIntervalSince1970:[item[@"updated_at"] doubleValue]];
     cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ · %@", status, [self.dates stringFromDate:date]];
     cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
-    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    cell.accessoryType = UITableViewCellAccessoryDetailDisclosureButton;
     return cell;
+}
+
+- (void)tableView:(UITableView *)tableView accessoryButtonTappedForRowWithIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
+    NSString *identity = self.workflows[indexPath.row][@"id"];
+    if (![[NSUUID alloc] initWithUUIDString:identity]) return;
+    BBWorkflowDetailViewController *detail =
+        [[BBWorkflowDetailViewController alloc] initWithWorkflowID:identity];
+    [self.navigationController pushViewController:detail animated:YES];
 }
 
 - (void)performOperation:(NSString *)op identity:(NSString *)identity closeOnSuccess:(BOOL)close {

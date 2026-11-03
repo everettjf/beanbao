@@ -7,9 +7,9 @@ Updated November 2, 2026. This is a developer installation procedure for a compa
 Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
-2. `dev.beanbao.agent` 0.3.86: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
+2. `dev.beanbao.agent` 0.3.88: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
 3. `dev.beanbao.deliverybrowser` 0.1.14: sandboxed Uber Eats browser with visible page checks and a bounded Palmino-driven multi-step Run control.
-4. `dev.beanbao.app` 0.3.57: native text, Apple voice transcription, Sessions, App Store review, Activity, shortcut, and model settings UI.
+4. `dev.beanbao.app` 0.3.59: native text, Apple voice transcription, Sessions with step history, App Store review, Activity, shortcut, and model settings UI.
 
 The packages are under `bridge/packages/`, `agent-native/packages/`, `delivery-browser/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
 
@@ -24,9 +24,9 @@ With a root shell on the jailbroken phone, copy over the packages and install th
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.86_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.88_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.deliverybrowser_0.1.14_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.57_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.59_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app
 ```
 
@@ -44,6 +44,7 @@ To check the connected development device, run `python3 scripts/verify_device.py
 6. For a multi-step research test, enter **Research on-device speech recognition on iOS, create a PDF with sources**. Open **Sessions** to revisit the result and **View PDF report** to inspect it. The current Claude workflow can also prepare an email draft addressed to an explicit recipient. Apple Mail must have an account configured before **Review email draft** can open its native composer; review the recipient and attachment there before sending.
 7. For an App Store handoff, enter **Find app Apple Pages** or a natural request such as **Find the Apple Mail app by Apple**. Review the exact name, developer, product ID, bundle ID, and price before opening the official listing. Installing is a separate user action in the App Store. After that, **Check installation** verifies the matching bundle; simply closing the listing leaves the workflow pending. On the tested phone, the natural Apple Mail request completed after verifying its already installed bundle; a fresh download has not been tested.
 8. Tap **Browse food delivery** to open the separate delivery browser. It keeps its own website session and pairs with the Agent for this launch. Tap **Check** to classify the visible page. Set a delivery address on Uber Eats before tapping **Run**. On the connected phone, one uninterrupted text task found Phin & Bowl's Chicken Pho, selected the required Rice Noodle option, added exactly one item, opened the cart, and completed a read-only review. The visible cart showed Chicken Pho, Rice Noodle, and a $27.99 subtotal at the public San Jose City Hall test address. A second full run passed after the Agent gained a final check that the previously executed merchant, item, and option still appear on the cart page. The flow stops before checkout or ordering. Exact checkout totals and approval are still in development.
+9. Open **Sessions** and tap the information button beside a saved workflow to inspect its read-only step history. Tapping the session row itself still opens or resumes that workflow. The history shows step names, states, and times; it does not display website text or model tool results.
 
 The **Quick launch** Volume Down triple-press switch is off by default. A normal press still changes volume. Triple press opens the quick overlay and asks the BeanBao app to start recording. On the tested phone, a real spoken request completed from both an app and the unlocked Home screen. From Home, the overlay started recording and **Open Settings** brought Settings to the foreground.
 

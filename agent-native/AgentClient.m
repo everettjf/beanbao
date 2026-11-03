@@ -87,7 +87,8 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
     }
     NSMutableData *reply = [NSMutableData data];
     char byte = 0;
-    NSUInteger replyLimit = [request[@"op"] isEqualToString:@"list_workflows"] ? 32768 : 4096;
+    NSUInteger replyLimit = [@[@"list_workflows", @"workflow_details"] containsObject:request[@"op"]] ?
+        32768 : 4096;
     BOOL completeReply = NO;
     while (reply.length < replyLimit) {
         ssize_t count = read(fd, &byte, 1);
