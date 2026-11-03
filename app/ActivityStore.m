@@ -6,6 +6,9 @@
 static NSString *const BBAuditPath = @"/var/mobile/Library/Application Support/BeanBao/audit.jsonl";
 
 static NSString *BBActivityTitle(NSString *app, BOOL enteredText, NSString *state) {
+    if ([app isEqualToString:@"ResearchAppStoreReview"])
+        return [state isEqualToString:@"done"] ? @"Created PDF and verified app" :
+            @"Review PDF and app listing";
     if ([app isEqualToString:@"ResearchPDF"] || [app isEqualToString:@"ResearchMailDraft"])
         return [state isEqualToString:@"waiting_for_user"] ? @"Review research email" : @"Created research PDF";
     if ([app isEqualToString:@"AppStoreReview"])

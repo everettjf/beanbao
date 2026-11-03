@@ -94,7 +94,7 @@ BOOL BBResearchPDFCandidate(NSString *task) {
          ([task containsString:@"调研"] || [task containsString:@"研究"] ||
           [task containsString:@"生成"] || [task containsString:@"制作"]))) return NO;
     NSRegularExpression *otherAction = [NSRegularExpression
-        regularExpressionWithPattern:@"(?:^\\s*|[,;&.]\\s*|\\b(?:and|then|also)\\s+)(?:install|download|order|buy|purchase|pay|delete|remove|open|launch|post|share|change|edit|set|update|toggle|enable|disable|turn|call|navigate|route|message|send\\s+(?:a\\s+)?(?:message|text))\\b"
+        regularExpressionWithPattern:@"(?:^\\s*|[,;&.]\\s*|\\b(?:and|then|also)\\s+)(?:install|download|order|buy|purchase|pay|delete|remove|open|launch|find|post|share|change|edit|set|update|toggle|enable|disable|turn|call|navigate|route|message|send\\s+(?:a\\s+)?(?:message|text))\\b"
         options:NSRegularExpressionCaseInsensitive error:nil];
     BOOL unrelated = [otherAction firstMatchInString:task options:0
         range:NSMakeRange(0, task.length)] != nil;
@@ -117,6 +117,32 @@ static BOOL BBIsResearchPDFTask(NSString *task) {
     NSString *lower = task.lowercaseString;
     return ([lower hasPrefix:@"research "] || [lower hasPrefix:@"investigate "] ||
             [task hasPrefix:@"调研"]) && BBResearchPDFCandidate(task);
+}
+
+BOOL BBResearchAppCandidate(NSString *task) {
+    NSRegularExpression *suffix = [NSRegularExpression regularExpressionWithPattern:
+        @"\\b(?:and|then)\\s+find\\s+(?:the\\s+)?app\\s+([A-Za-z0-9][A-Za-z0-9 .&'-]{1,79})\\s*[.!?]?\\s*$"
+        options:NSRegularExpressionCaseInsensitive error:nil];
+    NSTextCheckingResult *match = [suffix firstMatchInString:task options:0
+        range:NSMakeRange(0, task.length)];
+    if (!match || match.range.location == NSNotFound) return NO;
+    NSString *research = [[task substringToIndex:match.range.location]
+        stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    research = [research stringByTrimmingCharactersInSet:
+        [NSCharacterSet characterSetWithCharactersInString:@",; "]];
+    NSString *query = [[task substringWithRange:[match rangeAtIndex:1]]
+        stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@" .!?"]];
+    NSString *lowerQuery = query.lowercaseString;
+    NSString *lowerResearch = research.lowercaseString;
+    return ([lowerResearch hasPrefix:@"research "] ||
+            [lowerResearch hasPrefix:@"investigate "]) &&
+        query.length >= 2 && query.length <= 80 &&
+        [lowerQuery rangeOfString:@" and "].location == NSNotFound &&
+        [lowerQuery rangeOfString:@" then "].location == NSNotFound &&
+        [lowerResearch rangeOfString:@"email"].location == NSNotFound &&
+        [lowerResearch rangeOfString:@"mail to"].location == NSNotFound &&
+        [lowerResearch rangeOfString:@"send"].location == NSNotFound &&
+        BBResearchPDFCandidate(research);
 }
 
 static BOOL BBIsAppStoreTask(NSString *task) {
@@ -243,6 +269,12 @@ static BOOL BBIsDeliveryRecord(NSDictionary *record) {
     return NO;
 }
 
+static NSString *BBWorkflowKind(NSString *identity, NSDictionary *record) {
+    if (BBIsDeliveryRecord(record)) return @"delivery";
+    if (BBResearchAppCandidate(record[@"request"])) return @"research_app";
+    return BBReadAppCandidate(identity) ? @"app_store" : @"research";
+}
+
 static BOOL BBDeliveryHasUnfinishedAction(NSDictionary *record) {
     NSDictionary *operations = record[@"operations"];
     if (![operations isKindOfClass:NSDictionary.class]) return NO;
@@ -267,8 +299,7 @@ static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
             record[@"updatedAt"] : @0;
         NSString *request = record[@"request"];
         if (request.length > 220) continue;
-        NSString *kind = BBIsDeliveryRecord(record) ? @"delivery" :
-            (BBReadAppCandidate(identity) ? @"app_store" : @"research");
+        NSString *kind = BBWorkflowKind(identity, record);
         [items addObject:@{@"id": identity, @"request": request, @"kind": kind,
                            @"phase": record[@"phase"],
                            @"updated_at": @([updated doubleValue] + 978307200.0)}];
@@ -357,8 +388,7 @@ static NSDictionary *BBWorkflowDetails(NSDictionary *request) {
     }];
     NSUInteger total = steps.count;
     if (steps.count > 40) [steps removeObjectsInRange:NSMakeRange(0, steps.count - 40)];
-    NSString *kind = delivery ? @"delivery" :
-        (BBReadAppCandidate(identity) ? @"app_store" : @"research");
+    NSString *kind = BBWorkflowKind(identity, record);
     return @{@"ok": @YES, @"id": identity, @"request": record[@"request"],
              @"kind": kind, @"phase": record[@"phase"], @"steps": steps,
              @"total_steps": @(total)};
@@ -382,11 +412,18 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
     BOOL hasDraft = BBPrivateWorkflowFile(draftPath, 1, 16 * 1024);
     BOOL hasCandidate = BBPrivateWorkflowFile(candidatePath, 1, 16 * 1024);
     BOOL hasDelivery = BBIsDeliveryRecord(record);
+    BOOL composite = BBResearchAppCandidate(record[@"request"]);
     BBState.app = hasDelivery ? @"DeliveryPlan" :
-        (hasCandidate ? @"AppStoreReview" :
-         (hasDraft ? @"ResearchMailDraft" : @"ResearchPDF"));
+        (composite ? @"ResearchAppStoreReview" :
+         (hasCandidate ? @"AppStoreReview" :
+          (hasDraft ? @"ResearchMailDraft" : @"ResearchPDF")));
     BBState.reportPath = hasPDF ? pdfPath : nil;
-    if (hasDelivery && BBDeliveryHasUnfinishedAction(record)) {
+    if (composite && !([@[@"planned", @"running", @"failed", @"cancelled"]
+                          containsObject:phase]) && (!hasPDF || !hasCandidate)) {
+        BBState.phase = @"error";
+        BBState.message = @"A workflow artifact is missing. Review the saved session.";
+        BBState.reportPath = nil;
+    } else if (hasDelivery && BBDeliveryHasUnfinishedAction(record)) {
         BBState.phase = @"needs_reconciliation";
         BBState.message = @"A delivery step may have changed the cart. Check Uber Eats before continuing.";
     } else if ([phase isEqualToString:@"waitingForUser"] && hasDelivery) {
@@ -394,7 +431,7 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
         BBState.message = @"Open food delivery to continue";
     } else if ([phase isEqualToString:@"waitingForUser"] && hasCandidate) {
         BBState.phase = @"waiting_for_user";
-        BBState.message = @"Review the App Store listing";
+        BBState.message = hasPDF ? @"Review PDF and App Store listing" : @"Review the App Store listing";
         BBState.appCandidatePath = candidatePath;
     } else if ([phase isEqualToString:@"waitingForUser"] && hasPDF && hasDraft) {
         BBState.phase = @"waiting_for_user";
@@ -402,7 +439,8 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
         BBState.mailDraftPath = draftPath;
     } else if ([phase isEqualToString:@"completed"] && hasCandidate) {
         BBState.phase = @"done";
-        BBState.message = @"Selected app is installed";
+        BBState.message = hasPDF ? @"Research PDF available; selected app is installed" :
+            @"Selected app is installed";
     } else if ([phase isEqualToString:@"completed"] && hasPDF) {
         BBState.phase = @"done";
         BBState.message = @"Research PDF available";
@@ -572,7 +610,7 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
                 deliveryAction = candidate;
         } else if ([line hasPrefix:@"BB_INTENT="]) {
             NSString *candidate = [line substringFromIndex:@"BB_INTENT=".length];
-            if ([@[@"Settings", @"Maps", @"Contacts", @"Notes", @"MapsSearch", @"NoteCreate", @"ResearchPDF", @"ResearchMailDraft", @"AppStoreReview", @"DeliveryPlan"]
+            if ([@[@"Settings", @"Maps", @"Contacts", @"Notes", @"MapsSearch", @"NoteCreate", @"ResearchPDF", @"ResearchMailDraft", @"ResearchAppStoreReview", @"AppStoreReview", @"DeliveryPlan"]
                     containsObject:candidate]) resolvedApp = candidate;
         }
     if (resolvedApp) {
@@ -582,8 +620,9 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
             ([resolvedApp isEqualToString:@"NoteCreate"] ? @"Note created" :
              ([resolvedApp isEqualToString:@"ResearchPDF"] ? @"PDF report created" :
               ([resolvedApp isEqualToString:@"ResearchMailDraft"] ? @"Review the email draft" :
+               ([resolvedApp isEqualToString:@"ResearchAppStoreReview"] ? @"Review PDF and App Store listing" :
                ([resolvedApp isEqualToString:@"AppStoreReview"] ? @"Review the App Store listing" :
-                ([resolvedApp isEqualToString:@"DeliveryPlan"] ? @"Review next delivery step" : @"Target app is in the foreground")))));
+                ([resolvedApp isEqualToString:@"DeliveryPlan"] ? @"Review next delivery step" : @"Target app is in the foreground"))))));
     }
     NSString *auditAction = nil, *auditResult = nil;
     @synchronized (BBState) {
@@ -596,20 +635,22 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
             (![resolvedApp isEqualToString:@"DeliveryPlan"] || deliveryAction != nil);
         BBState.phase = stopped ? @"stopped" :
             (succeeded ? (([resolvedApp isEqualToString:@"ResearchMailDraft"] ||
+                           [resolvedApp isEqualToString:@"ResearchAppStoreReview"] ||
                            [resolvedApp isEqualToString:@"AppStoreReview"] ||
                            [resolvedApp isEqualToString:@"DeliveryPlan"]) ?
                           @"waiting_for_user" : @"done") : @"error");
         BBState.deliveryAction = succeeded && [resolvedApp isEqualToString:@"DeliveryPlan"] ?
             deliveryAction : nil;
         BOOL reportReady = succeeded &&
-            ([@[@"ResearchPDF", @"ResearchMailDraft"] containsObject:resolvedApp]);
+            ([@[@"ResearchPDF", @"ResearchMailDraft", @"ResearchAppStoreReview"] containsObject:resolvedApp]);
         BBState.reportPath = reportReady ?
             [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/report.pdf",
                                        BBState.taskID ?: @""] : nil;
         BBState.mailDraftPath = succeeded && [resolvedApp isEqualToString:@"ResearchMailDraft"] ?
             [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/mail-draft.json",
                                        BBState.taskID ?: @""] : nil;
-        BBState.appCandidatePath = succeeded && [resolvedApp isEqualToString:@"AppStoreReview"] ?
+        BBState.appCandidatePath = succeeded &&
+            ([@[@"AppStoreReview", @"ResearchAppStoreReview"] containsObject:resolvedApp]) ?
             [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/app-candidate.json",
                                        BBState.taskID ?: @""] : nil;
         BBState.message = stopped ? @"Task stopped" :
@@ -635,14 +676,16 @@ static NSDictionary *BBStart(NSDictionary *request) {
             ![@[@"planned", @"running", @"failed", @"cancelled"] containsObject:saved[@"phase"]])
             return @{@"ok": @NO, @"error": @"This workflow cannot be resumed automatically"};
     }
-    BOOL researchPDF = BBIsResearchPDFTask(task);
+    BOOL researchApp = BBResearchAppCandidate(task);
+    BOOL researchPDF = !researchApp && BBIsResearchPDFTask(task);
     BOOL appStore = BBIsAppStoreTask(task);
     NSString *app = BBAllowedTarget(task);
-    BOOL resolveTask = !app && !researchPDF && !appStore;
-    if ((researchPDF || appStore) && ![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
+    BOOL resolveTask = !app && !researchPDF && !researchApp && !appStore;
+    if ((researchPDF || researchApp || appStore) && ![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
         return @{@"ok": @NO, @"error": @"This workflow currently requires Claude"};
     if (resolveTask) app = @"BeanBao";
     if (researchPDF) app = @"ResearchPDF";
+    if (researchApp) app = @"ResearchAppStoreReview";
     if (appStore) app = @"AppStoreReview";
     NSString *selectedProvider = BBModelLoad()[@"provider"];
     if (model && ![model isEqualToString:selectedProvider])
@@ -676,15 +719,18 @@ static NSDictionary *BBStart(NSDictionary *request) {
                                      selectedProvider.UTF8String, taskID.UTF8String, NULL};
         const char *argvResearch[] = {executable, "--workflow-research", task.UTF8String,
                                       taskID.UTF8String, NULL};
+        const char *argvResearchApp[] = {executable, "--workflow-research-app", task.UTF8String,
+                                         taskID.UTF8String, NULL};
         const char *argvAppStore[] = {executable, "--workflow-app-store", task.UTF8String,
                                       taskID.UTF8String, NULL};
         pid_t child = 0;
         int spawnResult = posix_spawn(&child, executable, &actions, NULL,
-                                     (char *const *)(researchPDF ? argvResearch :
+                                     (char *const *)(researchApp ? argvResearchApp :
+                                         (researchPDF ? argvResearch :
                                          (appStore ? argvAppStore :
                                          (resolveTask ? argvResolve :
                                          (noteTask ? argvNote :
-                                          (BBUsesTextHarness(task) ? argvText : argvMap))))), environ);
+                                          (BBUsesTextHarness(task) ? argvText : argvMap)))))), environ);
         posix_spawn_file_actions_destroy(&actions);
         close(outputPipe[1]);
         if (spawnResult) { close(outputPipe[0]); return @{@"ok": @NO,
@@ -841,7 +887,7 @@ static NSDictionary *BBVerifyAppInstall(NSDictionary *request) {
             ![taskID isEqualToString:BBState.taskID] ||
             ![serviceID isEqualToString:BBState.serviceID] ||
             ![BBState.phase isEqualToString:@"waiting_for_user"] ||
-            ![BBState.app isEqualToString:@"AppStoreReview"])
+            !([@[@"AppStoreReview", @"ResearchAppStoreReview"] containsObject:BBState.app]))
             return @{@"ok": @NO, @"error": @"The App Store session changed"};
         NSDictionary *candidate = BBReadAppCandidate(taskID);
         NSString *bundle = candidate[@"bundleID"];
@@ -860,7 +906,8 @@ static NSDictionary *BBVerifyAppInstall(NSDictionary *request) {
             return BBStatus();
         }
         BBState.phase = @"done";
-        BBState.message = @"Selected app is installed";
+        BBState.message = [BBState.app isEqualToString:@"ResearchAppStoreReview"] ?
+            @"Research PDF available; selected app is installed" : @"Selected app is installed";
         BBState.appCandidatePath = nil;
         BBAudit(@"task", @"AppStoreReview", @"done", @"installed");
         NSMutableDictionary *status = [BBStatus() mutableCopy];

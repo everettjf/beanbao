@@ -124,6 +124,7 @@ extern int32_t BBRunHarnessAppStore(const char *task, const char *workflowID);
 extern int32_t BBRunHarnessDeliveryPlan(const char *task, const char *workflowID);
 extern NSString *BBAllowedTarget(NSString *task);
 extern BOOL BBResearchPDFCandidate(NSString *task);
+extern BOOL BBResearchAppCandidate(NSString *task);
 static NSString *BBNoteText(NSString *task);
 static NSString *BBMapQuery(NSString *task);
 
@@ -1697,8 +1698,18 @@ int main(int argc, const char *argv[]) {
         }
         if (argc == 4 && !strcmp(argv[1], "--workflow-research")) {
             NSString *request = [NSString stringWithUTF8String:argv[2]];
-            if (!request.length || request.length > 220 || BBHasSecret(request)) {
+            if (!request.length || request.length > 220 || BBHasSecret(request) ||
+                !BBResearchPDFCandidate(request)) {
                 fputs("Unsupported research request\n", stderr);
+                return 2;
+            }
+            return BBRunHarnessResearch(argv[2], argv[3]);
+        }
+        if (argc == 4 && !strcmp(argv[1], "--workflow-research-app")) {
+            NSString *request = [NSString stringWithUTF8String:argv[2]];
+            if (!request.length || request.length > 220 || BBHasSecret(request) ||
+                !BBResearchAppCandidate(request)) {
+                fputs("Unsupported research and App Store request\n", stderr);
                 return 2;
             }
             return BBRunHarnessResearch(argv[2], argv[3]);

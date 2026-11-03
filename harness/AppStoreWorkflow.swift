@@ -31,9 +31,12 @@ public func BBMarkAppStoreInstalled(_ idPointer: UnsafePointer<CChar>?,
         do {
             let store = try BeanBaoWorkflowStore(existingURL: folder.appendingPathComponent("session.json"))
             let saved = await store.snapshot()
-            let listing = try BeanBaoAppPrepareTool.read(at: folder.appendingPathComponent("app-candidate.json"))
-            guard saved.id == id, saved.phase == .waitingForUser,
-                  listing.bundleID == bundle else { done.signal(); return }
+            guard saved.id == id,
+                  (try? BeanBaoAppPrepareTool.verifyForCompletion(
+                    record: saved, folder: folder, bundleID: bundle)) != nil else {
+                done.signal()
+                return
+            }
             try await store.setPhase(.completed)
             result.set(true)
         } catch { }

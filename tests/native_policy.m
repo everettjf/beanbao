@@ -102,6 +102,14 @@ int main(void) {
             !Check(!BBResearchPDFCandidate(@"Research speech APIs, create a PDF; install Pages") &&
                    !BBIsResearchPDFTask(@"Research speech APIs, create a PDF, install Pages"),
                    "punctuation cannot hide a second installation step") ||
+            !Check(BBResearchAppCandidate(@"Research iOS speech, create a PDF, and find app Pages") &&
+                   !BBResearchPDFCandidate(@"Research iOS speech, create a PDF, and find app Pages"),
+                   "research plus app lookup enters the composite route, not PDF-only") ||
+            !Check(!BBResearchAppCandidate(@"Research iOS speech, create a PDF, and find app Pages and Numbers") &&
+                   !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and find app Pages, then order lunch") &&
+                   !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and email it to test@example.com, then find app Pages") &&
+                   !BBResearchAppCandidate(@"Research iOS speech, create a PDF, and send it to test@example.com, then find app Pages"),
+                   "composite route rejects multiple app targets and unrelated actions") ||
             !Check(!BBResearchPDFCandidate(@"Compare speech APIs, make a PDF, and send a message to test@example.com") &&
                    BBResolvedTask(@"Compare speech APIs, make a PDF, and send a message to test@example.com",
                                   researchChoice) == nil,

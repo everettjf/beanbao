@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 #if SWIFT_PACKAGE
 import AgentRuntime
 import AgentTools
@@ -199,5 +200,30 @@ public struct BeanBaoAppPrepareTool: PHKNativeTool {
     public static func read(at url: URL) throws -> BeanBaoAppListing {
         try JSONDecoder().decode(BeanBaoAppListing.self,
                                  from: BeanBaoWorkflowStore.readPrivateFile(url))
+    }
+
+    /// The App Store callback may finish only this prepared listing. A
+    /// research-plus-app session must also keep its completed PDF artifact.
+    public static func verifyForCompletion(record: BeanBaoWorkflowRecord,
+                                           folder: URL, bundleID: String) throws {
+        guard record.phase == .waitingForUser,
+              record.operations.values.contains(where: {
+                  $0.tool == "app_prepare" && $0.state == .completed
+              }) else { throw BeanBaoAppCatalogError.unsearchedListing }
+        let listing = try read(at: folder.appendingPathComponent("app-candidate.json"))
+        guard listing.bundleID == bundleID else {
+            throw BeanBaoAppCatalogError.unsearchedListing
+        }
+        if BeanBaoCompositeRequest.appQuery(record.request) != nil {
+            guard record.operations.values.contains(where: {
+                    $0.tool == "pdf_render" && $0.state == .completed
+                  }),
+                  let data = try? BeanBaoWorkflowStore.readPrivateFile(
+                    folder.appendingPathComponent("report.pdf")),
+                  let provider = CGDataProvider(data: data as CFData),
+                  let pdf = CGPDFDocument(provider), pdf.numberOfPages > 0 else {
+                throw BeanBaoWorkflowError.completionUnverified
+            }
+        }
     }
 }

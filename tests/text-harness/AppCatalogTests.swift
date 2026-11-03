@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 import XCTest
 import AgentRuntime
 import AgentTools
@@ -25,6 +26,63 @@ private struct ScriptedAppStorePlanner: PHKModelClient {
 }
 
 final class AppCatalogTests: XCTestCase {
+    func testCompositeRequestKeepsBothRequestedOutputs() {
+        XCTAssertEqual(BeanBaoCompositeRequest.appQuery(
+            "Research iOS speech, create a PDF, and find app Pages"), "Pages")
+        XCTAssertNil(BeanBaoCompositeRequest.appQuery(
+            "Research iOS speech, create a PDF, and find app Pages and Numbers"))
+        XCTAssertNil(BeanBaoCompositeRequest.appQuery(
+            "Research iOS speech, create a PDF, and find app Pages, then order lunch"))
+        XCTAssertNil(BeanBaoCompositeRequest.appQuery(
+            "Research iOS speech, create a PDF, and email it to test@example.com, then find app Pages"))
+    }
+
+    func testCompositeInstallCompletionRequiresPDFAndPreparedListing() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("beanbao-composite-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false,
+                                                attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let request = "Research iOS speech, create a PDF, and find app Example Notes"
+        let store = try BeanBaoWorkflowStore(url: folder.appendingPathComponent("session.json"),
+                                             request: request)
+        let listing = BeanBaoAppListing(productID: 123456789, name: "Example Notes",
+            developer: "Example Studio", bundleID: "com.example.notes", price: 0,
+            currency: "USD", country: "US")
+        let evidence = BeanBaoAppCatalogEvidence()
+        try await evidence.add([listing])
+        let prepare = BeanBaoAppPrepareTool(evidence: evidence,
+            outputURL: folder.appendingPathComponent("app-candidate.json"))
+        _ = try await prepare.execute(arguments: .object(["product_id": .number(123456789)]))
+        let source = BeanBaoResearchSource(url: "https://example.org/speech",
+            title: "Speech", citedText: "Speech reference")
+        let document = BeanBaoReportDocument(title: "Speech report",
+            sections: [.init(heading: "Summary", paragraphs: [
+                .init(text: "Speech transcription is available.", sourceURLs: [source.url])
+            ])], sources: [source], createdAt: Date())
+        let pdfURL = folder.appendingPathComponent("report.pdf")
+        try BeanBaoReportPDFRenderer.data(for: document).write(to: pdfURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: pdfURL.path)
+        _ = try await store.claim(key: "app-test", tool: "app_prepare", effect: .localMutation)
+        try await store.finish(key: "app-test", result: .bool(true))
+        try await store.setPhase(.waitingForUser)
+        let onlyApp = await store.snapshot()
+        XCTAssertThrowsError(try BeanBaoAppPrepareTool.verifyForCompletion(
+            record: onlyApp, folder: folder, bundleID: "com.example.notes"))
+        _ = try await store.claim(key: "pdf-test", tool: "pdf_render", effect: .localMutation)
+        try await store.finish(key: "pdf-test", result: .bool(true))
+        try await store.setPhase(.waitingForUser)
+        let both = await store.snapshot()
+        XCTAssertNoThrow(try BeanBaoAppPrepareTool.verifyForCompletion(
+            record: both, folder: folder, bundleID: "com.example.notes"))
+        XCTAssertThrowsError(try BeanBaoAppPrepareTool.verifyForCompletion(
+            record: both, folder: folder, bundleID: "com.example.other"))
+        try FileManager.default.removeItem(at: pdfURL)
+        XCTAssertThrowsError(try BeanBaoAppPrepareTool.verifyForCompletion(
+            record: both, folder: folder, bundleID: "com.example.notes"))
+    }
+
     func testSearchAndPrepareRequireExactCatalogIdentity() async throws {
         let response: [String: Any] = ["results": [[
             "wrapperType": "software", "trackId": 123456789,
