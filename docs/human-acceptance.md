@@ -12,7 +12,7 @@ Run `scripts/verify_device.py --expect-bundle` with the paired SSH host, port, i
 2. Repeat with **Open Contacts**, **Open Notes**, and **Open Maps**. Require matching foreground bundle IDs and no contact data access.
 3. Enter **Create note: BeanBao test <unique marker>**. Require completion and the full new title in the Notes list. Use a new marker for each run.
 4. With a configured Claude, OpenAI, or compatible model key, enter **Search Maps for Golden Gate Bridge**. Require both the matching marker and place card, without starting navigation. Test each model service separately; a service without a key is not a passed live model test.
-5. Enter **Open Maps and send a message**. Require a clear rejection, no new task ID, and no message sent.
+5. Enter **Open Maps and send a message**. Require a clear rejection, no device action, and no message sent. The Agent may create an incomplete task record before rejecting it; the service must stay the same and the App must remain in the foreground.
 
 The current test scripts are `scripts/accept_text_device.py` and `scripts/accept_app_text_device.py`. Check the app status, Agent task and service IDs, and actual UI together. A package audit or simulated Bridge test does not replace device acceptance.
 

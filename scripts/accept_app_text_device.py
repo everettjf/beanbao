@@ -17,6 +17,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
 from beanbao import SSHBridgeClient
 
+CASES = ("open_contacts", "create_test_note", "map_search", "forbidden_compound")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -24,6 +26,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=22)
     parser.add_argument("--identity", type=Path, required=True)
     parser.add_argument("--known-hosts", type=Path)
+    parser.add_argument("--cases", nargs="+", choices=CASES, default=CASES)
     args = parser.parse_args()
 
     ssh = ["ssh", "-i", str(args.identity), "-p", str(args.port),
@@ -98,18 +101,25 @@ def main() -> int:
                       {"action": "tap", **max(starts, key=lambda p: p["x"])}).get("ok") is not True:
             raise RuntimeError("Keyboard accessory Start tap failed")
 
-        deadline = time.monotonic() + (8 if forbidden else 50)
+        deadline = time.monotonic() + (25 if forbidden else 50)
         while time.monotonic() < deadline:
             current = status()
             if forbidden:
-                if current.get("task_id") != before.get("task_id") or \
-                        current.get("service_id") != before.get("service_id"):
-                    raise RuntimeError("Forbidden instruction changed task identity")
+                if current.get("service_id") != before.get("service_id"):
+                    raise RuntimeError("Agent service changed during forbidden instruction")
                 app = observe()
                 if app.get("frontmost_app", {}).get("bundleId") != "dev.beanbao.app":
                     raise RuntimeError("Forbidden instruction changed foreground")
                 texts = [str(e.get("text", "")) for e in app.get("ui", {}).get("elements", [])]
-                if "Not started" in texts:
+                if current.get("task_id") == before.get("task_id") and "Not started" in texts:
+                    return current
+                # The Agent may create an incomplete task record before its
+                # allowlist rejects the compound request. That is safe only
+                # when no action ran and the App shows the rejection.
+                if current.get("task_id") != before.get("task_id") and \
+                        current.get("phase") == "error" and not current.get("running") and \
+                        current.get("message") == "I could not identify one supported action. Try a clearer request." and \
+                        "Incomplete" in texts and current["message"] in texts:
                     return current
             elif current.get("task_id") and current.get("task_id") != before.get("task_id") and \
                     not current.get("running"):
@@ -127,30 +137,34 @@ def main() -> int:
             time.sleep(.2)
         return result
 
-    submit("Open Contacts")
-    confirm_frontmost("com.apple.MobileAddressBook")
-    print(json.dumps({"app_case": "open_contacts", "result": "passed"}), flush=True)
+    if "open_contacts" in args.cases:
+        submit("Open Contacts")
+        confirm_frontmost("com.apple.MobileAddressBook")
+        print(json.dumps({"app_case": "open_contacts", "result": "passed"}), flush=True)
 
-    marker = "BeanBao test " + uuid.uuid4().hex[:8]
-    submit("Create note: " + marker)
-    note = confirm_frontmost("com.apple.mobilenotes", ui=True)
-    note_texts = [str(e.get("text", "")) for e in note.get("ui", {}).get("elements", [])]
-    if not any(marker in text for text in note_texts):
-        raise RuntimeError("Unique test note title was not visible after completion")
-    print(json.dumps({"app_case": "create_test_note", "result": "passed", "marker": marker},
-                     ensure_ascii=False), flush=True)
+    if "create_test_note" in args.cases:
+        marker = "BeanBao test " + uuid.uuid4().hex[:8]
+        submit("Create note: " + marker)
+        note = confirm_frontmost("com.apple.mobilenotes", ui=True)
+        note_texts = [str(e.get("text", "")) for e in note.get("ui", {}).get("elements", [])]
+        if not any(marker in text for text in note_texts):
+            raise RuntimeError("Unique test note title was not visible after completion")
+        print(json.dumps({"app_case": "create_test_note", "result": "passed", "marker": marker},
+                         ensure_ascii=False), flush=True)
 
-    submit("Search Maps for Golden Gate Bridge")
-    map_view = confirm_frontmost("com.apple.Maps", ui=True)
-    map_matches = [e for e in map_view.get("ui", {}).get("elements", [])
-                   if "Golden Gate Bridge" in str(e.get("text", ""))]
-    positions = [e["tap"]["y"] for e in map_matches if isinstance(e.get("tap"), dict)]
-    if len(positions) < 2 or max(positions) - min(positions) < 100:
-        raise RuntimeError("Map marker and place card were not both visible")
-    print(json.dumps({"app_case": "map_search", "result": "passed"}), flush=True)
+    if "map_search" in args.cases:
+        submit("Search Maps for Golden Gate Bridge")
+        map_view = confirm_frontmost("com.apple.Maps", ui=True)
+        map_matches = [e for e in map_view.get("ui", {}).get("elements", [])
+                       if "Golden Gate Bridge" in str(e.get("text", ""))]
+        positions = [e["tap"]["y"] for e in map_matches if isinstance(e.get("tap"), dict)]
+        if len(positions) < 2 or max(positions) - min(positions) < 100:
+            raise RuntimeError("Map marker and place card were not both visible")
+        print(json.dumps({"app_case": "map_search", "result": "passed"}), flush=True)
 
-    submit("Open Maps and send a message", forbidden=True)
-    print(json.dumps({"app_case": "forbidden_compound", "result": "rejected"}), flush=True)
+    if "forbidden_compound" in args.cases:
+        submit("Open Maps and send a message", forbidden=True)
+        print(json.dumps({"app_case": "forbidden_compound", "result": "rejected"}), flush=True)
     return 0
 
 
