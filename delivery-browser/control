@@ -1,8 +1,8 @@
 Package: dev.beanbao.deliverybrowser
-Name: BeanBao Delivery Browser
-Version: 0.1.21
+Name: BeanBao Web
+Version: 0.1.22
 Architecture: iphoneos-arm
 Depends: dev.beanbao.agent (>= 0.3.118)
-Description: Sandboxed food-delivery browser for BeanBao.
+Description: Sandboxed web companion for BeanBao; currently supports Uber Eats tasks.
 Maintainer: BeanBao contributors
 Section: Applications

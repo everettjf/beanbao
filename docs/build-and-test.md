@@ -2,6 +2,10 @@
 
 Updated November 3, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 3 BeanBao Web source build
+
+The second visible app is named **BeanBao Web** in the new source build. Bridge 0.2.14 / Agent 0.3.118 / BeanBao Web 0.1.22 / App 0.3.73 passed the complete build: native policy and activity checks, Python browser and installer checks, 90 Swift Harness tests, and the four-package audit. The audit verified the new package and Home Screen display names while retaining the existing bundle ID, executable, and URL scheme for upgrade continuity. The local transfer archive was prepared and audited; its uncompressed SHA-256 is `d086a9fa2eb30d1307068f8786aa31a8a4123bb13c086ba99ab9fcd2935acb62`. This build has **not** been installed on the phone or published as a GitHub release. The public v0.3.72 archive still displays the old second-app name.
+
 ## November 3 public-preview build
 
 Bridge 0.2.14 / Agent 0.3.118 / Delivery Browser 0.1.21 / App 0.3.72 passed the complete source build. It ran native policy, activity, Python, browser JavaScript, installer, and 90 Swift Harness tests, then audited the four signed `iphoneos-arm64e` packages. The Bridge now withholds UI, OCR, and screenshot payloads unless the phone is unlocked and the foreground app is supported. The rebuilt archive SHA-256 is recorded in [the 0.3.72 release record](release-0.3.72.md).

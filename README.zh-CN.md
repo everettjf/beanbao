@@ -25,10 +25,14 @@
 | 连按三次音量下键 | 在当前应用上显示底部浮层，启动 Apple 语音转写；核对文字后再点 **Run**。快捷方式默认关闭。 |
 | 调研并生成带来源的 PDF | 执行可保存进度的多步调研流程，在 **Sessions** 中打开 PDF。 |
 | 调研、邮件草稿与 App Store 查找 | 准备供用户审阅的步骤；邮件发送和应用安装仍由用户在系统界面完成。 |
-| 外卖 | 独立的受限 Uber Eats 浏览器可查找商品、选择选项并核对购物车；真实结账尚未验证，最终下单需要用户明确审阅和点击。 |
+| 外卖 | 独立的沙盒网页 App 可在 Uber Eats 查找商品、选择选项并核对购物车；真实结账尚未验证，最终下单需要用户明确审阅和点击。 |
 
 BeanBao 目前不提供任意应用自动点击、静默安装 App Store 应用、自动发送邮件或无人值守付款。
 详见[常见需求](docs/common-cases.md)和[复杂任务边界](docs/complex-workflows.md)。
+
+BeanBao 采用两个可见 App：**BeanBao** 负责指令、语音、Sessions 与审阅；
+**BeanBao Web** 负责沙盒网页任务。当前公开版本的第二个图标仍显示“BeanBao Delivery”；
+源码构建已改名，并保留原安装身份和网站数据。详见[双 App 设计（英文）](docs/two-app-architecture.md)。
 
 ## 快速安装
 
@@ -100,7 +104,7 @@ python3 scripts/prepare_release_bundle.py
 - `bridge/`：SpringBoard 中受限的屏幕观察、输入操作和语音浮层。
 - `agent-native/`、`harness/`：手机端任务服务、模型客户端、策略和可恢复流程。
 - `app/`：BeanBao 界面、Apple 语音转写、模型设置、Sessions 和 Activity。
-- `delivery-browser/`：受限的 Uber Eats 网页浏览器，供实验性外卖流程使用。
+- `delivery-browser/`：BeanBao Web，目前只提供受限的 Uber Eats 实验流程；源码目录保留历史名称。
 - `vendor/`：保留原许可与说明的 ios-mcp、PalminoHarnessKit 源码快照。
 - `scripts/`、`tests/`：构建、包审计、安装器与验收工具。
 - `web/`：无需构建工具的 GitHub Pages 网站，默认英文，提供简体中文页面。

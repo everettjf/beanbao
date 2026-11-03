@@ -36,7 +36,7 @@ static NSDictionary *BBDeliveryRequest(NSDictionary *request) {
     // The loopback rejection stays generic; the browser gives a recovery step.
     if ([reply[@"error"] isEqualToString:@"Invalid request"])
         return @{@"ok": @NO, @"error":
-            @"Delivery connection needs refreshing. Open BeanBao and Browse food delivery again."};
+            @"Web connection needs refreshing. Open BeanBao and tap BeanBao Web again."};
     return reply;
 }
 

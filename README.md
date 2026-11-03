@@ -25,11 +25,16 @@ Bridge and task Agent on the device. A Mac is not needed after installation.
 | Triple press Volume Down | Shows one bottom overlay, starts Apple speech transcription, and lets you review the text before **Run**. The shortcut is off by default. |
 | “Research on-device speech recognition on iOS, create a PDF with sources” | Runs a saved multi-step research workflow and opens its sourced PDF from **Sessions**. |
 | Research + addressed email draft + App Store lookup | Prepares independent review steps. The user handles sending in Apple Mail and installing in the App Store. |
-| Food delivery | A sandboxed Uber Eats browser can find an item, configure options, and review a cart. Real checkout is unverified; a final order requires an explicit review and tap. |
+| Food delivery | The separate sandboxed web app can find an Uber Eats item, configure options, and review a cart. Real checkout is unverified; a final order requires an explicit review and tap. |
 
 BeanBao is deliberately bounded. It does not offer arbitrary-app tapping,
 silent App Store installation, automatic email sending, or unattended payment.
 See [common requests](docs/common-cases.md) and [complex workflow limits](docs/complex-workflows.md).
+
+BeanBao uses two visible apps: **BeanBao** for requests, voice, Sessions, and
+review; **BeanBao Web** for sandboxed website tasks. The current public release
+still labels the second icon “BeanBao Delivery”; the source build renames it
+without replacing its package or website data. See the [two-app design](docs/two-app-architecture.md).
 
 ## Quick start
 
@@ -113,7 +118,7 @@ this `iphoneos-arm64e` release. See [build and device tests](docs/build-and-test
 | `bridge/` | Restricted SpringBoard observation, input actions, and voice overlay. |
 | `agent-native/` and `harness/` | On-device task service, model clients, policy, and resumable workflows. |
 | `app/` | BeanBao UI, Apple speech transcription, model settings, Sessions, Activity, and review screens. |
-| `delivery-browser/` | Sandboxed Uber Eats browser for the experimental delivery flow. |
+| `delivery-browser/` | BeanBao Web, a sandboxed companion currently limited to the experimental Uber Eats flow. The source directory keeps its historical name. |
 | `vendor/` | Pinned ios-mcp and PalminoHarnessKit source snapshots with their original notices. |
 | `scripts/` and `tests/` | Build, package audit, installer, and acceptance tooling. |
 | `web/` | Buildless GitHub Pages website. |
