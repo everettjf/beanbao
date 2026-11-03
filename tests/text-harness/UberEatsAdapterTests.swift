@@ -26,7 +26,7 @@ final class UberEatsAdapterTests: XCTestCase {
 
     private let checkout = """
         Example Kitchen
-        Rice bowl No onions $18.00
+        1 × Rice bowl No onions $18.00
         Deliver to 200 E Santa Clara St, San Jose, CA
         Subtotal $18.00 Tax $1.49 Delivery fee $3.50 Service fee $1.00
         Small order fee $2.50 Promotion -$1.00 Tip $1.00 Total $26.49
@@ -34,6 +34,11 @@ final class UberEatsAdapterTests: XCTestCase {
         """
 
     func testPublicMenuCartAndLoginTransitionAreDistinct() {
+        XCTAssertEqual(BeanBaoUberEatsAdapter.merchantID(
+            from: URL(string: "https://www.ubereats.com/store/example/merchant-123")!),
+                       "merchant-123")
+        XCTAssertNil(BeanBaoUberEatsAdapter.merchantID(
+            from: URL(string: "https://www.ubereats.com.evil.example/store/example/merchant-123")!))
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/feed", "Search Uber Eats")), .feed)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/search-suggestions", "Search Uber Eats")), .searchSuggestions)
         XCTAssertEqual(BeanBaoUberEatsAdapter.page(observed("https://www.ubereats.com/store/example/id", "Search Uber Eats")), .merchant)
@@ -64,6 +69,7 @@ final class UberEatsAdapterTests: XCTestCase {
             observed("https://www.ubereats.com/checkout", checkout, bundle: "dev.beanbao.app"),
             observed("https://www.ubereats.com/checkout", checkout, bundle: "com.apple.mobilesafari"),
             observed("https://www.ubereats.com/checkout", checkout.replacingOccurrences(of: "Total $26.49", with: "Total $27.49")),
+            observed("https://www.ubereats.com/checkout", checkout.replacingOccurrences(of: "1 × Rice bowl", with: "2 × Rice bowl")),
             observed("https://www.ubereats.com/checkout", checkout.replacingOccurrences(of: "200 E Santa Clara St", with: "201 E Santa Clara St"))
         ] {
             XCTAssertThrowsError(try BeanBaoUberEatsAdapter.checkoutEvidence(observation, cart: cart()))
@@ -82,7 +88,7 @@ final class UberEatsAdapterTests: XCTestCase {
         XCTAssertNotNil(pointer)
         defer { free(pointer) }
         let response = String(cString: try XCTUnwrap(pointer))
-        XCTAssertEqual(response, "{\"ok\":true,\"page\":\"cart\",\"adapter_version\":4}")
+        XCTAssertEqual(response, "{\"ok\":true,\"page\":\"cart\",\"adapter_version\":5}")
         XCTAssertFalse(response.contains("checkout"))
 
         var impersonated = snapshot

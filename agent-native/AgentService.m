@@ -411,6 +411,95 @@ static NSString *BBDeliveryStepTitle(NSDictionary *result) {
     return [NSString stringWithFormat:@"%@: %@", verb, target];
 }
 
+static BOOL BBCheckoutMinorValid(id value, BOOL signedAdjustment) {
+    if (![value isKindOfClass:NSNumber.class]) return NO;
+    long long amount = [value longLongValue];
+    return signedAdjustment ? amount >= -1000000 && amount <= 1000000 && amount != 0 :
+        amount >= 0 && amount <= 1000000;
+}
+
+static NSDictionary *BBCheckoutSummaryFromOperations(NSDictionary *operations) {
+    if (![operations isKindOfClass:NSDictionary.class]) return nil;
+    for (NSString *key in operations) {
+        if (![key hasPrefix:@"delivery-plan-v1-"]) continue;
+        NSString *suffix = [key substringFromIndex:@"delivery-plan-v1-".length];
+        NSDictionary *plan = operations[key];
+        NSDictionary *receipt = operations[[@"delivery-review-v1-" stringByAppendingString:suffix]];
+        if (![plan isKindOfClass:NSDictionary.class] ||
+            ![receipt isKindOfClass:NSDictionary.class] ||
+            ![plan[@"tool"] isEqualToString:@"delivery_choose"] ||
+            ![plan[@"state"] isEqualToString:@"completed"] ||
+            ![receipt[@"tool"] isEqualToString:@"delivery_review_checkout"] ||
+            ![receipt[@"state"] isEqualToString:@"completed"]) continue;
+        NSDictionary *planResult = plan[@"result"];
+        NSDictionary *reviewResult = receipt[@"result"];
+        if (![planResult isKindOfClass:NSDictionary.class] ||
+            ![reviewResult isKindOfClass:NSDictionary.class]) continue;
+        NSString *json = planResult[@"checkout_cart_json"];
+        NSString *visibleTotal = reviewResult[@"visible_total"];
+        NSString *digest = reviewResult[@"cart_digest"];
+        if (![json isKindOfClass:NSString.class] || json.length > 4096 ||
+            ![visibleTotal isKindOfClass:NSString.class] || visibleTotal.length > 30 ||
+            ![digest isKindOfClass:NSString.class] || digest.length != 64) continue;
+        NSDictionary *draft = [NSJSONSerialization JSONObjectWithData:
+            [json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        if (![draft isKindOfClass:NSDictionary.class]) continue;
+        NSString *merchant = draft[@"merchantName"];
+        NSString *address = draft[@"address"];
+        NSString *currency = draft[@"currency"];
+        NSArray *items = draft[@"items"];
+        NSArray *adjustments = draft[@"adjustments"];
+        NSNumber *subtotal = draft[@"subtotalMinor"], *tax = draft[@"taxMinor"];
+        NSNumber *delivery = draft[@"deliveryFeeMinor"], *service = draft[@"serviceFeeMinor"];
+        NSNumber *tip = draft[@"tipMinor"], *total = draft[@"totalMinor"];
+        if (![merchant isKindOfClass:NSString.class] || merchant.length > 120 ||
+            ![address isKindOfClass:NSString.class] || address.length > 240 ||
+            ![currency isEqualToString:@"USD"] ||
+            ![items isKindOfClass:NSArray.class] || items.count < 1 || items.count > 20 ||
+            ![adjustments isKindOfClass:NSArray.class] || adjustments.count > 20 ||
+            !BBCheckoutMinorValid(subtotal, NO) || !BBCheckoutMinorValid(tax, NO) ||
+            !BBCheckoutMinorValid(delivery, NO) || !BBCheckoutMinorValid(service, NO) ||
+            !BBCheckoutMinorValid(tip, NO) || !BBCheckoutMinorValid(total, NO) ||
+            total.longLongValue == 0 ||
+            ![visibleTotal.lowercaseString isEqualToString:
+                [NSString stringWithFormat:@"total $%lld.%02lld",
+                 total.longLongValue / 100, total.longLongValue % 100]]) continue;
+        NSMutableArray *safeItems = [NSMutableArray array];
+        for (NSDictionary *item in items) {
+            if (![item isKindOfClass:NSDictionary.class] ||
+                ![item[@"name"] isKindOfClass:NSString.class] ||
+                [item[@"name"] length] > 120 ||
+                ![item[@"options"] isKindOfClass:NSArray.class] ||
+                [item[@"options"] count] > 20 ||
+                ![item[@"quantity"] isKindOfClass:NSNumber.class] ||
+                [item[@"quantity"] integerValue] < 1 ||
+                [item[@"quantity"] integerValue] > 50 ||
+                !BBCheckoutMinorValid(item[@"lineTotalMinor"], NO)) return nil;
+            for (NSString *option in item[@"options"])
+                if (![option isKindOfClass:NSString.class] || option.length > 120) return nil;
+            [safeItems addObject:@{@"name": item[@"name"], @"options": item[@"options"],
+                                   @"quantity": item[@"quantity"],
+                                   @"lineTotalMinor": item[@"lineTotalMinor"]}];
+        }
+        NSMutableArray *safeAdjustments = [NSMutableArray array];
+        for (NSDictionary *adjustment in adjustments) {
+            if (![adjustment isKindOfClass:NSDictionary.class] ||
+                ![adjustment[@"name"] isKindOfClass:NSString.class] ||
+                [adjustment[@"name"] length] > 120 ||
+                !BBCheckoutMinorValid(adjustment[@"amountMinor"], YES)) return nil;
+            [safeAdjustments addObject:@{@"name": adjustment[@"name"],
+                                         @"amountMinor": adjustment[@"amountMinor"]}];
+        }
+        return @{@"merchant": merchant, @"address": address, @"currency": currency,
+                 @"items": safeItems, @"adjustments": safeAdjustments,
+                 @"subtotal_minor": subtotal, @"tax_minor": tax,
+                 @"delivery_fee_minor": delivery, @"service_fee_minor": service,
+                 @"tip_minor": tip, @"total_minor": total,
+                 @"cart_digest": digest};
+    }
+    return nil;
+}
+
 static NSDictionary *BBWorkflowDetails(NSDictionary *request) {
     NSString *identity = request[@"workflow_id"];
     NSDictionary *record = BBReadWorkflowRecord(identity);
@@ -466,9 +555,15 @@ static NSDictionary *BBWorkflowDetails(NSDictionary *request) {
     NSUInteger total = steps.count;
     if (steps.count > 40) [steps removeObjectsInRange:NSMakeRange(0, steps.count - 40)];
     NSString *kind = BBWorkflowKind(identity, record);
-    return @{@"ok": @YES, @"id": identity, @"request": record[@"request"],
-             @"kind": kind, @"phase": BBWorkflowEffectivePhase(record), @"steps": steps,
-             @"total_steps": @(total)};
+    NSMutableDictionary *details = [@{@"ok": @YES, @"id": identity,
+        @"request": record[@"request"], @"kind": kind,
+        @"phase": BBWorkflowEffectivePhase(record), @"steps": steps,
+        @"total_steps": @(total)} mutableCopy];
+    if (delivery) {
+        NSDictionary *checkout = BBCheckoutSummaryFromOperations(operations);
+        if (checkout) details[@"checkout_summary"] = checkout;
+    }
+    return details;
 }
 
 static void BBRestoreWorkflowIdentity(NSString *identity) {

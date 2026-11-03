@@ -116,6 +116,51 @@ public struct BeanBaoDeliveryCart: Codable, Equatable, Sendable {
     }
 }
 
+/// Fields the model may extract from a visible checkout. The merchant ID is
+/// deliberately absent: it comes from a previously verified store URL.
+public struct BeanBaoDeliveryCheckoutDraft: Codable, Equatable, Sendable {
+    public let merchantName: String
+    public let items: [BeanBaoDeliveryItem]
+    public let address: String
+    public let currency: String
+    public let subtotalMinor: Int
+    public let taxMinor: Int
+    public let deliveryFeeMinor: Int
+    public let serviceFeeMinor: Int
+    public let tipMinor: Int
+    public let adjustments: [BeanBaoDeliveryAdjustment]
+    public let totalMinor: Int
+    public let arrivalEstimate: String?
+
+    public init(merchantName: String, items: [BeanBaoDeliveryItem], address: String,
+                currency: String, subtotalMinor: Int, taxMinor: Int,
+                deliveryFeeMinor: Int, serviceFeeMinor: Int, tipMinor: Int,
+                adjustments: [BeanBaoDeliveryAdjustment], totalMinor: Int,
+                arrivalEstimate: String?) {
+        self.merchantName = merchantName
+        self.items = items
+        self.address = address
+        self.currency = currency
+        self.subtotalMinor = subtotalMinor
+        self.taxMinor = taxMinor
+        self.deliveryFeeMinor = deliveryFeeMinor
+        self.serviceFeeMinor = serviceFeeMinor
+        self.tipMinor = tipMinor
+        self.adjustments = adjustments
+        self.totalMinor = totalMinor
+        self.arrivalEstimate = arrivalEstimate
+    }
+
+    public func cart(merchantID: String) -> BeanBaoDeliveryCart {
+        BeanBaoDeliveryCart(service: "Uber Eats", merchantID: merchantID,
+            merchantName: merchantName, items: items, address: address,
+            currency: currency, subtotalMinor: subtotalMinor, taxMinor: taxMinor,
+            deliveryFeeMinor: deliveryFeeMinor, serviceFeeMinor: serviceFeeMinor,
+            tipMinor: tipMinor, totalMinor: totalMinor,
+            arrivalEstimate: arrivalEstimate, adjustments: adjustments)
+    }
+}
+
 public struct BeanBaoDeliveryScreenEvidence: Codable, Equatable, Sendable {
     public let bundleID: String
     public let checkoutFingerprint: String

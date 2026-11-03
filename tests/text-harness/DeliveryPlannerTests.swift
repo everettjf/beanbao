@@ -7,13 +7,26 @@ private struct DeliveryScriptModel: PHKModelClient {
     let action: String
     let target: String
     let observationID: String
+    let checkoutCartJSON: String?
+
+    init(action: String, target: String, observationID: String,
+         checkoutCartJSON: String? = nil) {
+        self.action = action
+        self.target = target
+        self.observationID = observationID
+        self.checkoutCartJSON = checkoutCartJSON
+    }
 
     func stream(request: PHKCompletionRequest) -> AsyncThrowingStream<PHKModelEvent, Error> {
         let events: [PHKModelEvent]
         if request.messages.last?.role == .tool {
             events = [.contentDelta("One action proposed for review."), .completed(.stop)]
         } else {
-            let arguments = "{\"action\":\"\(action)\",\"target\":\"\(target)\",\"observation_id\":\"\(observationID)\"}"
+            var fields: [String: Any] = ["action": action, "target": target,
+                                         "observation_id": observationID]
+            if let checkoutCartJSON { fields["checkout_cart_json"] = checkoutCartJSON }
+            let arguments = String(decoding: try! JSONSerialization.data(withJSONObject: fields),
+                                   as: UTF8.self)
             events = [.toolCallDelta(.init(index: 0, id: "delivery-proposal", name: "delivery_choose",
                                            arguments: arguments)), .completed(.toolCalls)]
         }
@@ -178,23 +191,40 @@ final class DeliveryPlannerTests: XCTestCase {
             .contains("private-cart-marker"))
     }
 
-    func testCheckoutReviewRecordsVisibleTotalWithoutOrderAction() async throws {
+    func testCheckoutReviewRequiresCompleteBoundSummaryWithoutOrderAction() async throws {
         let request = "Add Rice bowl to cart and open checkout to review the total"
         let (journal, file) = try store(request: request)
+        let merchantKey = "delivery-execute-v1-merchant"
+        _ = try await journal.claim(key: merchantKey, tool: "delivery_execute",
+                                    effect: .localMutation)
+        try await journal.finish(key: merchantKey, result: .object([
+            "transition_verified": .bool(true), "merchant_id": .string("merchant-123")]))
+        let draft = BeanBaoDeliveryCheckoutDraft(merchantName: "Example Kitchen",
+            items: [.init(name: "Rice bowl", options: ["No onions"], quantity: 1,
+                          lineTotalMinor: 1800)],
+            address: "200 E Santa Clara St, San Jose, CA", currency: "USD",
+            subtotalMinor: 1800, taxMinor: 149, deliveryFeeMinor: 350,
+            serviceFeeMinor: 100, tipMinor: 100,
+            adjustments: [.init(name: "Small order fee", amountMinor: 250),
+                          .init(name: "Promotion", amountMinor: -100)],
+            totalMinor: 2649, arrivalEstimate: nil)
+        let draftJSON = String(decoding: try JSONEncoder().encode(draft), as: UTF8.self)
         let text = """
-        Example Kitchen Rice bowl $18.00
+        Example Kitchen 1 × Rice bowl No onions $18.00
         Deliver to 200 E Santa Clara St, San Jose, CA
-        Subtotal $18.00 Tax $1.49 Delivery fee $3.50
-        Total $22.99 Place order private-checkout-marker
+        Subtotal $18.00 Tax $1.49 Delivery fee $3.50 Service fee $1.00
+        Small order fee $2.50 Promotion -$1.00 Tip $1.00
+        Total $26.49 Place order private-checkout-marker
         """
         let checkout = observation("https://www.ubereats.com/checkout", text)
         let id = try BeanBaoDeliveryObservationContract.identifier(checkout)
         let proposal = try await BeanBaoDeliveryPlanner.choose(
             request: request, observation: checkout, store: journal,
             client: DeliveryScriptModel(action: "review_checkout", target: "",
-                                        observationID: id), model: "scripted")
+                                        observationID: id, checkoutCartJSON: draftJSON),
+            model: "scripted")
         let changed = observation(checkout.url.absoluteString,
-                                  text.replacingOccurrences(of: "$22.99", with: "$24.99"))
+                                  text.replacingOccurrences(of: "$26.49", with: "$28.49"))
         XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(
             proposal, observation: changed, request: request))
         do {
@@ -211,7 +241,10 @@ final class DeliveryPlannerTests: XCTestCase {
         guard case .object(let fields)? = receipt?.result else {
             return XCTFail("Checkout receipt missing")
         }
-        XCTAssertEqual(fields["visible_total"], .string("Total $22.99"))
+        XCTAssertEqual(fields["visible_total"], .string("Total $26.49"))
+        XCTAssertNotNil(fields["cart_digest"])
+        let gatePath = await journal.checkoutReviewURL()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: gatePath.path))
         let journalText = String(decoding: try Data(contentsOf: file), as: UTF8.self)
         XCTAssertFalse(journalText.contains("private-checkout-marker"))
         XCTAssertFalse(journalText.contains("Place order"))
@@ -228,6 +261,38 @@ final class DeliveryPlannerTests: XCTestCase {
                      "Deliver to 200 E Santa Clara St Subtotal $18.00 Total $22.99"] {
             XCTAssertNil(BeanBaoUberEatsAdapter.checkoutVisibleTotal(observation(url, text)))
         }
+    }
+
+    func testModelCannotInventCheckoutAmountsOrMerchantIdentity() async throws {
+        let request = "Open checkout to review the total"
+        let checkout = observation("https://www.ubereats.com/checkout", """
+            Example Kitchen 1 × Rice bowl $10.00
+            Deliver to 200 E Santa Clara St, San Jose, CA
+            Subtotal $10.00 Tax $1.00 Total $11.00 Place order
+            """)
+        let id = try BeanBaoDeliveryObservationContract.identifier(checkout)
+        let invented = BeanBaoDeliveryCheckoutDraft(merchantName: "Example Kitchen",
+            items: [.init(name: "Rice bowl", options: [], quantity: 1, lineTotalMinor: 1000)],
+            address: "200 E Santa Clara St, San Jose, CA", currency: "USD",
+            subtotalMinor: 1000, taxMinor: 200, deliveryFeeMinor: 0,
+            serviceFeeMinor: 0, tipMinor: 0, adjustments: [],
+            totalMinor: 1200, arrivalEstimate: nil)
+        let json = String(decoding: try JSONEncoder().encode(invented), as: UTF8.self)
+        let fields: PHKJSONValue = .object([
+            "action": .string("review_checkout"), "target": .string(""),
+            "observation_id": .string(id), "checkout_cart_json": .string(json)])
+        let missingIdentity = BeanBaoDeliveryChooseTool(observation: checkout, request: request,
+            box: BeanBaoDeliveryProposalBox())
+        do {
+            _ = try await missingIdentity.execute(arguments: fields)
+            XCTFail("Review accepted an unverified merchant")
+        } catch BeanBaoDeliveryPlanError.invalidAction { }
+        let wrongAmounts = BeanBaoDeliveryChooseTool(observation: checkout, request: request,
+            box: BeanBaoDeliveryProposalBox(), merchantID: "merchant-123")
+        do {
+            _ = try await wrongAmounts.execute(arguments: fields)
+            XCTFail("Review accepted invented tax and total")
+        } catch BeanBaoDeliveryPlanError.invalidAction { }
     }
 
     func testFeedMustOpenSearchBeforeSubmittingAQuery() throws {

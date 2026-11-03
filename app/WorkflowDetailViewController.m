@@ -56,12 +56,14 @@
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
     (void)tableView;
-    return self.details ? 2 : 0;
+    return self.details ? ([self.details[@"checkout_summary"] isKindOfClass:NSDictionary.class] ? 3 : 2) : 0;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     (void)tableView;
     if (section == 0) return 1;
+    if ([self.details[@"checkout_summary"] isKindOfClass:NSDictionary.class] && section == 1)
+        return 1;
     NSArray *steps = self.details[@"steps"];
     return MAX(steps.count, 1);
 }
@@ -69,6 +71,8 @@
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     (void)tableView;
     if (section == 0) return @"Request";
+    if ([self.details[@"checkout_summary"] isKindOfClass:NSDictionary.class] && section == 1)
+        return @"Checkout review";
     NSUInteger total = [self.details[@"total_steps"] unsignedIntegerValue];
     NSUInteger shown = [self.details[@"steps"] count];
     return total > shown ? [NSString stringWithFormat:@"Latest %lu of %lu steps",
@@ -95,6 +99,40 @@ static NSString *BBStepState(NSString *state) {
     return names[state] ?: @"Unknown";
 }
 
+static NSString *BBReviewMoney(NSNumber *minor) {
+    long long value = minor.longLongValue;
+    NSString *sign = value < 0 ? @"-" : @"";
+    unsigned long long absolute = value < 0 ? (unsigned long long)(-value) :
+        (unsigned long long)value;
+    return [NSString stringWithFormat:@"%@$%llu.%02llu", sign,
+        absolute / 100, absolute % 100];
+}
+
+static NSString *BBCheckoutSummaryText(NSDictionary *summary) {
+    NSMutableArray<NSString *> *lines = [NSMutableArray arrayWithArray:@[
+        [NSString stringWithFormat:@"Merchant: %@", summary[@"merchant"] ?: @""],
+        [NSString stringWithFormat:@"Deliver to: %@", summary[@"address"] ?: @""]]];
+    for (NSDictionary *item in summary[@"items"]) {
+        [lines addObject:[NSString stringWithFormat:@"%@ × %@  %@",
+            item[@"quantity"], item[@"name"], BBReviewMoney(item[@"lineTotalMinor"])]];
+        for (NSString *option in item[@"options"])
+            [lines addObject:[NSString stringWithFormat:@"  %@", option]];
+    }
+    for (NSArray *entry in @[@[@"Subtotal", @"subtotal_minor"],
+                             @[@"Tax", @"tax_minor"],
+                             @[@"Delivery fee", @"delivery_fee_minor"],
+                             @[@"Service fee", @"service_fee_minor"],
+                             @[@"Tip", @"tip_minor"]])
+        [lines addObject:[NSString stringWithFormat:@"%@: %@", entry[0],
+            BBReviewMoney(summary[entry[1]])]];
+    for (NSDictionary *adjustment in summary[@"adjustments"])
+        [lines addObject:[NSString stringWithFormat:@"%@: %@", adjustment[@"name"],
+            BBReviewMoney(adjustment[@"amountMinor"])]];
+    [lines addObject:[NSString stringWithFormat:@"Total: %@ %@",
+        summary[@"currency"] ?: @"", BBReviewMoney(summary[@"total_minor"])]];
+    return [lines componentsJoinedByString:@"\n"];
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     NSString *reuse = indexPath.section == 0 ? @"Request" : @"Step";
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:reuse];
@@ -110,6 +148,13 @@ static NSString *BBStepState(NSString *state) {
             ([phase isEqualToString:@"waitingForUser"] ? @"Waiting for you" :
              ([phase isEqualToString:@"needsReconciliation"] ? @"Needs review" :
               ([phase isEqualToString:@"running"] ? @"In progress" : @"Stopped")));
+        return cell;
+    }
+    if ([self.details[@"checkout_summary"] isKindOfClass:NSDictionary.class] &&
+        indexPath.section == 1) {
+        cell.textLabel.text = BBCheckoutSummaryText(self.details[@"checkout_summary"]);
+        cell.detailTextLabel.text = @"Read-only summary. Check every charge and the address on Uber Eats before ordering.";
+        cell.detailTextLabel.numberOfLines = 0;
         return cell;
     }
     NSArray *steps = self.details[@"steps"];

@@ -111,6 +111,10 @@ public actor BeanBaoWorkflowStore: PHKExecutionCheckpointPersisting {
 
     public func snapshot() -> BeanBaoWorkflowRecord { record }
 
+    public func checkoutReviewURL() -> URL {
+        url.deletingLastPathComponent().appendingPathComponent("checkout-review.json")
+    }
+
     public func saveExecutionCheckpoint(_ checkpoint: PHKAgentCheckpoint) async throws {
         try mutate {
             $0.checkpoint = checkpoint

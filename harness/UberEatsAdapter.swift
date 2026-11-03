@@ -60,7 +60,20 @@ func beanBaoAvailableOptions(_ fields: [String: Any]) -> [String]? {
 /// Versioned screen contract for the first delivery site. Unrecognized screens
 /// stop the workflow; the adapter does not infer a payable total from a menu.
 public enum BeanBaoUberEatsAdapter {
-    public static let version = 4
+    public static let version = 5
+
+    public static func merchantID(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "www.ubereats.com" else { return nil }
+        let parts = url.path.split(separator: "/")
+        guard parts.count >= 3, parts[0] == "store" else { return nil }
+        let identifier = String(parts.last!)
+        guard (2...100).contains(identifier.count),
+              identifier.range(of: #"^[A-Za-z0-9-]+$"#, options: .regularExpression) != nil else {
+            return nil
+        }
+        return identifier
+    }
 
     public static func page(_ observation: BeanBaoUberEatsObservation) -> BeanBaoUberEatsPage {
         guard observation.url.scheme?.lowercased() == "https",
@@ -107,6 +120,14 @@ public enum BeanBaoUberEatsAdapter {
             required.append(item.name)
             required.append(money(item.lineTotalMinor, currency: cart.currency))
             required.append(contentsOf: item.options)
+            let name = NSRegularExpression.escapedPattern(for: item.name.lowercased())
+            let quantity = item.quantity
+            guard text.range(of: #"\b"# + String(quantity) + #"\s*[x×]\s*"# + name + #"\b"#,
+                             options: .regularExpression) != nil ||
+                  text.range(of: #"\b"# + name + #"\s*[x×]\s*"# + String(quantity) + #"\b"#,
+                             options: .regularExpression) != nil else {
+                throw BeanBaoUberEatsAdapterError.incompleteCheckout
+            }
         }
         let standardCharges: [(String, Int)] = [
             ("tax", cart.taxMinor), ("delivery fee", cart.deliveryFeeMinor),

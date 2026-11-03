@@ -30,9 +30,9 @@ int32_t BBMarkAppStoreInstalled(const char *workflowID, const char *bundleID) {
 }
 char *BBUberEatsClassifySnapshot(const char *snapshotJSON) {
     if (snapshotJSON && strstr(snapshotJSON, "View order"))
-        return strdup("{\"ok\":true,\"page\":\"cart_handoff\",\"adapter_version\":4}");
+        return strdup("{\"ok\":true,\"page\":\"cart_handoff\",\"adapter_version\":5}");
     if (!snapshotJSON || !strstr(snapshotJSON, "Go to checkout")) return NULL;
-    return strdup("{\"ok\":true,\"page\":\"cart\",\"adapter_version\":4}");
+    return strdup("{\"ok\":true,\"page\":\"cart\",\"adapter_version\":5}");
 }
 char *BBUberEatsValidateAction(const char *snapshotJSON, const char *actionJSON) {
     if (!snapshotJSON || !actionJSON) return NULL;
@@ -333,6 +333,32 @@ int main(void) {
             !Check([BBDeleteWorkflow(@{@"workflow_id": appID})[@"ok"] boolValue],
                    "App Store candidate and search files are user-deletable")) return 1;
         NSString *deliveryID = NSUUID.UUID.UUIDString;
+        NSDictionary *checkoutDraft = @{@"merchantName": @"Example Kitchen",
+            @"address": @"200 E Santa Clara St, San Jose, CA", @"currency": @"USD",
+            @"items": @[@{@"name": @"Rice bowl", @"options": @[@"No onions"],
+                           @"quantity": @1, @"lineTotalMinor": @1800}],
+            @"adjustments": @[], @"subtotalMinor": @1800, @"taxMinor": @149,
+            @"deliveryFeeMinor": @350, @"serviceFeeMinor": @100,
+            @"tipMinor": @100, @"totalMinor": @2499};
+        NSString *checkoutJSON = [[NSString alloc] initWithData:
+            [NSJSONSerialization dataWithJSONObject:checkoutDraft options:0 error:nil]
+            encoding:NSUTF8StringEncoding];
+        NSDictionary *checkoutOps = @{@"delivery-plan-v1-checkout":
+            @{@"tool": @"delivery_choose", @"state": @"completed",
+              @"result": @{@"checkout_cart_json": checkoutJSON}},
+            @"delivery-review-v1-checkout":
+            @{@"tool": @"delivery_review_checkout", @"state": @"completed",
+              @"result": @{@"visible_total": @"Total $24.99",
+                           @"cart_digest": @"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}};
+        NSDictionary *safeSummary = BBCheckoutSummaryFromOperations(checkoutOps);
+        if (!Check([safeSummary[@"merchant"] isEqualToString:@"Example Kitchen"] &&
+                   [safeSummary[@"total_minor"] isEqualToNumber:@2499] &&
+                   [safeSummary[@"items"] count] == 1 &&
+                   ![safeSummary.description containsString:@"checkout_cart_json"],
+                   "Sessions exposes only a completed bounded checkout summary") ||
+            !Check(BBCheckoutSummaryFromOperations(@{@"delivery-plan-v1-checkout":
+                checkoutOps[@"delivery-plan-v1-checkout"]}) == nil,
+                   "an unverified model proposal cannot appear as a checkout summary")) return 1;
         NSString *deliveryFolder = [workflowRoot stringByAppendingPathComponent:deliveryID];
         [NSFileManager.defaultManager createDirectoryAtPath:deliveryFolder withIntermediateDirectories:NO
                                   attributes:@{NSFilePosixPermissions: @0700} error:nil];
