@@ -33,7 +33,7 @@ NSDictionary *BBAgentRequest(NSDictionary *request) {
         NSString *token = nil;
         @synchronized(NSBundle.mainBundle) { token = BBDeliveryPairingToken; }
         if (token.length != 64)
-            return @{@"ok": @NO, @"error": @"Open BeanBao to connect the delivery browser"};
+            return @{@"ok": @NO, @"error": @"Open BeanBao to connect BeanBao Helper"};
         NSMutableDictionary *paired = [request mutableCopy];
         paired[@"delivery_token"] = token;
         request = paired;

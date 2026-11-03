@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 760" role="img" aria-labelledby="title description">
+  <title id="title">BeanBao on-device architecture</title>
+  <desc id="description">Two visible iPhone apps, BeanBao and BeanBao Helper, connect to one on-device Agent. The Agent coordinates the SpringBoard Bridge and optional model services. The Helper has a restricted paired channel for supported website workflows.</desc>
+  <defs>
+    <linearGradient id="paper" x2="1" y2="1"><stop stop-color="#fffaf3"/><stop offset="1" stop-color="#fff1e6"/></linearGradient>
+    <linearGradient id="main" x2="1" y2="1"><stop stop-color="#fff0df"/><stop offset="1" stop-color="#ffe0c7"/></linearGradient>
+    <linearGradient id="helper" x2="1" y2="1"><stop stop-color="#fff8ee"/><stop offset="1" stop-color="#ffe9d7"/></linearGradient>
+    <filter id="shadow" x="-15%" y="-25%" width="130%" height="160%"><feDropShadow dx="0" dy="12" stdDeviation="15" flood-color="#9b593c" flood-opacity=".12"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#b5674a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #4b3029; }
+      .heading { font-size: 41px; font-weight: 750; letter-spacing: -.8px; }
+      .sub { font-size: 20px; fill: #765a50; }
+      .label { font-size: 13px; font-weight: 800; letter-spacing: 1.7px; fill: #a85639; }
+      .name { font-size: 31px; font-weight: 750; }
+      .body { font-size: 18px; fill: #6d5147; }
+      .small { font-size: 16px; fill: #77594d; }
+      .edge { fill: none; stroke: #b5674a; stroke-width: 3; stroke-linecap: round; marker-end: url(#arrow); }
+      .edge-label { font-size: 15px; font-weight: 700; fill: #8e4b34; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="760" rx="34" fill="url(#paper)"/>
+  <circle cx="1303" cy="76" r="142" fill="#f8d2b5" opacity=".32"/>
+  <circle cx="61" cy="713" r="130" fill="#f6cba9" opacity=".28"/>
+  <text x="72" y="75" class="heading">BeanBao, on your iPhone</text>
+  <text x="74" y="108" class="sub">Two visible apps · one local task engine · deliberate permission boundaries</text>
+
+  <g filter="url(#shadow)">
+    <rect x="72" y="165" width="540" height="200" rx="26" fill="url(#main)" stroke="#e7af91" stroke-width="2"/>
+    <rect x="788" y="165" width="540" height="200" rx="26" fill="url(#helper)" stroke="#e8c1a7" stroke-width="2"/>
+    <rect x="72" y="490" width="312" height="181" rx="24" fill="#fffaf6" stroke="#e9c5b1" stroke-width="2"/>
+    <rect x="500" y="456" width="400" height="215" rx="26" fill="#fff5e9" stroke="#dda781" stroke-width="2"/>
+    <rect x="1016" y="490" width="312" height="181" rx="24" fill="#fffaf6" stroke="#e9c5b1" stroke-width="2"/>
+  </g>
+
+  <rect x="100" y="187" width="112" height="26" rx="13" fill="#f8d0b5"/><text x="114" y="205" class="label">VISIBLE APP</text>
+  <text x="100" y="256" class="name">BeanBao</text>
+  <text x="100" y="292" class="body">Voice &amp; text · Sessions · model settings</text>
+  <text x="100" y="323" class="body">Task progress and human review</text>
+  <circle cx="551" cy="258" r="27" fill="#e98554"/><circle cx="542" cy="255" r="3.5" fill="#fff"/><circle cx="559" cy="255" r="3.5" fill="#fff"/><path d="M542 268 Q551 276 560 268" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+
+  <rect x="816" y="187" width="112" height="26" rx="13" fill="#f8dec6"/><text x="830" y="205" class="label">VISIBLE APP</text>
+  <text x="816" y="256" class="name">BeanBao Helper</text>
+  <text x="816" y="292" class="body">Sandboxed WebKit &amp; native iOS UI</text>
+  <text x="816" y="323" class="body">Today: bounded Uber Eats workflow</text>
+  <rect x="1251" y="232" width="41" height="34" rx="7" fill="none" stroke="#d57d55" stroke-width="4"/><path d="M1251 242h41" stroke="#d57d55" stroke-width="4"/>
+
+  <text x="101" y="518" class="label">BACKGROUND COMPONENT</text>
+  <text x="101" y="558" class="name" style="font-size: 26px">SpringBoard Bridge</text>
+  <text x="101" y="592" class="small">Quick voice overlay</text>
+  <text x="101" y="619" class="small">Checked, bounded phone actions</text>
+  <text x="101" y="646" class="small">Supported apps only</text>
+
+  <text x="530" y="487" class="label">BACKGROUND COMPONENT</text>
+  <text x="530" y="531" class="name">BeanBao Agent</text>
+  <text x="530" y="567" class="body">Plan · validate · execute</text>
+  <text x="530" y="598" class="body">Resumable workflow journal</text>
+  <text x="530" y="629" class="body">Review gates and audit</text>
+
+  <text x="1045" y="518" class="label">OPTIONAL NETWORK SERVICE</text>
+  <text x="1045" y="558" class="name" style="font-size: 27px">Model provider</text>
+  <text x="1045" y="592" class="small">Claude, OpenAI, compatible API</text>
+  <text x="1045" y="619" class="small">Configured by the user</text>
+
+  <path d="M611 265 H785" class="edge"/>
+  <text x="623" y="247" class="edge-label">Open supported flow</text>
+  <path d="M340 365 C370 410 495 404 572 453" class="edge"/>
+  <text x="289" y="409" class="edge-label">Local task IPC</text>
+  <path d="M1061 365 C1039 407 893 407 824 453" class="edge"/>
+  <text x="970" y="409" class="edge-label">Restricted paired IPC</text>
+  <path d="M497 563 H388" class="edge"/>
+  <text x="396" y="541" class="edge-label">Act</text>
+  <path d="M903 563 H1012" class="edge"/>
+  <text x="923" y="541" class="edge-label">When needed</text>
+
+  <line x1="72" y1="710" x2="1328" y2="710" stroke="#e8c8b3" stroke-width="2"/>
+  <text x="73" y="738" class="small">Runs on a compatible RootHide iPhone</text>
+  <text x="980" y="738" class="small">External actions wait for review</text>
+</svg>

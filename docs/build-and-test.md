@@ -2,6 +2,12 @@
 
 Updated November 3, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 3 v0.3.75 release build and paired-phone upgrade
+
+The final Bridge 0.2.14 / Agent 0.3.118 / BeanBao Helper 0.1.24 / App 0.3.75 build passed native policy, activity, Python browser and installer checks, 90 Swift Harness tests, and a four-package audit that checks distinct app icons. The uncompressed archive SHA-256 is `cc8dbdd608cd5bcefb049731d4e03fd1a616f9c4faeceb891fbd96da039a2857`; the compressed archive SHA-256 is `1a18ea55ad741d36f58c6c01c214a1d4d0eb4628faa98b20f93e644f27ac4fa3`.
+
+The connected iPhone first passed the transferred archive's checksum and `install.sh --dry-run` preflight. The installer then upgraded only the Helper package from 0.1.21 to 0.1.24 and the App package from 0.3.72 to 0.3.75; Bridge and Agent were kept at 0.2.14 and 0.3.118. It refreshed icons and did not reload SpringBoard. `verify_device.py --expect-bundle` confirmed all four installed versions, the responding Agent and Bridge, and a phone that remained unlocked with its screen on. BeanBao Helper and BeanBao processes were launched after installation. The renamed build did not receive a fresh end-to-end delivery cart or spoken-task run; prior device evidence remains in the sections below.
+
 ## November 3 BeanBao Helper source build
 
 The second app's display and package name is now **BeanBao Helper**. The Browser 0.1.24 and App 0.3.75 packages built and passed the four-package signature, identity, dependency, and contents audit with the previously validated Bridge and Agent packages. The local transfer archive SHA-256 is `dba5bfa20b94496440e02fabcba29b21f47d599841c4573083762153807e4371`. This was a display-name and UI-copy change; the full 90-test suite passed in the immediately preceding Companion build. The Helper build has not been installed on the phone or published as a GitHub release.

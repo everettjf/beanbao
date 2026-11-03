@@ -42,13 +42,14 @@ comparison, not a diagnosis of the internal WebKit failure.
 
 ## Naming and upgrade
 
-The second app's Home Screen and package display name is **BeanBao Helper** in
-the current source build. Its existing package ID (`dev.beanbao.deliverybrowser`), bundle
+The second app's Home Screen and package display name is **BeanBao Helper**.
+Its existing package ID (`dev.beanbao.deliverybrowser`), bundle
 ID, executable, and URL scheme stay in place so an update replaces the existing
 app and preserves its website session. Internal source paths still say
 `delivery-browser`; they are implementation identifiers, not user-facing names.
-The public v0.3.72 archive still displays the old name until a newer package is
-built, verified, and released.
+The v0.3.75 update replaces the older **BeanBao Delivery** icon with the
+BeanBao Helper name and its distinct warm icon. The upgrade retains the same
+bundle ID and website data.
 
 An app update does not require a SpringBoard reload. Reopen BeanBao and BeanBao
 Helper after updating their packages. A new Bridge installation or update still
@@ -59,10 +60,8 @@ requires a SpringBoard reload and manual unlock.
 - Replace the custom URL pairing-token handoff before treating website workflows
   as stable. A competing app could register the same URL scheme. Keep the Agent's
   website channel restricted and bind a session to the intended app.
-- Give BeanBao Helper a distinct icon so the two apps are easy to tell apart on the
-  Home Screen. The current source build changes the name only.
 - Add another website adapter only after its allowed hosts, observable actions,
   and external-action review gate are specified and tested on a phone.
 
 See [complex workflow evidence](complex-workflows.md) and the
-[public release record](release-0.3.72.md) for current validation limits.
+[public release record](release-0.3.75.md) for current validation limits.

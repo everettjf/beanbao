@@ -1,19 +1,32 @@
-# BeanBao
+<p align="center"><img src="design/beanbao-icon-1024.png" alt="A smiling BeanBao steamed bun" width="112" /></p>
+<h1 align="center">BeanBao</h1>
+<p align="center"><strong>A voice and text assistant for a jailbroken iPhone.</strong><br />
+Ask naturally. Review the request. Let the phone carry out a bounded task.</p>
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
+<p align="center"><a href="https://github.com/everettjf/beanbao/releases/tag/v0.3.75">Download v0.3.75</a> · <a href="#quick-start">Quick start</a> · <a href="docs/install-and-configure.md">Install guide</a> · <a href="https://xnu.app/beanbao/">Website</a></p>
 
-[English](README.md) · [简体中文](README.zh-CN.md)
-
-<img src="design/beanbao-icon-1024.png" alt="BeanBao, a smiling steamed bun" width="112" />
-
-**A voice and text assistant that can carry out bounded tasks on a jailbroken iPhone.**
-Speak or type a request, review it, and let BeanBao use the phone. It runs its
-Bridge and task Agent on the device. A Mac is not needed after installation.
-
-[Get started](#quick-start) · [Full installation guide](docs/install-and-configure.md) · [What works today](#what-works-today) · [Website source](web/README.md)
+BeanBao's two apps, Bridge, and task Agent run on the iPhone. A Mac is not
+needed after installation.
 
 > **Release status:** public developer preview. It has been installed and
 > tested on one iPhone 11 with iOS 26.0.1, Relaxin 0.5.5, and RootHide. Other
 > devices, jailbreaks, and iOS versions have not been validated. See the
-> [release record](docs/release-0.3.72.md) for exact packages and checksums.
+> [release record](docs/release-0.3.75.md) for exact packages and checksums.
+
+## Architecture at a glance
+
+![Diagram showing BeanBao and BeanBao Helper as two visible iPhone apps, with an on-device Agent, SpringBoard Bridge, and optional model provider.](design/architecture.svg)
+
+| Visible app | What it does |
+| --- | --- |
+| <img src="design/beanbao-icon-1024.png" alt="" width="36" /> **BeanBao** | Starts voice and text requests; shows Sessions, progress, settings, PDFs, and decisions that need your review. |
+| <img src="design/beanbao-helper-icon-1024.png" alt="" width="36" /> **BeanBao Helper** | Provides a normally sandboxed interactive surface. Its current supported workflow is Uber Eats; future native or web features need separate implementation and validation. |
+
+The **Agent** plans, checks, and records each step. The **SpringBoard Bridge**
+handles the quick voice overlay and bounded actions in supported iOS apps.
+BeanBao Helper uses a restricted, paired channel to the Agent; it cannot use
+the main App's broader device access. A user-configured model service is used
+only for requests that need it. [Read the two-app design](docs/two-app-architecture.md).
 
 ## What works today
 
@@ -31,11 +44,25 @@ BeanBao is deliberately bounded. It does not offer arbitrary-app tapping,
 silent App Store installation, automatic email sending, or unattended payment.
 See [common requests](docs/common-cases.md) and [complex workflow limits](docs/complex-workflows.md).
 
-BeanBao uses two visible apps: **BeanBao** for requests, voice, Sessions, and
-review; **BeanBao Helper** for interactive tasks that need a normally
-sandboxed app. Its first supported task is Uber Eats. The current public release
-still labels the second icon “BeanBao Delivery”; the source build renames it
-without replacing its package or website data. See the [two-app design](docs/two-app-architecture.md).
+### How a task runs
+
+```mermaid
+flowchart LR
+    A[Voice or text] --> B[BeanBao]
+    B --> C[Agent plans and checks]
+    C --> D{Supported path}
+    D --> E[Bridge: iOS apps]
+    D --> F[Helper: website]
+    E --> G[Observe result]
+    F --> G
+    G --> H{Verified?}
+    H -->|Yes| I[Save receipt in Sessions]
+    H -->|Uncertain| J[Pause for review]
+    classDef warm fill:#fff0df,stroke:#d7764c,color:#4b3029;
+    classDef soft fill:#fffaf3,stroke:#cba186,color:#4b3029;
+    class B,C,I warm;
+    class A,D,E,F,G,H,J soft;
+```
 
 ## Quick start
 
@@ -57,7 +84,7 @@ shasum -a 256 BeanBao-RootHide-*.tar
 ```
 
 The current package versions and archive hashes are in the
-[release record](docs/release-0.3.72.md).
+[release record](docs/release-0.3.75.md).
 
 ### 3. Install from a root shell on the phone
 
@@ -80,7 +107,8 @@ can verify, transfer, preflight, and install the same archive in one command.
 ### 4. Activate and configure
 
 After a new or updated **Bridge** package, reload SpringBoard once and unlock
-the phone. The installer does not do this automatically. Open BeanBao, tap
+the phone. Upgrading from v0.3.72 changes only the two apps and needs no
+SpringBoard reload. The installer does not reload it automatically. Open BeanBao, tap
 **Change** on the **Model service** card, and enter your own Claude API key and
 model name. Keep the key out of chat, screenshots, release archives, and shell
 history. App opening and note creation run locally; research and delivery
@@ -119,7 +147,7 @@ this `iphoneos-arm64e` release. See [build and device tests](docs/build-and-test
 | `bridge/` | Restricted SpringBoard observation, input actions, and voice overlay. |
 | `agent-native/` and `harness/` | On-device task service, model clients, policy, and resumable workflows. |
 | `app/` | BeanBao UI, Apple speech transcription, model settings, Sessions, Activity, and review screens. |
-| `delivery-browser/` | BeanBao Helper, a sandboxed app currently limited to the experimental Uber Eats flow. The source directory keeps its historical name. |
+| `delivery-browser/` | BeanBao Helper, a sandboxed app currently limited to the experimental Uber Eats flow. The source directory keeps its historical name to preserve package identity and website data. |
 | `vendor/` | Pinned ios-mcp and PalminoHarnessKit source snapshots with their original notices. |
 | `scripts/` and `tests/` | Build, package audit, installer, and acceptance tooling. |
 | `web/` | Buildless GitHub Pages website. |

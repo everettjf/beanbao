@@ -1,22 +1,24 @@
 # Public release checklist
 
-BeanBao 0.3.72 is a public developer preview. This record distinguishes the
+BeanBao 0.3.75 is a public developer preview. This record distinguishes the
 verified first-use path from remaining engineering and device-validation work.
 
 ## Prepared
 
 - Apache-2.0 license for BeanBao-authored code and preserved upstream notices.
-- English README, complete install guide, static GitHub Pages source, and a
-  Pages workflow that skips deployment while the repository is private.
+- English and Simplified Chinese READMEs with a warm architecture diagram,
+  complete install guide, and bilingual GitHub Pages source.
+- Two visible apps with distinct icons: BeanBao and the sandboxed BeanBao
+  Helper. The Agent and Bridge are on-device background components.
 - Four-package RootHide archive with a checked installer and recorded SHA-256.
 - Source build, offline tests, package audit, one-device installation, reboot
   recovery, and USB-disconnect task verified. See [the test record](build-and-test.md).
 
 ## Remaining work after the preview
 
-1. The Bridge screen-content scope issue was fixed in 0.2.14 and tested on the
-   paired phone. Replace the Delivery Browser pairing token's custom-URL
-   transport before treating delivery as a stable feature.
+1. Replace BeanBao Helper's pairing-token custom-URL transport before treating
+   delivery as a stable feature. The Bridge screen-content scope issue was
+   fixed in 0.2.14 and tested on the paired phone.
 2. Test installation from the published instructions on a second compatible
    RootHide phone. The existing device is the only validated combination.
 3. Verify the published archive's release-note SHA-256 from a fresh download

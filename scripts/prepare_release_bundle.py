@@ -48,7 +48,7 @@ def audit(packages: list[Path]) -> None:
 
 def install_notes(packages: list[Path], versions: list[str]) -> bytes:
     names = [package.name for package in packages]
-    return (f"# BeanBao RootHide release candidate\n\n"
+    return (f"# BeanBao RootHide developer preview\n\n"
             f"Bridge {versions[0]} / Agent {versions[1]} / BeanBao Helper {versions[2]} / App {versions[3]}. "
             "Package contents passed the build audit and offline tests. Research PDF generation and "
             "App Store listing handoff passed on one device. Mail composition needs an Apple Mail account. "

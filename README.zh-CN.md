@@ -1,19 +1,29 @@
-# BeanBao
+<p align="center"><img src="design/beanbao-icon-1024.png" alt="微笑的豆包" width="112" /></p>
+<h1 align="center">BeanBao</h1>
+<p align="center"><strong>在越狱 iPhone 上运行的语音与文字助手。</strong><br />
+自然地说出需求，核对后让手机执行有边界的任务。</p>
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
+<p align="center"><a href="https://github.com/everettjf/beanbao/releases/tag/v0.3.75">下载 v0.3.75</a> · <a href="#快速安装">快速安装</a> · <a href="docs/install-and-configure.md">完整指南</a> · <a href="https://xnu.app/beanbao/zh-CN/">网站</a></p>
 
-[English](README.md) · **简体中文**
+两个 App、Bridge 和任务 Agent 都在手机上运行；安装完成后无需连接 Mac。
 
-<img src="design/beanbao-icon-1024.png" alt="BeanBao：微笑的豆包" width="112" />
-
-**一款在越狱 iPhone 上执行有边界任务的语音与文字助手。**
-说出或输入需求，核对文字后让 BeanBao 操作手机。Bridge 和任务 Agent
-都在手机上运行；安装完成后无需连接 Mac。
-
-[快速安装](#快速安装) · [完整安装指南（英文）](docs/install-and-configure.md) · [目前能做什么](#目前能做什么) · [网站](web/README.md)
-
-> **发布状态：开发者候选版。** 目前只在一台 iOS 26.0.1、Relaxin 0.5.5、
+> **发布状态：公开开发者预览版。** 目前只在一台 iOS 26.0.1、Relaxin 0.5.5、
 > RootHide 环境的 iPhone 11 上安装并验证。其他设备、越狱和 iOS 版本尚未验证。
-> 当前公开版本是开发者预览版。准确包版本与校验值见
-> [发布记录](docs/release-0.3.72.md)。
+> 准确包版本与校验值见
+> [发布记录](docs/release-0.3.75.md)。
+
+## 架构一览
+
+![架构图：BeanBao 与 BeanBao Helper 两个桌面 App 连接手机端 Agent；Agent 协调 SpringBoard Bridge 和可选模型服务。](design/architecture.svg)
+
+| 桌面 App | 职责 |
+| --- | --- |
+| <img src="design/beanbao-icon-1024.png" alt="" width="36" /> **BeanBao** | 输入文字或语音，查看 Sessions、进度、设置、PDF，以及需要你审阅的决定。 |
+| <img src="design/beanbao-helper-icon-1024.png" alt="" width="36" /> **BeanBao Helper** | 提供正常沙盒 App 的交互界面。目前只支持 Uber Eats；其他原生或网页能力都需要单独实现和验证。 |
+
+**Agent** 负责规划、校验和记录每一步。**SpringBoard Bridge** 负责快捷语音浮层
+及受支持 iOS App 中的受限操作。Helper 通过受限配对通道连接 Agent，不能继承主 App
+的设备权限。只有需要模型的任务才调用用户配置的模型服务。详见[双 App 设计（英文）](docs/two-app-architecture.md)。
 
 ## 目前能做什么
 
@@ -30,10 +40,25 @@
 BeanBao 目前不提供任意应用自动点击、静默安装 App Store 应用、自动发送邮件或无人值守付款。
 详见[常见需求](docs/common-cases.md)和[复杂任务边界](docs/complex-workflows.md)。
 
-BeanBao 采用两个可见 App：**BeanBao** 负责指令、语音、Sessions 与审阅；
-**BeanBao Helper** 承载需要正常 App 沙盒与原生界面的交互任务，目前只支持 Uber Eats。
-当前公开版本的第二个图标仍显示“BeanBao Delivery”；
-源码构建已改名，并保留原安装身份和网站数据。详见[双 App 设计（英文）](docs/two-app-architecture.md)。
+### 一项任务如何执行
+
+```mermaid
+flowchart LR
+    A[语音或文字] --> B[BeanBao]
+    B --> C[Agent 规划并校验]
+    C --> D{受支持的路径}
+    D --> E[Bridge：iOS App]
+    D --> F[Helper：网站]
+    E --> G[观察结果]
+    F --> G
+    G --> H{验证通过？}
+    H -->|是| I[记录到 Sessions]
+    H -->|结果不确定| J[暂停等待审阅]
+    classDef warm fill:#fff0df,stroke:#d7764c,color:#4b3029;
+    classDef soft fill:#fffaf3,stroke:#cba186,color:#4b3029;
+    class B,C,I warm;
+    class A,D,E,F,G,H,J soft;
+```
 
 ## 快速安装
 
@@ -52,7 +77,7 @@ BeanBao 采用两个可见 App：**BeanBao** 负责指令、语音、Sessions �
 shasum -a 256 BeanBao-RootHide-*.tar
 ```
 
-当前版本的包版本和归档哈希记录在[发布记录](docs/release-0.3.72.md)。
+当前版本的包版本和归档哈希记录在[发布记录](docs/release-0.3.75.md)。
 
 ### 3. 在手机 root shell 中安装
 
@@ -73,7 +98,8 @@ sh install.sh
 ### 4. 激活并配置
 
 首次安装或更新 **Bridge** 后，重载一次 SpringBoard，再手动解锁手机；
-安装器不会自动重载。打开 BeanBao，在 **Model service** 卡片点击 **Change**，
+从 v0.3.72 升级只更新两个 App，无需重载 SpringBoard。安装器不会自动重载。
+打开 BeanBao，在 **Model service** 卡片点击 **Change**，
 填入自己的 Claude API Key 和模型名称。请勿把密钥放进聊天、截图、发布包或命令历史。
 打开应用和创建备忘录可在本地完成；调研与外卖规划需要 Claude。
 受限 UI 理解也可选择 OpenAI 或兼容的 HTTPS 模型服务。

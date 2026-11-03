@@ -221,6 +221,9 @@ def main() -> None:
     for name, size in ICON_SIZES.items():
         check_icon(name, app_files[APP_BASE + name][1], size)
         check_icon(name, browser_files[BROWSER_BASE + name][1], size)
+    if app_files[APP_BASE + "BeanBaoIcon60@3x.png"][1] == \
+            browser_files[BROWSER_BASE + "BeanBaoIcon60@3x.png"][1]:
+        fail("BeanBao and BeanBao Helper must have distinct Home Screen icons")
     browser_info = plistlib.loads(browser_files[BROWSER_BASE + "Info.plist"][1])
     if browser_info.get("CFBundleIdentifier") != "dev.beanbao.deliverybrowser" or \
             browser_info.get("CFBundleExecutable") != "BeanBaoDelivery" or \
