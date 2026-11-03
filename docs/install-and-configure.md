@@ -7,9 +7,9 @@ Updated November 2, 2026. This is a developer installation procedure for a compa
 Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
-2. `dev.beanbao.agent` 0.3.113: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
+2. `dev.beanbao.agent` 0.3.114: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
 3. `dev.beanbao.deliverybrowser` 0.1.19: sandboxed Uber Eats browser with visible page checks, bounded Palmino-driven Run control, explicit checkout review, and an actionable reconnect message after an Agent restart.
-4. `dev.beanbao.app` 0.3.68: native text, Apple voice transcription, Sessions with step history and order-history review, App Store review, Activity, shortcut, and model settings UI.
+4. `dev.beanbao.app` 0.3.69: native text, Apple voice transcription, Sessions with step history and order-history review, App Store review, Activity, shortcut, and model settings UI.
 
 The packages are under `bridge/packages/`, `agent-native/packages/`, `delivery-browser/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
 
@@ -24,9 +24,9 @@ With a root shell on the jailbroken phone, copy over the packages and install th
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.113_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.114_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.deliverybrowser_0.1.19_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.68_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.69_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app
 ```
 
@@ -46,6 +46,8 @@ To check the connected development device, run `python3 scripts/verify_device.py
 8. Tap **Browse food delivery** to open the separate delivery browser. It keeps its own website session and pairs with the Agent for this launch. Tap **Check** to classify the visible page. Set a delivery address on Uber Eats before tapping **Run**. On the connected phone, one uninterrupted text task found Phin & Bowl's Chicken Pho, selected the required Rice Noodle option, added exactly one item, opened the cart, and completed a read-only review. The visible cart showed Chicken Pho, Rice Noodle, and a $27.99 subtotal at the public San Jose City Hall test address. A second full run passed after the Agent gained a final check that the previously executed merchant, item, and option still appear on the cart page. A checkout request requires a complete model-extracted merchant, item, option, address, fee, tax, tip, and total breakdown, checked against the same fresh screen. After a verified review, **Review** displays the whole order in a scrollable screen and offers one explicit **Place order** button. The Agent rechecks the current checkout and records a one-time external attempt before the browser click. If the result is unclear, check Uber Eats order history; BeanBao does not retry. An unresolved order attempt blocks every delivery session, including after switching sessions or restarting the Agent. Its saved evidence cannot be deleted through Sessions. If you find the exact order in Uber Eats history, open its Sessions details and tap **Resolve** to record your report and release the block. If the history is missing or ambiguous, leave it blocked. BeanBao does not claim to verify Uber Eats' server response. Checkout and final click have passed synthetic page tests only. The connected phone still stops at Uber Eats sign-in before a real checkout can be reviewed, and no real order has been placed.
 
    If **Check** says the delivery connection needs refreshing after an Agent restart, return to BeanBao and tap **Browse food delivery** again. The browser keeps its website session and obtains a new Agent pairing; **Check** can then reclassify the page. Review the current cart before starting another task.
+
+   If a delivery step is marked **Needs review** after an interruption, inspect the Uber Eats cart before starting another delivery task. BeanBao will not automatically repeat that step, even from another session. Once you have checked the cart and do not need the old task record, you can delete the session in **Sessions**; this removes BeanBao's progress record but does not remove anything from the Uber Eats cart. An unresolved order attempt has a separate order-history review and cannot be deleted to bypass it.
 9. Open **Sessions** and tap the information button beside a saved workflow to inspect its read-only step history. Tapping the session row itself still opens or resumes that workflow. The history shows step names, states, and times; it does not display website text or model tool results.
 
 For development over the paired SSH connection, `beanbaoagentctl workflow-details ID` displays the same bounded step history and `beanbaoagentctl resume-workflow ID` resumes an interrupted research session by its saved ID. A mutating step with an uncertain outcome is held for reconciliation rather than retried.

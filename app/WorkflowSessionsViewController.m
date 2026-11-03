@@ -163,8 +163,12 @@
     if (style != UITableViewCellEditingStyleDelete) return;
     NSDictionary *item = self.workflows[indexPath.row];
     NSString *identity = item[@"id"];
+    BOOL uncertainDelivery = [item[@"kind"] isEqualToString:@"delivery"] &&
+        [item[@"phase"] isEqualToString:@"needsReconciliation"];
     UIAlertController *prompt = [UIAlertController alertControllerWithTitle:@"Delete session?"
-        message:@"This removes its report, email draft, and saved progress."
+        message:uncertainDelivery ?
+            @"An unfinished delivery step may have changed the cart or placed an order. Check Uber Eats before deleting this record. Deleting it does not remove cart items; an unresolved order cannot be deleted." :
+            @"This removes its report, email draft, and saved progress."
         preferredStyle:UIAlertControllerStyleAlert];
     [prompt addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [prompt addAction:[UIAlertAction actionWithTitle:@"Delete" style:UIAlertActionStyleDestructive

@@ -2,6 +2,10 @@
 
 Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 2 interrupted-cart cross-session gate
+
+Code inspection found that a delivery action durably claimed before a possible add-to-cart click was restored as `needs_reconciliation`, but selecting another saved session could bypass that session-local stop and start a new delivery task. Agent 0.3.114 now scans the private workflow journal for any unfinished `delivery_execute` before starting another delivery plan or an order attempt. App 0.3.69 tells the user to check Uber Eats before deleting an uncertain delivery record; deletion does not change the website cart. An unresolved order record still cannot be deleted. The new native policy test switches away from a synthetic interrupted action and verifies that another delivery task is rejected until the record is removed after review. A Swift test reopens a journal after a claimed add-to-cart step and verifies neither planning nor the click can replay. The complete build passed 88 Swift Harness tests, native and browser checks, and the four-package audit. These tests do not simulate an actual mid-click crash on the live website.
+
 ## November 2 delivery connection recovery
 
 With the completed Chicken Pho cart still present, restarting only Agent 0.3.112 restored the same saved workflow ID and completed ten-step journal without another add-to-cart action. The already-open Delivery Browser initially showed a generic **Invalid request** because its pairing token had expired. A rapid Agent restart also left the browser's loopback port temporarily unavailable even while the Unix service was responding; its listener lacked `SO_REUSEADDR`.

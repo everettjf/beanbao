@@ -546,10 +546,20 @@ int main(void) {
         if (!Check([unfinishedDetails[@"steps"] count] == 1 &&
                    [unfinishedDetails[@"steps"][0][@"state"] isEqualToString:@"running"],
                    "delivery history merges a planned action and its execution receipt")) return 1;
+        BBState.app = @"ResearchPDF";
+        BBState.phase = @"done";
+        NSDictionary *crossSessionCart = BBDeliveryPlan(@{@"task": @"Add rice bowl to cart",
+            @"snapshot": @{@"url": @"https://www.ubereats.com/cart",
+                            @"visible_text": @"Go to checkout"}});
+        if (!Check(BBAnyUnresolvedDeliveryAction() &&
+                   [crossSessionCart[@"error"] isEqualToString:
+                       @"Check the previous cart step in Uber Eats before starting another delivery task"],
+                   "an uncertain cart step blocks a new delivery task after switching sessions")) return 1;
         deliveryStatus = BBSelectWorkflow(@{@"workflow_id": deliveryID});
         if (!Check([deliveryStatus[@"phase"] isEqualToString:@"needs_reconciliation"],
                    "unfinished delivery action survives a service restart as uncertain") ||
-            !Check([BBDeleteWorkflow(@{@"workflow_id": deliveryID})[@"ok"] boolValue],
+            !Check([BBDeleteWorkflow(@{@"workflow_id": deliveryID})[@"ok"] boolValue] &&
+                   !BBAnyUnresolvedDeliveryAction(),
                    "delivery session remains user-deletable after review")) return 1;
         rmdir(workflowRoot.fileSystemRepresentation);
         BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";

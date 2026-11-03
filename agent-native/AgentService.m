@@ -378,6 +378,24 @@ static BOOL BBDeliveryHasUnfinishedAction(NSDictionary *record) {
     return NO;
 }
 
+static BOOL BBAnyUnresolvedDeliveryAction(void) {
+    struct stat root = {0};
+    if (lstat(BBWorkflowRoot.fileSystemRepresentation, &root))
+        return errno != ENOENT;
+    if (!S_ISDIR(root.st_mode) || root.st_uid != 501 || (root.st_mode & 077))
+        return YES;
+    NSError *error = nil;
+    NSArray<NSString *> *entries = [NSFileManager.defaultManager
+        contentsOfDirectoryAtPath:BBWorkflowRoot error:&error];
+    if (!entries || error) return YES;
+    for (NSString *identity in entries) {
+        if (!BBWorkflowFolder(identity)) continue;
+        NSDictionary *record = BBReadWorkflowRecord(identity);
+        if (!record || BBDeliveryHasUnfinishedAction(record)) return YES;
+    }
+    return NO;
+}
+
 static NSString *BBDeliveryCompletedMessage(NSDictionary *record) {
     NSDictionary *operations = record[@"operations"];
     NSDictionary *order = operations[@"delivery-order-v1"];
@@ -1260,6 +1278,8 @@ static NSDictionary *BBDeliveryPlan(NSDictionary *request) {
             return @{@"ok": @NO, @"error": @"A task is already running or needs review"};
         if (BBAnyUnresolvedDeliveryOrder())
             return @{@"ok": @NO, @"error": @"Review the previous order outcome before starting another delivery task"};
+        if (BBAnyUnresolvedDeliveryAction())
+            return @{@"ok": @NO, @"error": @"Check the previous cart step in Uber Eats before starting another delivery task"};
         if (![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
             return @{@"ok": @NO, @"error": @"Delivery planning currently requires Claude"};
         int inputPipe[2], outputPipe[2];
@@ -1478,6 +1498,8 @@ static NSDictionary *BBDeliveryOrderBeginRequest(NSDictionary *request) {
             return @{@"ok": @NO, @"error": @"The checkout session changed"};
         if (BBAnyUnresolvedDeliveryOrder())
             return @{@"ok": @NO, @"error": @"Review the previous order outcome before placing another order"};
+        if (BBAnyUnresolvedDeliveryAction())
+            return @{@"ok": @NO, @"error": @"Check the previous cart step in Uber Eats before placing an order"};
         NSDictionary *record = BBReadWorkflowRecord(taskID);
         NSDictionary *summary = BBCheckoutSummaryFromOperations(record[@"operations"]);
         if (![summary[@"cart_digest"] isEqualToString:digest])

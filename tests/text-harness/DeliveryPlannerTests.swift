@@ -435,6 +435,39 @@ final class DeliveryPlannerTests: XCTestCase {
         } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
     }
 
+    func testInterruptedCartAddCannotBePlannedOrClickedAgainAfterRestart() async throws {
+        let request = "Add Chicken Pho to the cart and review it"
+        let (journal, file) = try store(request: request)
+        let item = observation("https://www.ubereats.com/store/example/id?mod=quickView",
+                               "Chicken Pho Add 1 to order")
+        let id = try BeanBaoDeliveryObservationContract.identifier(item)
+        let model = DeliveryScriptModel(action: "add_to_cart", target: "", observationID: id)
+        let proposal = try await BeanBaoDeliveryPlanner.choose(
+            request: request, observation: item, store: journal, client: model,
+            model: "scripted")
+        try await BeanBaoDeliveryPlanner.begin(proposal, store: journal)
+
+        // Reopening the journal models an Agent crash after the durable claim,
+        // with no proof yet that the website received the click.
+        let restored = try BeanBaoWorkflowStore(existingURL: file)
+        let interrupted = await restored.snapshot()
+        XCTAssertEqual(interrupted.phase, .needsReconciliation)
+        XCTAssertEqual(interrupted.operations["delivery-execute-v1-\(id)"]?.state,
+                       .running)
+        do {
+            _ = try await BeanBaoDeliveryPlanner.choose(
+                request: request, observation: item, store: restored, client: model,
+                model: "scripted")
+            XCTFail("The old item page cannot replan an uncertain add")
+        } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
+        do {
+            try await BeanBaoDeliveryPlanner.begin(proposal, store: restored)
+            XCTFail("The old add action cannot be clicked again")
+        } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
+        let saved = await restored.snapshot()
+        XCTAssertEqual(saved.operations.values.filter { $0.tool == "delivery_execute" }.count, 1)
+    }
+
     func testOptionSelectionRequiresRadioStateChangeOnTheSameItemPage() async throws {
         let request = "Find a rice bowl and choose Rice Noodle"
         let (journal, _) = try store(request: request)
