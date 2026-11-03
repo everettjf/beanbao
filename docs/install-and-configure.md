@@ -18,9 +18,21 @@ THEOS=/absolute/path/to/roothide-theos ./scripts/build_packages.sh
 python3 scripts/prepare_release_bundle.py
 ```
 
-The build script runs native policy, Python, and Swift Harness tests and audits package contents, dependencies, architectures, signatures, and launch identity. The bundle script creates a portable archive with the four `.deb` files, `SHA256SUMS`, and an English `INSTALL.md`. It contains no model keys, SSH credentials, or device data.
+The build script runs native policy, Python, and Swift Harness tests and audits package contents, dependencies, architectures, signatures, and launch identity. The bundle script creates both a phone-extractable `.tar` and a computer-friendly `.tar.gz`. Each has the four `.deb` files, `SHA256SUMS`, a checked `install.sh`, and an English `INSTALL.md`. It contains no model keys, SSH credentials, or device data. Verify the archive SHA-256 against the published value before transferring it.
 
-With a root shell on the jailbroken phone, copy over the packages and install them in this order:
+On a RootHide phone with a root shell, transfer the `.tar` release and run:
+
+```sh
+mkdir beanbao-release
+tar -xf BeanBao-RootHide-*.tar -C beanbao-release
+cd beanbao-release
+sh install.sh --dry-run
+sh install.sh
+```
+
+The script checks every package checksum, package ID, architecture, and version before changing anything. It installs only changed versions in dependency order and refuses a downgrade. It never reloads SpringBoard automatically. On the connected phone, extracting the `.tar`, the dry run, and a same-version install passed; all four packages were skipped and the Agent service ID stayed the same. Deliberately corrupting one package made the installer stop at checksum verification before an install. An actual upgrade with this script still needs validation on a test device.
+
+For manual installation, copy the packages to a root shell on the jailbroken phone and install them in this order:
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb

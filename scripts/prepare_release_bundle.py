@@ -61,8 +61,13 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             "a signed-in checkout and real order outcome remain unverified. "
             "See docs/complex-workflows.md. "
             "Test other devices separately. A compatible Relaxin / RootHide environment is required.\n\n"
-            "First run `shasum -a 256 -c SHA256SUMS` on your computer to verify the packages. "
-            "With a root shell on the device, install in this order:\n\n"
+            "Verify the archive SHA-256 against the published release value before transfer. "
+            "Transfer the uncompressed `.tar` bundle to the phone and extract it with `tar -xf`; "
+            "the `.tar.gz` bundle can instead be unpacked on a computer before transferring its files. "
+            "From a root shell in the extracted directory, run `sh install.sh --dry-run` to check "
+            "checksums, package identities, architecture, and versions; then run "
+            "`sh install.sh` to install changed packages in order. The script never reloads "
+            "SpringBoard automatically. The equivalent manual installation order is:\n\n"
             "```sh\n"
             + "\n".join(f"dpkg -i {name}" for name in names)
             + "\ndpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app\n```\n\n"
@@ -88,34 +93,47 @@ def add_bytes(archive: tarfile.TarFile, name: str, data: bytes) -> None:
     archive.addfile(info, io.BytesIO(data))
 
 
+def write_atomically(output: Path, data: bytes) -> None:
+    fd, temporary = tempfile.mkstemp(prefix=f".{output.name}.", dir=output.parent)
+    try:
+        with os.fdopen(fd, "wb") as raw:
+            raw.write(data)
+        os.replace(temporary, output)
+        os.chmod(output, 0o644)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
     packages, versions = package_paths()
     audit(packages)
-    name = f"BeanBao-RootHide-b{versions[0]}-a{versions[1]}-browser{versions[2]}-app{versions[3]}.tar.gz"
+    name = f"BeanBao-RootHide-b{versions[0]}-a{versions[1]}-browser{versions[2]}-app{versions[3]}"
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    output = output_dir / name
+    phone_output = output_dir / f"{name}.tar"
+    compressed_output = output_dir / f"{name}.tar.gz"
     checksums = "".join(f"{hashlib.sha256(package.read_bytes()).hexdigest()}  {package.name}\n"
                         for package in packages).encode("ascii")
-    fd, temporary = tempfile.mkstemp(prefix=f".{name}.", dir=output_dir)
-    try:
-        with os.fdopen(fd, "wb") as raw:
-            with gzip.GzipFile(fileobj=raw, mode="wb", filename="", mtime=0) as compressed:
-                with tarfile.open(fileobj=compressed, mode="w") as archive:
-                    for package in packages:
-                        add_bytes(archive, package.name, package.read_bytes())
-                    add_bytes(archive, "SHA256SUMS", checksums)
-                    add_bytes(archive, "INSTALL.md", install_notes(packages, versions))
-        os.replace(temporary, output)
-        os.chmod(output, 0o644)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-    print(f"Ready: {output}")
-    print(f"SHA-256: {hashlib.sha256(output.read_bytes()).hexdigest()}")
+    uncompressed = io.BytesIO()
+    with tarfile.open(fileobj=uncompressed, mode="w") as archive:
+        for package in packages:
+            add_bytes(archive, package.name, package.read_bytes())
+        add_bytes(archive, "SHA256SUMS", checksums)
+        add_bytes(archive, "install.sh", (ROOT / "scripts/install_release.sh").read_bytes())
+        add_bytes(archive, "INSTALL.md", install_notes(packages, versions))
+    tar_data = uncompressed.getvalue()
+    compressed = io.BytesIO()
+    with gzip.GzipFile(fileobj=compressed, mode="wb", filename="", mtime=0) as gzip_file:
+        gzip_file.write(tar_data)
+    write_atomically(phone_output, tar_data)
+    write_atomically(compressed_output, compressed.getvalue())
+    for output in (phone_output, compressed_output):
+        print(f"Ready: {output}")
+        print(f"SHA-256: {hashlib.sha256(output.read_bytes()).hexdigest()}")
 
 
 if __name__ == "__main__":
