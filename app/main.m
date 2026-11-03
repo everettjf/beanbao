@@ -358,6 +358,7 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
     if (![reply isKindOfClass:NSDictionary.class] || ![reply[@"ok"] boolValue]) return;
     self.statusEpoch++;
     self.startRejection = nil;
+    self.feedbackLabel.text = nil;
     self.activeTaskID = [reply[@"task_id"] isKindOfClass:NSString.class] ? reply[@"task_id"] : nil;
     self.activeServiceID = [reply[@"service_id"] isKindOfClass:NSString.class] ? reply[@"service_id"] : nil;
     [self showReply:reply];
