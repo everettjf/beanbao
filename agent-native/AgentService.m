@@ -269,6 +269,23 @@ static BOOL BBIsDeliveryRecord(NSDictionary *record) {
     return NO;
 }
 
+static BOOL BBWorkflowHasUnresolvedMutation(NSDictionary *record) {
+    NSDictionary *operations = record[@"operations"];
+    if (![operations isKindOfClass:NSDictionary.class]) return NO;
+    for (NSDictionary *operation in operations.allValues) {
+        if (![operation isKindOfClass:NSDictionary.class]) continue;
+        NSString *state = operation[@"state"];
+        if ([state isEqualToString:@"needsReconciliation"] ||
+            ([state isEqualToString:@"running"] &&
+             ![operation[@"effect"] isEqualToString:@"readOnly"])) return YES;
+    }
+    return NO;
+}
+
+static NSString *BBWorkflowEffectivePhase(NSDictionary *record) {
+    return BBWorkflowHasUnresolvedMutation(record) ? @"needsReconciliation" : record[@"phase"];
+}
+
 static NSString *BBWorkflowKind(NSString *identity, NSDictionary *record) {
     if (BBIsDeliveryRecord(record)) return @"delivery";
     if (BBResearchAppCandidate(record[@"request"])) return @"research_app";
@@ -301,7 +318,7 @@ static NSArray<NSDictionary *> *BBWorkflowSummaries(void) {
         if (request.length > 220) continue;
         NSString *kind = BBWorkflowKind(identity, record);
         [items addObject:@{@"id": identity, @"request": request, @"kind": kind,
-                           @"phase": record[@"phase"],
+                           @"phase": BBWorkflowEffectivePhase(record),
                            @"updated_at": @([updated doubleValue] + 978307200.0)}];
     }
     [items sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
@@ -390,7 +407,7 @@ static NSDictionary *BBWorkflowDetails(NSDictionary *request) {
     if (steps.count > 40) [steps removeObjectsInRange:NSMakeRange(0, steps.count - 40)];
     NSString *kind = BBWorkflowKind(identity, record);
     return @{@"ok": @YES, @"id": identity, @"request": record[@"request"],
-             @"kind": kind, @"phase": record[@"phase"], @"steps": steps,
+             @"kind": kind, @"phase": BBWorkflowEffectivePhase(record), @"steps": steps,
              @"total_steps": @(total)};
 }
 
@@ -404,7 +421,7 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
     BBState.mailDraftPath = nil;
     BBState.appCandidatePath = nil;
     BBState.deliveryAction = nil;
-    NSString *phase = record[@"phase"];
+    NSString *phase = BBWorkflowEffectivePhase(record);
     NSString *pdfPath = [folder stringByAppendingPathComponent:@"report.pdf"];
     NSString *draftPath = [folder stringByAppendingPathComponent:@"mail-draft.json"];
     NSString *candidatePath = [folder stringByAppendingPathComponent:@"app-candidate.json"];
@@ -418,14 +435,17 @@ static void BBRestoreWorkflowIdentity(NSString *identity) {
          (hasCandidate ? @"AppStoreReview" :
           (hasDraft ? @"ResearchMailDraft" : @"ResearchPDF")));
     BBState.reportPath = hasPDF ? pdfPath : nil;
-    if (composite && !([@[@"planned", @"running", @"failed", @"cancelled"]
+    if (hasDelivery && BBDeliveryHasUnfinishedAction(record)) {
+        BBState.phase = @"needs_reconciliation";
+        BBState.message = @"A delivery step may have changed the cart. Check Uber Eats before continuing.";
+    } else if (BBWorkflowHasUnresolvedMutation(record)) {
+        BBState.phase = @"needs_reconciliation";
+        BBState.message = @"A workflow step may have changed its result. Review the saved session.";
+    } else if (composite && !([@[@"planned", @"running", @"failed", @"cancelled"]
                           containsObject:phase]) && (!hasPDF || !hasCandidate)) {
         BBState.phase = @"error";
         BBState.message = @"A workflow artifact is missing. Review the saved session.";
         BBState.reportPath = nil;
-    } else if (hasDelivery && BBDeliveryHasUnfinishedAction(record)) {
-        BBState.phase = @"needs_reconciliation";
-        BBState.message = @"A delivery step may have changed the cart. Check Uber Eats before continuing.";
     } else if ([phase isEqualToString:@"waitingForUser"] && hasDelivery) {
         BBState.phase = @"waiting_for_user";
         BBState.message = @"Open food delivery to continue";
@@ -633,12 +653,16 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
         BBState.stopping = NO;
         BOOL succeeded = waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0 &&
             (![resolvedApp isEqualToString:@"DeliveryPlan"] || deliveryAction != nil);
+        BOOL uncertain = !stopped && !succeeded &&
+            [BBWorkflowEffectivePhase(BBReadWorkflowRecord(BBState.taskID))
+                isEqualToString:@"needsReconciliation"];
         BBState.phase = stopped ? @"stopped" :
             (succeeded ? (([resolvedApp isEqualToString:@"ResearchMailDraft"] ||
                            [resolvedApp isEqualToString:@"ResearchAppStoreReview"] ||
                            [resolvedApp isEqualToString:@"AppStoreReview"] ||
                            [resolvedApp isEqualToString:@"DeliveryPlan"]) ?
-                          @"waiting_for_user" : @"done") : @"error");
+                          @"waiting_for_user" : @"done") :
+             (uncertain ? @"needs_reconciliation" : @"error"));
         BBState.deliveryAction = succeeded && [resolvedApp isEqualToString:@"DeliveryPlan"] ?
             deliveryAction : nil;
         BOOL reportReady = succeeded &&
@@ -654,7 +678,8 @@ static void BBWaitForChild(pid_t child, int readFD, NSUInteger generation,
             [NSString stringWithFormat:@"/var/mobile/Library/Application Support/BeanBao/workflows/%@/app-candidate.json",
                                        BBState.taskID ?: @""] : nil;
         BBState.message = stopped ? @"Task stopped" :
-            (succeeded ? completionMessage : BBFailureMessage(summary));
+            (succeeded ? completionMessage :
+             (uncertain ? @"Workflow outcome needs review" : BBFailureMessage(summary)));
         auditAction = BBState.phase;
         auditResult = succeeded ? @"ok" : @"failed";
     }
@@ -673,7 +698,8 @@ static NSDictionary *BBStart(NSDictionary *request) {
     if (resumeID) {
         NSDictionary *saved = BBReadWorkflowRecord(resumeID);
         if (!saved || ![saved[@"request"] isEqualToString:task] ||
-            ![@[@"planned", @"running", @"failed", @"cancelled"] containsObject:saved[@"phase"]])
+            ![@[@"planned", @"running", @"failed", @"cancelled"]
+                containsObject:BBWorkflowEffectivePhase(saved)])
             return @{@"ok": @NO, @"error": @"This workflow cannot be resumed automatically"};
     }
     BOOL researchApp = BBResearchAppCandidate(task);

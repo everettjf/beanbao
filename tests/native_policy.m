@@ -126,6 +126,17 @@ int main(void) {
                    "clock rollback cannot revive an observation") ||
             !Check(!BBObservationIsFresh(NAN, 101),
                    "invalid observation time is rejected")) return 1;
+        NSDictionary *uncertainOldRecord = @{@"phase": @"completed", @"operations": @{
+            @"old-report": @{@"tool": @"report_compose", @"effect": @"localMutation",
+                             @"state": @"needsReconciliation"}}};
+        NSDictionary *interruptedRead = @{@"phase": @"running", @"operations": @{
+            @"search": @{@"tool": @"web_search", @"effect": @"readOnly",
+                           @"state": @"running"}}};
+        if (!Check([BBWorkflowEffectivePhase(uncertainOldRecord)
+                    isEqualToString:@"needsReconciliation"],
+                   "an old completed record cannot hide an unresolved mutation") ||
+            !Check([BBWorkflowEffectivePhase(interruptedRead) isEqualToString:@"running"],
+                   "an interrupted read-only step remains resumable")) return 1;
         NSTimeInterval testNow = NSDate.date.timeIntervalSince1970;
         if (!Check(BBRecentObservation(@{@"timestamp": @(testNow - 1)}),
                    "recent Agent observation remains valid") ||

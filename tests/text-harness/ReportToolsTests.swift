@@ -99,6 +99,37 @@ final class ReportToolsTests: XCTestCase {
         XCTAssertTrue(links.contains(sources[13].url))
     }
 
+    func testShortReportKeepsFittingSourceAppendixTogether() throws {
+        let sources = (1...11).map { number in
+            BeanBaoResearchSource(
+                url: "https://developer.example.org/reference/on-device-speech-recognition-\(number)-implementation-and-privacy",
+                title: "On-device speech recognition source \(number): implementation, privacy and performance",
+                citedText: "Relevant technical evidence")
+        }
+        let paragraph = String(repeating:
+            "On-device speech recognition has different accuracy, latency and privacy tradeoffs across implementations. ",
+            count: 3)
+        let sections = ["Overview", "Benefits", "Constraints", "Implementation", "Caveats"]
+            .enumerated().map { index, title in
+                BeanBaoReportSection(heading: title, paragraphs: [
+                    .init(text: paragraph, sourceURLs: [sources[index * 2].url,
+                                                        sources[index * 2 + 1].url])
+                ])
+            }
+        let report = BeanBaoReportDocument(title: "On-Device Speech Recognition: A Short Brief",
+            sections: sections,
+            sources: sources, createdAt: Date(timeIntervalSince1970: 0))
+        let pdf = try XCTUnwrap(PDFDocument(data: BeanBaoReportPDFRenderer.data(for: report)))
+        XCTAssertEqual(pdf.pageCount, 2)
+        let second = try XCTUnwrap(pdf.page(at: 1)?.string)
+        XCTAssertTrue(second.trimmingCharacters(in: .whitespacesAndNewlines)
+            .hasPrefix("Sources"), "A source appendix that fits on one page must begin with its heading")
+        let links = (0..<pdf.pageCount).compactMap { pdf.page(at: $0) }
+            .flatMap(\.annotations)
+            .compactMap { ($0.action as? PDFActionURL)?.url?.absoluteString }
+        XCTAssertEqual(Set(links), Set(sources.map(\.url)))
+    }
+
     func testUnverifiedCitationCannotCreateReport() async throws {
         let parent = try location()
         let reportURL = parent.appendingPathComponent("report.json")

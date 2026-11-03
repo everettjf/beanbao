@@ -29,6 +29,25 @@ private struct TwoStepModel: PHKModelClient {
     }
 }
 
+private struct ValidationRetryModel: PHKModelClient {
+    func stream(request: PHKCompletionRequest) -> AsyncThrowingStream<PHKModelEvent, Error> {
+        let completed = request.messages.filter { $0.role == .tool }.count
+        return AsyncThrowingStream { continuation in
+            if completed >= 2 {
+                continuation.yield(.contentDelta("Report ready"))
+                continuation.yield(.completed(.stop))
+            } else {
+                let argument = completed == 0 ? "false" : "true"
+                continuation.yield(.toolCallDelta(.init(index: 0,
+                    id: "compose-\(completed)", name: "report_compose",
+                    arguments: "{\"valid\":\(argument)}")))
+                continuation.yield(.completed(.toolCalls))
+            }
+            continuation.finish()
+        }
+    }
+}
+
 final class WorkflowSessionTests: XCTestCase {
     private func location() throws -> URL {
         let parent = FileManager.default.temporaryDirectory
@@ -125,8 +144,92 @@ final class WorkflowSessionTests: XCTestCase {
             _ = try await retry.execute(arguments: .object([:]))
             XCTFail("An uncertain mutation must never repeat")
         } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
+        do {
+            _ = try await retry.execute(arguments: .object(["different": .bool(true)]))
+            XCTFail("A different argument must not bypass an uncertain mutation")
+        } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
         let calls = await counter.value()
         XCTAssertEqual(calls, 1)
+        let session = await BeanBaoWorkflowSession(store: restored, client: TwoStepModel(),
+            model: "scripted", systemPrompt: "Finish", tools: [retry],
+            completionCheck: { true })
+        do {
+            _ = try await session.run("Submit order")
+            XCTFail("A model's success response cannot complete an unresolved mutation")
+        } catch BeanBaoWorkflowError.outcomeUnconfirmed { }
+        let afterRun = await restored.snapshot()
+        XCTAssertEqual(afterRun.phase, .needsReconciliation)
+    }
+
+    func testPreWriteValidationFailureCanBeCorrectedWithoutReconciliation() async throws {
+        let store = try BeanBaoWorkflowStore(url: location(), request: "Compose report")
+        let tool = BeanBaoGuardedWorkflowTool(definition: definition("report_compose"),
+                                              effect: .localMutation, store: store) { args in
+            guard case .object(let fields) = args, fields["valid"] == .bool(true) else {
+                throw BeanBaoReportError.invalidStructure
+            }
+            return .bool(true)
+        }
+        do {
+            _ = try await tool.execute(arguments: .object(["valid": .bool(false)]))
+            XCTFail("Invalid structure must fail before writing")
+        } catch BeanBaoReportError.invalidStructure { }
+        let failed = await store.snapshot()
+        XCTAssertEqual(failed.phase, .running)
+        XCTAssertEqual(failed.operations.values.first?.state, .failed)
+        _ = try await tool.execute(arguments: .object(["valid": .bool(true)]))
+        try await store.assertSafeToComplete()
+        let completed = await store.snapshot()
+        XCTAssertFalse(completed.hasUnresolvedMutation)
+        XCTAssertEqual(completed.operations.values.filter { $0.state == .completed }.count, 1)
+    }
+
+    func testPalminoRetriesInvalidReportArgumentsAndCompletesCleanly() async throws {
+        let store = try BeanBaoWorkflowStore(url: location(), request: "Compose report")
+        let counter = WorkflowCallCounter()
+        let definition = PHKToolDefinition(name: "report_compose", description: "Compose report",
+            parameters: .object([
+                "type": .string("object"),
+                "properties": .object(["valid": .object(["type": .string("boolean")])]),
+                "required": .array([.string("valid")]),
+                "additionalProperties": .bool(false)
+            ]))
+        let tool = BeanBaoGuardedWorkflowTool(definition: definition,
+                                              effect: .localMutation, store: store) { args in
+            guard case .object(let fields) = args, fields["valid"] == .bool(true) else {
+                throw BeanBaoReportError.invalidStructure
+            }
+            _ = await counter.increment()
+            return .bool(true)
+        }
+        let session = await BeanBaoWorkflowSession(store: store,
+            client: ValidationRetryModel(), model: "scripted",
+            systemPrompt: "Compose a report", tools: [tool],
+            completionCheck: { await counter.value() == 1 })
+        _ = try await session.run("Compose report")
+        let saved = await store.snapshot()
+        XCTAssertEqual(saved.phase, .completed)
+        XCTAssertEqual(saved.operations.values.filter { $0.state == .failed }.count, 1)
+        XCTAssertEqual(saved.operations.values.filter { $0.state == .completed }.count, 1)
+        XCTAssertFalse(saved.hasUnresolvedMutation)
+    }
+
+    func testOldCompletedRecordWithUnresolvedMutationIsReconciledOnLoad() async throws {
+        let url = try location()
+        let store = try BeanBaoWorkflowStore(url: url, request: "Research and render")
+        _ = try await store.claim(key: "uncertain-report", tool: "report_compose",
+                                  effect: .localMutation)
+        try await store.fail(key: "uncertain-report")
+        try await store.setPhase(.completed)
+        let inconsistent = await store.snapshot()
+        XCTAssertEqual(inconsistent.phase, .completed)
+        let restored = try BeanBaoWorkflowStore(existingURL: url)
+        let repaired = await restored.snapshot()
+        XCTAssertEqual(repaired.phase, .needsReconciliation)
+        XCTAssertTrue(repaired.hasUnresolvedMutation)
+        let persisted = try BeanBaoWorkflowStore(url: url, request: "Research and render")
+        let saved = await persisted.snapshot()
+        XCTAssertEqual(saved.phase, .needsReconciliation)
     }
 
     func testExternalCommitCannotRunWithoutFreshApproval() async throws {

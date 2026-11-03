@@ -48,7 +48,8 @@ public enum BeanBaoReportPDFRenderer {
             }
             append("\n", font: bodyFont)
         }
-        headingStarts.append(content.length)
+        let sourcesStart = content.length
+        headingStarts.append(sourcesStart)
         append("Sources\n", font: headingFont)
         for (index, source) in document.sources.enumerated() {
             append("[\(index + 1)] \(source.title)\n", font: sourceFont)
@@ -70,6 +71,10 @@ public enum BeanBaoReportPDFRenderer {
         }
         let framesetter = CTFramesetterCreateWithAttributedString(content)
         let path = CGPath(rect: CGRect(x: 48, y: 52, width: 516, height: 688), transform: nil)
+        let sourcePage = CTFramesetterCreateFrame(
+            framesetter, CFRange(location: sourcesStart, length: 0), path, nil)
+        let sourcesFitOnOnePage = CTFrameGetVisibleStringRange(sourcePage).length ==
+            content.length - sourcesStart
         var index = 0
         var pages = 0
         while index < content.length {
@@ -78,7 +83,16 @@ public enum BeanBaoReportPDFRenderer {
             context.textMatrix = .identity
             var frame = CTFramesetterCreateFrame(framesetter, CFRange(location: index, length: 0), path, nil)
             var visible = CTFrameGetVisibleStringRange(frame)
-            let visibleEnd = index + visible.length
+            var visibleEnd = index + visible.length
+            // If the whole appendix fits on a fresh page, keep its heading
+            // and all citations together rather than spilling a few URLs.
+            if sourcesFitOnOnePage && sourcesStart > index && sourcesStart < visibleEnd &&
+                visibleEnd < content.length {
+                frame = CTFramesetterCreateFrame(framesetter,
+                    CFRange(location: index, length: sourcesStart - index), path, nil)
+                visible = CTFrameGetVisibleStringRange(frame)
+                visibleEnd = index + visible.length
+            }
             // CoreText breaks at line boundaries, which can strand a section
             // heading at the foot of a page. Start that section on the next
             // page when there is not even room for its first few body lines.

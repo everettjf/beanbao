@@ -57,6 +57,13 @@ public struct BeanBaoWorkflowRecord: Codable, Sendable {
     public var sources: [BeanBaoResearchSource]
     public var updatedAt: Date
 
+    public var hasUnresolvedMutation: Bool {
+        operations.values.contains {
+            $0.effect != .readOnly &&
+                ($0.state == .running || $0.state == .needsReconciliation)
+        }
+    }
+
     public init(id: UUID = UUID(), request: String) {
         self.id = id
         self.request = request
@@ -83,7 +90,7 @@ public actor BeanBaoWorkflowStore: PHKExecutionCheckpointPersisting {
             let data = try Self.readPrivateFile(url)
             let saved = try JSONDecoder().decode(BeanBaoWorkflowRecord.self, from: data)
             guard saved.request == request else { throw BeanBaoWorkflowError.invalidRecord }
-            record = saved
+            record = try Self.reconcileUncertainSavedRecord(saved, at: url)
         } else {
             record = BeanBaoWorkflowRecord(id: id, request: request)
         }
@@ -92,7 +99,8 @@ public actor BeanBaoWorkflowStore: PHKExecutionCheckpointPersisting {
     public init(existingURL: URL) throws {
         self.url = existingURL
         let data = try Self.readPrivateFile(existingURL)
-        record = try JSONDecoder().decode(BeanBaoWorkflowRecord.self, from: data)
+        let saved = try JSONDecoder().decode(BeanBaoWorkflowRecord.self, from: data)
+        record = try Self.reconcileUncertainSavedRecord(saved, at: existingURL)
     }
 
     public func snapshot() -> BeanBaoWorkflowRecord { record }
@@ -121,6 +129,9 @@ public actor BeanBaoWorkflowStore: PHKExecutionCheckpointPersisting {
 
     public func claim(key: String, tool: String, effect: BeanBaoWorkflowEffect) throws -> Claim {
         guard !key.isEmpty, !tool.isEmpty else { throw BeanBaoWorkflowError.invalidRecord }
+        guard !record.hasUnresolvedMutation else {
+            throw BeanBaoWorkflowError.outcomeUnconfirmed("workflow")
+        }
         if let existing = record.operations[key] {
             guard existing.tool == tool, existing.effect == effect else {
                 throw BeanBaoWorkflowError.invalidRecord
@@ -128,7 +139,9 @@ public actor BeanBaoWorkflowStore: PHKExecutionCheckpointPersisting {
             if existing.state == .completed, let result = existing.result {
                 return .cached(result)
             }
-            if effect != .readOnly { throw BeanBaoWorkflowError.outcomeUnconfirmed(tool) }
+            if effect != .readOnly && existing.state != .failed {
+                throw BeanBaoWorkflowError.outcomeUnconfirmed(tool)
+            }
         }
         try mutate {
             $0.operations[key] = .init(tool: tool, effect: effect, state: .running,
@@ -150,16 +163,44 @@ public actor BeanBaoWorkflowStore: PHKExecutionCheckpointPersisting {
         }
     }
 
-    public func fail(key: String) throws {
+    public func fail(key: String, definitelyNoEffect: Bool = false) throws {
         try mutate {
             guard var operation = $0.operations[key], operation.state == .running else {
                 throw BeanBaoWorkflowError.invalidRecord
             }
-            operation.state = operation.effect == .readOnly ? .failed : .needsReconciliation
+            operation.state = operation.effect == .readOnly || definitelyNoEffect ?
+                .failed : .needsReconciliation
             operation.updatedAt = Date()
             $0.operations[key] = operation
             if operation.state == .needsReconciliation { $0.phase = .needsReconciliation }
         }
+    }
+
+    public func assertSafeToRun() throws {
+        guard !record.hasUnresolvedMutation else {
+            throw BeanBaoWorkflowError.outcomeUnconfirmed("workflow")
+        }
+    }
+
+    public func assertSafeToComplete() throws {
+        try assertSafeToRun()
+        guard !record.operations.values.contains(where: { $0.state == .running }) else {
+            throw BeanBaoWorkflowError.completionUnverified
+        }
+    }
+
+    private static func reconcileUncertainSavedRecord(_ saved: BeanBaoWorkflowRecord,
+                                                       at url: URL) throws -> BeanBaoWorkflowRecord {
+        guard saved.hasUnresolvedMutation && saved.phase != .needsReconciliation else {
+            return saved
+        }
+        var repaired = saved
+        repaired.phase = .needsReconciliation
+        repaired.updatedAt = Date()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try writePrivateFile(encoder.encode(repaired), to: url)
+        return repaired
     }
 
     private func mutate(_ edit: (inout BeanBaoWorkflowRecord) throws -> Void) throws {
@@ -247,6 +288,41 @@ public struct BeanBaoGuardedWorkflowTool: PHKNativeTool {
     private let approval: (@Sendable (PHKJSONValue) async throws -> Bool)?
     private let operation: @Sendable (PHKJSONValue) async throws -> PHKJSONValue
 
+    /// These exact errors are thrown before the named tool writes its output.
+    /// Any storage, rendering, or unknown error remains an uncertain mutation.
+    private func definitelyNoEffect(_ error: Error) -> Bool {
+        switch definition.name {
+        case "report_compose":
+            if let failure = error as? BeanBaoReportError {
+                switch failure {
+                case .invalidStructure, .unsupportedCitation: return true
+                case .missingReport: return false
+                }
+            }
+        case "pdf_render":
+            if let failure = error as? BeanBaoPDFError,
+               case .tooManyPages = failure { return true }
+            if let failure = error as? BeanBaoReportError {
+                switch failure {
+                case .invalidStructure, .missingReport: return true
+                case .unsupportedCitation: return false
+                }
+            }
+        case "mail_prepare":
+            if let failure = error as? BeanBaoMailError {
+                switch failure {
+                case .recipientNotInRequest, .attachmentMissing: return true
+                case .invalidDraft: return false
+                }
+            }
+        case "app_prepare":
+            if let failure = error as? BeanBaoAppCatalogError,
+               case .unsearchedListing = failure { return true }
+        default: break
+        }
+        return false
+    }
+
     public init(definition: PHKToolDefinition, effect: BeanBaoWorkflowEffect,
                 store: BeanBaoWorkflowStore,
                 approval: (@Sendable (PHKJSONValue) async throws -> Bool)? = nil,
@@ -278,7 +354,7 @@ public struct BeanBaoGuardedWorkflowTool: PHKNativeTool {
             try await store.finish(key: key, result: result)
             return result
         } catch {
-            try? await store.fail(key: key)
+            try? await store.fail(key: key, definitelyNoEffect: definitelyNoEffect(error))
             throw error
         }
     }
@@ -311,16 +387,22 @@ public final class BeanBaoWorkflowSession: @unchecked Sendable {
     }
 
     public func run(_ request: String) async throws -> PHKAgentSnapshot {
+        try await store.assertSafeToRun()
         try await store.setPhase(.running)
         do {
             let output = try await runtime.send(request)
             try await store.saveExecutionCheckpoint(await runtime.checkpoint())
             guard try await completionCheck() else { throw BeanBaoWorkflowError.completionUnverified }
+            try await store.assertSafeToComplete()
             try await store.setPhase(successPhase)
             return output
         } catch {
             let current = await store.snapshot()
-            if current.phase != .needsReconciliation { try? await store.setPhase(.failed) }
+            if current.hasUnresolvedMutation {
+                try? await store.setPhase(.needsReconciliation)
+            } else if current.phase != .needsReconciliation {
+                try? await store.setPhase(.failed)
+            }
             throw error
         }
     }
