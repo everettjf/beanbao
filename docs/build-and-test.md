@@ -2,9 +2,13 @@
 
 Updated November 3, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 3 BeanBao Companion source build
+
+The second app's broader name reflects its role as a normally sandboxed interactive surface, while the currently implemented workflow remains Uber Eats. Bridge 0.2.14 / Agent 0.3.118 / BeanBao Companion 0.1.23 / App 0.3.74 passed native policy and activity checks, Python browser and installer checks, 90 Swift Harness tests, and the four-package audit. The prepared local transfer archive SHA-256 is `4d4dcb060fad6cd74e03193990adacd9dc455260ad134cec25fb4fa8369fbdf2`. The package is not installed on the phone or published as a GitHub release. The public v0.3.72 archive still shows the old name.
+
 ## November 3 BeanBao Web source build
 
-The second visible app is named **BeanBao Web** in the new source build. Bridge 0.2.14 / Agent 0.3.118 / BeanBao Web 0.1.22 / App 0.3.73 passed the complete build: native policy and activity checks, Python browser and installer checks, 90 Swift Harness tests, and the four-package audit. The audit verified the new package and Home Screen display names while retaining the existing bundle ID, executable, and URL scheme for upgrade continuity. The local transfer archive was prepared and audited; its uncompressed SHA-256 is `d086a9fa2eb30d1307068f8786aa31a8a4123bb13c086ba99ab9fcd2935acb62`. This build has **not** been installed on the phone or published as a GitHub release. The public v0.3.72 archive still displays the old second-app name.
+The intermediate BeanBao Web 0.1.22 / App 0.3.73 source build passed the complete build: native policy and activity checks, Python browser and installer checks, 90 Swift Harness tests, and the four-package audit. The audit verified the new package and Home Screen display names while retaining the existing bundle ID, executable, and URL scheme for upgrade continuity. The local transfer archive was prepared and audited; its uncompressed SHA-256 is `d086a9fa2eb30d1307068f8786aa31a8a4123bb13c086ba99ab9fcd2935acb62`. This intermediate build was not installed on the phone or published as a GitHub release; the name was superseded by BeanBao Companion.
 
 ## November 3 public-preview build
 

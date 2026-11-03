@@ -4,13 +4,13 @@
 <key>CFBundleExecutable</key><string>BeanBaoDelivery</string>
 <key>CFBundleIdentifier</key><string>dev.beanbao.deliverybrowser</string>
 <key>CFBundleName</key><string>BeanBaoDelivery</string>
-<key>CFBundleDisplayName</key><string>BeanBao Web</string>
+<key>CFBundleDisplayName</key><string>BeanBao Companion</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIcons</key><dict><key>CFBundlePrimaryIcon</key><dict>
 <key>CFBundleIconFiles</key><array><string>BeanBaoIcon29</string><string>BeanBaoIcon60</string></array>
 </dict></dict>
-<key>CFBundleShortVersionString</key><string>0.1.22</string>
-<key>CFBundleVersion</key><string>15</string>
+<key>CFBundleShortVersionString</key><string>0.1.23</string>
+<key>CFBundleVersion</key><string>16</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>UIDeviceFamily</key><array><integer>1</integer></array>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>

@@ -219,7 +219,7 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
     quickRow.distribution = UIStackViewDistributionFillEqually;
     quickRow.spacing = 8;
     UIButton *deliveryBrowse = [UIButton buttonWithType:UIButtonTypeSystem];
-    [deliveryBrowse setTitle:@"Open BeanBao Web · Food delivery  ›" forState:UIControlStateNormal];
+    [deliveryBrowse setTitle:@"Open Companion · Food delivery  ›" forState:UIControlStateNormal];
     deliveryBrowse.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
     deliveryBrowse.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
     [deliveryBrowse addTarget:self action:@selector(deliveryBrowseTapped)
@@ -478,7 +478,7 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
     parts.queryItems = @[[NSURLQueryItem queryItemWithName:@"token" value:token]];
     [UIApplication.sharedApplication openURL:parts.URL options:@{}
                               completionHandler:^(BOOL opened) {
-        if (!opened) self.detailLabel.text = @"Install BeanBao Web to browse food delivery.";
+        if (!opened) self.detailLabel.text = @"Install BeanBao Companion to browse food delivery.";
     }];
 }
 

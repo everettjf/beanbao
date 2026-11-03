@@ -49,10 +49,10 @@ def audit(packages: list[Path]) -> None:
 def install_notes(packages: list[Path], versions: list[str]) -> bytes:
     names = [package.name for package in packages]
     return (f"# BeanBao RootHide release candidate\n\n"
-            f"Bridge {versions[0]} / Agent {versions[1]} / BeanBao Web {versions[2]} / App {versions[3]}. "
+            f"Bridge {versions[0]} / Agent {versions[1]} / BeanBao Companion {versions[2]} / App {versions[3]}. "
             "Package contents passed the build audit and offline tests. Research PDF generation and "
             "App Store listing handoff passed on one device. Mail composition needs an Apple Mail account. "
-            "BeanBao Web has an experimental Palmino-driven multi-step food-delivery Run control. "
+            "BeanBao Companion has an experimental Palmino-driven multi-step food-delivery Run control. "
             "One phone completed two uninterrupted runs through search, restaurant, item, "
             "required-option selection, exactly one add-to-cart, cart opening, and read-only "
             "cart review. The final run checked the executed merchant, item, and option "
@@ -75,7 +75,7 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             "After installing or updating Bridge, reload SpringBoard to enable injection. "
             "The phone may lock; unlock it yourself. Agent, browser, or App updates do not require a SpringBoard reload. "
             "After installing Agent, run `launchctl kickstart -k user/501/dev.beanbao.agent` "
-            "to load its new binary; close and reopen BeanBao and BeanBao Web after their updates. "
+            "to load its new binary; close and reopen BeanBao and BeanBao Companion after their updates. "
             "Confirm launchd is running Agent as mobile, then unlock the phone and open BeanBao. "
             "Choose Claude under Model services and enter your own key for research and App Store workflows. "
             "The older bounded UI tasks also support OpenAI or a Compatible API. "
