@@ -24,7 +24,9 @@ public enum BeanBaoReportPDFRenderer {
         let titleFont = CTFontCreateWithName("Helvetica-Bold" as CFString, 23, nil)
         let headingFont = CTFontCreateWithName("Helvetica-Bold" as CFString, 15, nil)
         let bodyFont = CTFontCreateWithName("Helvetica" as CFString, 11, nil)
+        let sourceFont = CTFontCreateWithName("Helvetica" as CFString, 9.5, nil)
         var links: [(range: NSRange, url: URL)] = []
+        var headingStarts: [Int] = []
         func append(_ text: String, font: CTFont) {
             content.append(NSAttributedString(string: text, attributes: [
                 NSAttributedString.Key(kCTFontAttributeName as String): font
@@ -37,6 +39,7 @@ public enum BeanBaoReportPDFRenderer {
         let sourceNumbers = Dictionary(document.sources.enumerated().map { ($0.element.url, $0.offset + 1) },
                                        uniquingKeysWith: { first, _ in first })
         for section in document.sections {
+            headingStarts.append(content.length)
             append(section.heading + "\n", font: headingFont)
             for paragraph in section.paragraphs {
                 let references = paragraph.sourceURLs.compactMap { sourceNumbers[$0] }
@@ -45,15 +48,16 @@ public enum BeanBaoReportPDFRenderer {
             }
             append("\n", font: bodyFont)
         }
+        headingStarts.append(content.length)
         append("Sources\n", font: headingFont)
         for (index, source) in document.sources.enumerated() {
-            append("[\(index + 1)] \(source.title)\n", font: bodyFont)
+            append("[\(index + 1)] \(source.title)\n", font: sourceFont)
             guard let url = URL(string: source.url), url.scheme?.lowercased() == "https",
                   url.host != nil else { throw BeanBaoPDFError.renderFailed }
             let start = content.length
-            append(source.url, font: bodyFont)
+            append(source.url, font: sourceFont)
             links.append((NSRange(location: start, length: content.length - start), url))
-            append("\n\n", font: bodyFont)
+            append("\n", font: sourceFont)
         }
 
         let mutable = CFDataCreateMutable(nil, 0)!
@@ -72,7 +76,19 @@ public enum BeanBaoReportPDFRenderer {
             guard pages < 40 else { throw BeanBaoPDFError.tooManyPages }
             context.beginPDFPage(nil)
             context.textMatrix = .identity
-            let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: index, length: 0), path, nil)
+            var frame = CTFramesetterCreateFrame(framesetter, CFRange(location: index, length: 0), path, nil)
+            var visible = CTFrameGetVisibleStringRange(frame)
+            let visibleEnd = index + visible.length
+            // CoreText breaks at line boundaries, which can strand a section
+            // heading at the foot of a page. Start that section on the next
+            // page when there is not even room for its first few body lines.
+            if let heading = headingStarts.last(where: {
+                $0 > index + 240 && $0 < visibleEnd && visibleEnd - $0 < 90
+            }) {
+                frame = CTFramesetterCreateFrame(framesetter,
+                    CFRange(location: index, length: heading - index), path, nil)
+                visible = CTFrameGetVisibleStringRange(frame)
+            }
             CTFrameDraw(frame, context)
             let lines = CTFrameGetLines(frame) as! [CTLine]
             var origins = [CGPoint](repeating: .zero, count: lines.count)
@@ -98,7 +114,6 @@ public enum BeanBaoReportPDFRenderer {
                     context.setURL(link.url as CFURL, for: rect)
                 }
             }
-            let visible = CTFrameGetVisibleStringRange(frame)
             context.endPDFPage()
             guard visible.length > 0 else { throw BeanBaoPDFError.renderFailed }
             index += visible.length

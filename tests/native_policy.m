@@ -75,6 +75,38 @@ static BOOL Check(BOOL condition, const char *message) {
 
 int main(void) {
     @autoreleasepool {
+        NSString *naturalResearch = @"Compare Apple Speech and Whisper, create a sourced PDF, and prepare an email to test@example.com";
+        NSDictionary *researchChoice = @{ @"action": @"input_text", @"text": @"Research PDF" };
+        if (!Check(BBResearchPDFCandidate(naturalResearch) &&
+                   [BBResolvedTask(naturalResearch, researchChoice) isEqualToString:@"Research PDF"],
+                   "model-classified research PDF and addressed mail enter one workflow") ||
+            !Check(BBResearchPDFCandidate(@"Compare speech APIs, make a PDF, and send it to test@example.com") &&
+                   [BBResolvedTask(@"Compare speech APIs, make a PDF, and send it to test@example.com",
+                                   researchChoice) isEqualToString:@"Research PDF"],
+                   "addressed email is allowed through the research draft handoff") ||
+            !Check(!BBResearchPDFCandidate(@"Compare speech APIs, make a PDF, and email it") &&
+                   BBResolvedTask(@"Compare speech APIs, make a PDF, and email it", researchChoice) == nil,
+                   "email request without a recipient cannot silently complete as PDF only") ||
+            !Check(!BBResearchPDFCandidate(@"Do not research speech APIs or create a PDF") &&
+                   BBResolvedTask(@"Do not research speech APIs or create a PDF",
+                                  researchChoice) == nil,
+                   "a negated research request cannot start the PDF workflow") ||
+            !Check(!BBIsResearchPDFTask(@"Research speech APIs, create a PDF, and install Pages") &&
+                   !BBResearchPDFCandidate(@"Research speech APIs, create a PDF, and install Pages") &&
+                   BBResolvedTask(@"Research speech APIs, create a PDF, and install Pages",
+                                  researchChoice) == nil,
+                   "research plus app installation cannot silently drop installation") ||
+            !Check(!BBResearchPDFCandidate(@"Research speech APIs, create a PDF; install Pages") &&
+                   !BBIsResearchPDFTask(@"Research speech APIs, create a PDF, install Pages"),
+                   "punctuation cannot hide a second installation step") ||
+            !Check(!BBResearchPDFCandidate(@"Compare speech APIs, make a PDF, and send a message to test@example.com") &&
+                   BBResolvedTask(@"Compare speech APIs, make a PDF, and send a message to test@example.com",
+                                  researchChoice) == nil,
+                   "research cannot turn a message request into an email draft") ||
+            !Check(!BBResearchPDFCandidate(@"Open Settings, compare speech APIs, and make a PDF") &&
+                   BBResolvedTask(@"Open Settings, compare speech APIs, and make a PDF",
+                                  researchChoice) == nil,
+                   "research cannot drop a requested app switch")) return 1;
         if (!Check(BBObservationIsFresh(100, 109.9),
                    "recent monotonic observation remains valid") ||
             !Check(!BBObservationIsFresh(100, 110.1),

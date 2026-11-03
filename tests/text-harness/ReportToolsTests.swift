@@ -63,6 +63,42 @@ final class ReportToolsTests: XCTestCase {
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
 
+    func testLongReportKeepsHeadingsWithBodyAndAvoidsOrphanSourcePage() throws {
+        let sources = (1...14).map { number in
+            BeanBaoResearchSource(
+                url: "https://example.org/speech/source-\(number)",
+                title: "Source \(number): On-device speech recognition, accuracy, privacy and implementation details",
+                citedText: "Public technical evidence for speech recognition")
+        }
+        let paragraph = String(repeating:
+            "On-device transcription has different model sizes, language support, accuracy and latency. ",
+            count: 4)
+        let headings = ["Summary", "Apple Speech", "Whisper", "Head-to-head evidence", "Recommendation"]
+        let report = BeanBaoReportDocument(title: "Apple Speech vs Whisper for On-Device Dictation",
+            sections: headings.map { heading in
+                .init(heading: heading, paragraphs: [
+                    .init(text: paragraph, sourceURLs: [sources[0].url]),
+                    .init(text: paragraph, sourceURLs: [sources[1].url])
+                ])
+            }, sources: sources, createdAt: Date(timeIntervalSince1970: 0))
+        let pdf = try XCTUnwrap(PDFDocument(data: BeanBaoReportPDFRenderer.data(for: report)))
+        XCTAssertGreaterThan(pdf.pageCount, 1)
+        let pages = (0..<pdf.pageCount).compactMap { pdf.page(at: $0)?.string }
+        XCTAssertEqual(pages.count, pdf.pageCount)
+        for page in pages.dropLast() {
+            let lastLine = page.split(separator: "\n").last?.trimmingCharacters(in: .whitespaces)
+            XCTAssertFalse(headings.contains(lastLine ?? ""), "A heading must not stand alone at a page foot")
+            XCTAssertNotEqual(lastLine, "Sources")
+        }
+        XCTAssertGreaterThan(pages.last?.count ?? 0, 300,
+                             "A single source must not spill onto an otherwise empty page")
+        let links = (0..<pdf.pageCount).compactMap { pdf.page(at: $0) }
+            .flatMap(\.annotations)
+            .compactMap { ($0.action as? PDFActionURL)?.url?.absoluteString }
+        XCTAssertTrue(links.contains(sources[0].url))
+        XCTAssertTrue(links.contains(sources[13].url))
+    }
+
     func testUnverifiedCitationCannotCreateReport() async throws {
         let parent = try location()
         let reportURL = parent.appendingPathComponent("report.json")

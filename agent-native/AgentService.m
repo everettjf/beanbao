@@ -72,11 +72,36 @@ static NSString *BBCompletionMessage(NSString *task) {
     return @"Target app is in the foreground";
 }
 
-static BOOL BBIsResearchPDFTask(NSString *task) {
+BOOL BBResearchPDFCandidate(NSString *task) {
+    if (![task isKindOfClass:NSString.class] || task.length < 12 || task.length > 220 ||
+        [task rangeOfCharacterFromSet:NSCharacterSet.newlineCharacterSet].location != NSNotFound)
+        return NO;
     NSString *lower = task.lowercaseString;
-    BOOL research = [lower hasPrefix:@"research "] || [lower hasPrefix:@"investigate "] ||
-        [task hasPrefix:@"调研"];
+    NSRegularExpression *researchVerb = [NSRegularExpression
+        regularExpressionWithPattern:@"\\b(?:research|investigate|compare|analy[sz]e|study|survey|explore)\\b|\\blook into\\b"
+        options:NSRegularExpressionCaseInsensitive error:nil];
+    BOOL research = [researchVerb firstMatchInString:task options:0
+        range:NSMakeRange(0, task.length)] != nil ||
+        [task containsString:@"调研"] || [task containsString:@"研究"] ||
+        [task containsString:@"比较"] || [task containsString:@"分析"];
     BOOL pdf = [lower containsString:@"pdf"];
+    NSRegularExpression *negated = [NSRegularExpression
+        regularExpressionWithPattern:@"\\b(?:do not|don't|never)\\b.{0,40}\\b(?:research|investigate|compare|analy[sz]e|study|survey|explore|create|make|write|generate|pdf)\\b"
+        options:NSRegularExpressionCaseInsensitive error:nil];
+    if ([negated firstMatchInString:task options:0 range:NSMakeRange(0, task.length)] ||
+        (([task containsString:@"不要"] || [task hasPrefix:@"别"] ||
+          [task containsString:@"请别"] || [task containsString:@"，别"]) &&
+         ([task containsString:@"调研"] || [task containsString:@"研究"] ||
+          [task containsString:@"生成"] || [task containsString:@"制作"]))) return NO;
+    NSRegularExpression *otherAction = [NSRegularExpression
+        regularExpressionWithPattern:@"(?:^\\s*|[,;&.]\\s*|\\b(?:and|then|also)\\s+)(?:install|download|order|buy|purchase|pay|delete|remove|open|launch|post|share|change|edit|set|update|toggle|enable|disable|turn|call|navigate|route|message|send\\s+(?:a\\s+)?(?:message|text))\\b"
+        options:NSRegularExpressionCaseInsensitive error:nil];
+    BOOL unrelated = [otherAction firstMatchInString:task options:0
+        range:NSMakeRange(0, task.length)] != nil;
+    for (NSString *phrase in @[@"并安装", @"然后安装", @"再安装", @"并下载", @"然后下载", @"再下载",
+                               @"并下单", @"然后下单", @"再下单", @"并打开", @"然后打开", @"再打开",
+                               @"并发送消息", @"然后发送消息", @"再发送消息"])
+        if ([task containsString:phrase]) unrelated = YES;
     BOOL externalAction = [lower containsString:@"email"] || [lower containsString:@"mail to"] ||
         [lower containsString:@"send "] || [task containsString:@"邮件"] ||
         [task containsString:@"发送"];
@@ -85,7 +110,13 @@ static BOOL BBIsResearchPDFTask(NSString *task) {
         options:NSRegularExpressionCaseInsensitive error:nil];
     BOOL hasRecipient = [recipient firstMatchInString:task options:0
                                                 range:NSMakeRange(0, task.length)] != nil;
-    return research && pdf && (!externalAction || hasRecipient);
+    return research && pdf && !unrelated && (!externalAction || hasRecipient);
+}
+
+static BOOL BBIsResearchPDFTask(NSString *task) {
+    NSString *lower = task.lowercaseString;
+    return ([lower hasPrefix:@"research "] || [lower hasPrefix:@"investigate "] ||
+            [task hasPrefix:@"调研"]) && BBResearchPDFCandidate(task);
 }
 
 static BOOL BBIsAppStoreTask(NSString *task) {
