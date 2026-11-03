@@ -67,7 +67,8 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             "From a root shell in the extracted directory, run `sh install.sh --dry-run` to check "
             "checksums, package identities, architecture, and versions; then run "
             "`sh install.sh` to install changed packages in order. The script never reloads "
-            "SpringBoard automatically. The equivalent manual installation order is:\n\n"
+            "SpringBoard automatically. It checks the running Agent version as mobile and restarts "
+            "a stale Agent service. The equivalent manual installation order is:\n\n"
             "```sh\n"
             + "\n".join(f"dpkg -i {name}" for name in names)
             + "\ndpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app\n```\n\n"

@@ -70,6 +70,16 @@ if tool == "launchctl" and args == ["kickstart", "-k", "user/501/dev.beanbao.age
 if tool == "launchctl" and args == ["bootstrap", "user/501", "/Library/LaunchDaemons/dev.beanbao.agent.plist"]:
     with log_path.open("a") as log: log.write("bootstrap agent\n")
     sys.exit(0)
+if tool == "su" and args == ["mobile", "-c", "beanbaoagentctl status"]:
+    version = state.get("dev.beanbao.agent")
+    if os.environ.get("FAKE_AGENT_STALE_UNTIL_RESTART") and "restart agent" not in log_path.read_text():
+        version = "0.9"
+    version = os.environ.get("FAKE_AGENT_RUNTIME_VERSION", version)
+    if version:
+        print(json.dumps({"ok": True, "agent_version": version}, separators=(",", ":")))
+        sys.exit(0)
+    sys.exit(1)
+if tool == "sleep": sys.exit(0)
 if tool == "uicache" and args == ["-a"]:
     with log_path.open("a") as log: log.write("refresh icons\n")
     sys.exit(0)
@@ -87,7 +97,7 @@ class ReleaseInstallerTests(unittest.TestCase):
         fake = self.bin / "fake-tool"
         fake.write_text(FAKE_TOOL)
         fake.chmod(0o755)
-        for name in ("sha256sum", "id", "dpkg", "dpkg-deb", "dpkg-query", "launchctl", "uicache"):
+        for name in ("sha256sum", "id", "dpkg", "dpkg-deb", "dpkg-query", "launchctl", "su", "sleep", "uicache"):
             (self.bin / name).symlink_to(fake)
         shutil.copy(ROOT / "scripts/install_release.sh", self.base / "install.sh")
         self.files = []
@@ -138,6 +148,20 @@ class ReleaseInstallerTests(unittest.TestCase):
         self.assertEqual(self.log.read_text().splitlines(),
                          [*("install " + name for name in PACKAGES),
                           "bootstrap agent", "restart agent", "refresh icons"])
+
+    def test_stale_running_agent_is_restarted_without_reinstalling(self):
+        self.state.write_text(json.dumps(dict.fromkeys(PACKAGES, VERSION)))
+        result = self.run_installer(extra_env={"FAKE_AGENT_STALE_UNTIL_RESTART": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.log.read_text().splitlines(), ["restart agent"])
+        self.assertIn("Running Agent version verified: 1.0", result.stdout)
+
+    def test_stale_agent_after_restart_is_reported_as_failure(self):
+        self.state.write_text(json.dumps(dict.fromkeys(PACKAGES, VERSION)))
+        result = self.run_installer(extra_env={"FAKE_AGENT_RUNTIME_VERSION": "0.9"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("running version could not be verified", result.stderr)
+        self.assertEqual(self.log.read_text().splitlines(), ["restart agent"])
 
     def test_bad_digest_rejects_before_any_install(self):
         self.state.write_text("{}")

@@ -22,7 +22,7 @@ esac
 
 CDPATH= cd "$(dirname "$0")" || fail 'cannot open the release directory'
 [ -f SHA256SUMS ] || fail 'SHA256SUMS is missing'
-for tool in sha256sum dpkg dpkg-deb dpkg-query id awk; do
+for tool in sha256sum dpkg dpkg-deb dpkg-query id awk su grep; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
 done
 [ "$(dpkg --print-architecture)" = iphoneos-arm64e ] ||
@@ -78,7 +78,14 @@ for name in dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev
     esac
 done
 
-if [ "$agent_changed" -eq 1 ]; then
+set -- dev.beanbao.agent_*_iphoneos-arm64e.deb
+agent_version=$(dpkg-deb -f "$1" Version)
+agent_status=$(su mobile -c 'beanbaoagentctl status' 2>/dev/null || true)
+agent_matches() {
+    printf '%s' "$agent_status" | grep -Fq '"ok":true' &&
+        printf '%s' "$agent_status" | grep -Fq "\"agent_version\":\"$agent_version\""
+}
+if [ "$agent_changed" -eq 1 ] || ! agent_matches; then
     if command -v launchctl >/dev/null 2>&1 &&
        (launchctl kickstart -k user/501/dev.beanbao.agent ||
         { launchctl bootstrap user/501 /Library/LaunchDaemons/dev.beanbao.agent.plist &&
@@ -87,7 +94,14 @@ if [ "$agent_changed" -eq 1 ]; then
     else
         fail 'packages installed, but the Agent service did not start; inspect launchctl before use'
     fi
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        agent_status=$(su mobile -c 'beanbaoagentctl status' 2>/dev/null || true)
+        agent_matches && break
+        sleep 1
+    done
+    agent_matches || fail "Agent package is $agent_version but its running version could not be verified"
 fi
+printf 'Running Agent version verified: %s\n' "$agent_version"
 [ "$browser_changed" -eq 0 ] && [ "$app_changed" -eq 0 ] || {
     if command -v uicache >/dev/null 2>&1 && uicache -a; then
         printf 'App icons refreshed.\n'
