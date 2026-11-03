@@ -30,6 +30,16 @@ sh install.sh --dry-run
 sh install.sh
 ```
 
+If paired root SSH is already working, the Mac can transfer, preflight, and install the same archive in one command:
+
+```sh
+python3 scripts/install_to_device.py dist/BeanBao-RootHide-*.tar --host 127.0.0.1 --port <forwarded-port> --identity <root-private-key> --known-hosts <known-hosts-file> --sha256 <published-archive-sha256>
+```
+
+Add `--check-only` to transfer and run the phone preflight without installing. The transfer uses strict host-key checking and sends the validated archive directly over SSH. It does not configure root access or reload SpringBoard; a new Bridge install still needs a separate SpringBoard reload and manual unlock. Do not put model keys in the archive.
+
+On the paired iPhone, both `--check-only` and a full same-version run of this Mac helper passed. The full run kept all four packages and verified the running Agent 0.3.115. Initial installation on a second phone has not yet been verified.
+
 The script checks every package checksum, package ID, architecture, and version before changing anything. It installs only changed versions in dependency order and refuses a downgrade. It also checks the running Agent's compiled version as the `mobile` user and restarts a stale service even when the package version is already current. It never reloads SpringBoard automatically. On the connected phone, extracting the `.tar`, the dry run, and a same-version install passed; all four packages were skipped and the Agent service ID stayed the same. Deliberately corrupting one package made the installer stop at checksum verification before an install. A later release upgraded only the Delivery Browser from 0.1.19 to 0.1.20 using this script, refreshed its icon, and left Agent running with the same service ID. A second run skipped every package. A controlled one-time stale-version response then made the installer restart only Agent and verify its real 0.3.115 version. First installation on a different phone still needs validation.
 
 For manual installation, copy the packages to a root shell on the jailbroken phone and install them in this order:

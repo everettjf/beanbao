@@ -13,6 +13,7 @@ sh "$repo_root/scripts/test_activity_store.sh"
 python3 -m unittest discover -s "$repo_root/agent" -p 'test_*.py' -q
 python3 "$repo_root/tests/test_delivery_browser_js.py" -q
 python3 "$repo_root/tests/test_release_installer.py" -q
+python3 "$repo_root/tests/test_install_to_device.py" -q
 swift test --package-path "$repo_root"
 
 for component in bridge agent-native delivery-browser app; do
