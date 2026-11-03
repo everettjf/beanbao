@@ -2,6 +2,10 @@
 
 Updated November 2, 2026. Target: iPhone 11, iOS 26.0.1, Relaxin 0.5.5, RootHide. Historical detailed Chinese-language logs are available in Git history through commit `b55e882`. This file records the current release candidate and subsequent development evidence.
 
+## November 2 Palmino multi-step request boundary
+
+Agent 0.3.89 rechecks the saved user request before option selection, add-to-cart, cart review, or checkout navigation. It also revalidates cached planner proposals and rejects an older proposal at action start if it exceeds the request. Scripted model tests cover a review-only request proposing a radio selection or add-to-cart, a cart-only request proposing checkout, and a cached add-to-cart proposal from before this rule. The existing multi-step happy path still passes. The full build passed native and Python checks, 13 browser JavaScript tests, 66 Swift Harness tests, and the four-package audit. Agent 0.3.89 was installed without a SpringBoard reload; `verify_device.py --expect-bundle` confirmed all four package versions, a running Agent, and an unlocked screen-on phone. This verifies the policy and installed binary, not a new live food order.
+
 ## November 2 App Store authentication boundary
 
 The saved **Find app Apple Pages** workflow opened the official StoreKit listing for Apple's free Pages app (product ID `361309726`, bundle ID `com.apple.Pages`). Tapping **Get** displayed the system **Sign In to Complete Purchase** prompt. No Apple ID was entered; the prompt was cancelled. The StoreKit listing returned to **Get**, and BeanBao remained `waiting_for_user` with **App is not installed yet. Review the listing or check again.** This verifies the authentication stop and absence of a false install claim, but a fresh download still awaits an App Store account.

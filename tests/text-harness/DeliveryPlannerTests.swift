@@ -44,7 +44,8 @@ final class DeliveryPlannerTests: XCTestCase {
     }
 
     func testPalminoChoosesSeveralPageBoundActionsWithoutSavingPageText() async throws {
-        let (journal, file) = try store()
+        let request = "Find a rice bowl, add it to the cart, and open checkout to review the total"
+        let (journal, file) = try store(request: request)
         let pages: [(String, String, String, String)] = [
             ("https://www.ubereats.com/feed", "Search Uber Eats private-page-marker",
              "open_search", ""),
@@ -65,7 +66,7 @@ final class DeliveryPlannerTests: XCTestCase {
             let seen = observation(url, text)
             let id = try BeanBaoDeliveryObservationContract.identifier(seen)
             let proposal = try await BeanBaoDeliveryPlanner.choose(
-                request: "Find a rice bowl", observation: seen, store: journal,
+                request: request, observation: seen, store: journal,
                 client: DeliveryScriptModel(action: action, target: target, observationID: id),
                 model: "scripted")
             XCTAssertEqual(proposal, .init(action: action, target: target, observationID: id))
@@ -80,7 +81,7 @@ final class DeliveryPlannerTests: XCTestCase {
         let last = pages.last!
         let lastPage = observation(last.0, last.1)
         let cached = try await BeanBaoDeliveryPlanner.choose(
-            request: "Find a rice bowl", observation: lastPage, store: journal,
+            request: request, observation: lastPage, store: journal,
             client: DeliveryScriptModel(action: "place_order", target: "", observationID: "wrong"),
             model: "scripted")
         XCTAssertEqual(cached.action, "open_checkout")
@@ -230,11 +231,12 @@ final class DeliveryPlannerTests: XCTestCase {
     }
 
     func testCartMutationNeedsOneDurableAttemptAndVerifiedNextPage() async throws {
-        let (journal, _) = try store()
+        let request = "Find a rice bowl, add it to the cart, and open checkout to review the total"
+        let (journal, _) = try store(request: request)
         let cart = observation("https://www.ubereats.com/cart", "Go to checkout")
         let id = try BeanBaoDeliveryObservationContract.identifier(cart)
         let proposal = try await BeanBaoDeliveryPlanner.choose(
-            request: "Find a rice bowl", observation: cart, store: journal,
+            request: request, observation: cart, store: journal,
             client: DeliveryScriptModel(action: "open_checkout", target: "", observationID: id),
             model: "scripted")
         try await BeanBaoDeliveryPlanner.begin(proposal, store: journal)
@@ -256,7 +258,7 @@ final class DeliveryPlannerTests: XCTestCase {
         XCTAssertEqual(saved.operations["delivery-execute-v1-\(id)"]?.state, .completed)
         do {
             _ = try await BeanBaoDeliveryPlanner.choose(
-                request: "Find a rice bowl", observation: cart, store: journal,
+                request: request, observation: cart, store: journal,
                 client: DeliveryScriptModel(action: "open_checkout", target: "", observationID: id),
                 model: "scripted")
             XCTFail("Returning to the old page must not replay the old action")
@@ -264,13 +266,14 @@ final class DeliveryPlannerTests: XCTestCase {
     }
 
     func testOptionSelectionRequiresRadioStateChangeOnTheSameItemPage() async throws {
-        let (journal, _) = try store()
+        let request = "Find a rice bowl and choose Rice Noodle"
+        let (journal, _) = try store(request: request)
         let url = "https://www.ubereats.com/store/example/id?mod=quickView"
         let text = "Chicken Pho Rice Noodle Ramen Noodle Add 1 to order"
         let before = observation(url, text)
         let id = try BeanBaoDeliveryObservationContract.identifier(before)
         let proposal = try await BeanBaoDeliveryPlanner.choose(
-            request: "Find a rice bowl", observation: before, store: journal,
+            request: request, observation: before, store: journal,
             client: DeliveryScriptModel(action: "choose_option", target: "Rice Noodle",
                                         observationID: id), model: "scripted")
         try await BeanBaoDeliveryPlanner.begin(proposal, store: journal)
@@ -311,15 +314,22 @@ final class DeliveryPlannerTests: XCTestCase {
         XCTAssertTrue(try BeanBaoDeliveryObservationContract.allowed(
             ready, observation: after,
             request: "Add Chicken Pho with Rice Noodle to the cart"))
+        XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(
+            choose, observation: before,
+            request: "Review the options. Do not choose Rice Noodle."))
+        XCTAssertFalse(try BeanBaoDeliveryObservationContract.allowed(
+            add, observation: before,
+            request: "Find Chicken Pho. Do not add it to the cart."))
     }
 
     func testBrowserRejectBeforeClickClosesAttemptWithoutReplayingIt() async throws {
-        let (journal, _) = try store()
+        let request = "Find a rice bowl and choose Rice Noodle"
+        let (journal, _) = try store(request: request)
         let page = observation("https://www.ubereats.com/store/example/id?mod=quickView",
                                "Chicken Pho Rice Noodle Add 1 to order")
         let id = try BeanBaoDeliveryObservationContract.identifier(page)
         let proposal = try await BeanBaoDeliveryPlanner.choose(
-            request: "Find a rice bowl", observation: page, store: journal,
+            request: request, observation: page, store: journal,
             client: DeliveryScriptModel(action: "choose_option", target: "Rice Noodle",
                                         observationID: id), model: "scripted")
         try await BeanBaoDeliveryPlanner.begin(proposal, store: journal)
@@ -468,5 +478,68 @@ final class DeliveryPlannerTests: XCTestCase {
             review, on: correct, store: journal)
         let saved = await journal.snapshot()
         XCTAssertEqual(saved.phase, .completed)
+    }
+
+    func testReadOnlyRequestCannotSelectAnOptionOrAddToCart() async throws {
+        let request = "Find Chicken Pho and review its options"
+        let item = observation("https://www.ubereats.com/store/phin/id?mod=quickView",
+            "Chicken Pho Rice Noodle Add 1 to order", available: ["Rice Noodle"])
+        let id = try BeanBaoDeliveryObservationContract.identifier(item)
+        for (action, target) in [("choose_option", "Rice Noodle"), ("add_to_cart", "")] {
+            let (journal, _) = try store(request: request)
+            do {
+                _ = try await BeanBaoDeliveryPlanner.choose(request: request, observation: item,
+                    store: journal,
+                    client: DeliveryScriptModel(action: action, target: target, observationID: id),
+                    model: "scripted")
+                XCTFail("A review-only request must reject \(action)")
+            } catch BeanBaoWorkflowError.completionUnverified { }
+            let saved = await journal.snapshot()
+            XCTAssertTrue(saved.operations.isEmpty)
+        }
+    }
+
+    func testCartOnlyRequestCannotOpenCheckout() async throws {
+        let request = "Add Chicken Pho to the cart for review. Do not check out."
+        let (journal, _) = try store(request: request)
+        let cart = observation("https://www.ubereats.com/cart",
+            "Chicken Pho $27.99 Go to checkout")
+        let id = try BeanBaoDeliveryObservationContract.identifier(cart)
+        do {
+            _ = try await BeanBaoDeliveryPlanner.choose(request: request, observation: cart,
+                store: journal,
+                client: DeliveryScriptModel(action: "open_checkout", target: "", observationID: id),
+                model: "scripted")
+            XCTFail("A cart-only request must stop at the cart")
+        } catch BeanBaoWorkflowError.completionUnverified { }
+        let saved = await journal.snapshot()
+        XCTAssertTrue(saved.operations.isEmpty)
+    }
+
+    func testCachedProposalCannotBypassCurrentRequestScope() async throws {
+        let request = "Find Chicken Pho and review its options"
+        let (journal, _) = try store(request: request)
+        let item = observation("https://www.ubereats.com/store/phin/id?mod=quickView",
+            "Chicken Pho Add 1 to order")
+        let id = try BeanBaoDeliveryObservationContract.identifier(item)
+        let key = "delivery-plan-v1-\(id)"
+        _ = try await journal.claim(key: key, tool: "delivery_choose", effect: .readOnly)
+        try await journal.finish(key: key, result: .object([
+            "action": .string("add_to_cart"), "target": .string(""),
+            "observation_id": .string(id)]))
+        do {
+            _ = try await BeanBaoDeliveryPlanner.choose(request: request, observation: item,
+                store: journal,
+                client: DeliveryScriptModel(action: "add_to_cart", target: "", observationID: id),
+                model: "scripted")
+            XCTFail("A cached proposal needs the same current authorization check")
+        } catch BeanBaoDeliveryPlanError.invalidAction { }
+        do {
+            try await BeanBaoDeliveryPlanner.begin(
+                .init(action: "add_to_cart", target: "", observationID: id), store: journal)
+            XCTFail("An old proposal cannot begin a new cart mutation")
+        } catch BeanBaoDeliveryPlanError.invalidAction { }
+        let saved = await journal.snapshot()
+        XCTAssertNil(saved.operations["delivery-execute-v1-\(id)"])
     }
 }

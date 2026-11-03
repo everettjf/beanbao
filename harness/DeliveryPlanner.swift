@@ -27,6 +27,43 @@ public struct BeanBaoDeliveryProposal: Codable, Equatable, Sendable {
     }
 }
 
+/// The model chooses page actions, but the stored user request sets the upper
+/// bound for option selection, cart mutation, and checkout navigation. Ambiguous
+/// requests stop before those transitions so a page or model reply cannot
+/// silently expand a review task into a purchase flow.
+private enum BeanBaoDeliveryRequestScope {
+    private static func contains(_ pattern: String, in text: String) -> Bool {
+        text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    static func permits(_ proposal: BeanBaoDeliveryProposal, request: String) -> Bool {
+        let text = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        let refusesCart = contains(#"\b(?:do not|don't|never|without|no)\b.{0,32}\b(?:add|put|place|open|view|review|show)\b.{0,24}\bcart\b"#, in: text)
+        let refusesCheckout = contains(#"\b(?:do not|don't|never|without|no)\b.{0,32}\b(?:checkout|check out)\b|\bstop at (?:the )?cart\b|\bbefore checkout\b"#, in: text)
+        let addToCart = !refusesCart && contains(#"\b(?:add|put|place)\b.{0,60}\bcart\b"#, in: text)
+        let cartReview = !refusesCart && contains(#"\b(?:open|view|review|show|take)\b.{0,60}\bcart\b|\bcart for review\b|\border review\b"#, in: text)
+        let checkoutReview = !refusesCheckout && contains(#"\b(?:open|enter|go to|review|view|show)\b.{0,60}\b(?:checkout|check out)\b"#, in: text)
+        switch proposal.action {
+        case "choose_option":
+            guard text.range(of: proposal.target,
+                             options: [.caseInsensitive, .diacriticInsensitive]) != nil else {
+                return false
+            }
+            let target = NSRegularExpression.escapedPattern(for: proposal.target)
+            if contains(#"\b(?:do not|don't|never|without|no)\b.{0,32}\b(?:choose|select|pick)\b.{0,60}"# + target,
+                        in: text) {
+                return false
+            }
+            return contains(#"\b(?:choose|select|pick|with|using)\b.{0,60}"# + target,
+                            in: text)
+        case "add_to_cart": return addToCart
+        case "open_cart", "review_cart": return addToCart || cartReview || checkoutReview
+        case "open_checkout", "review_checkout": return checkoutReview
+        default: return true
+        }
+    }
+}
+
 public enum BeanBaoDeliveryObservationContract {
     public static func identifier(_ observation: BeanBaoUberEatsObservation,
                                   now: Date = Date()) throws -> String {
@@ -65,6 +102,9 @@ public enum BeanBaoDeliveryObservationContract {
                                request: String? = nil,
                                now: Date = Date()) throws -> Bool {
         guard proposal.observationID == (try identifier(observation, now: now)) else { return false }
+        if let request, !BeanBaoDeliveryRequestScope.permits(proposal, request: request) {
+            return false
+        }
         let text = observation.visibleText
         let target = proposal.target.trimmingCharacters(in: .whitespacesAndNewlines)
         let page = BeanBaoUberEatsAdapter.page(observation)
@@ -181,6 +221,10 @@ public enum BeanBaoDeliveryPlanner {
         }
         if let saved = record.operations[key], saved.state == .completed,
            let result = saved.result, let proposal = Self.proposal(from: result) {
+            guard try BeanBaoDeliveryObservationContract.allowed(proposal,
+                observation: observation, request: request) else {
+                throw BeanBaoDeliveryPlanError.invalidAction
+            }
             return proposal
         }
         let box = BeanBaoDeliveryProposalBox()
@@ -213,7 +257,11 @@ public enum BeanBaoDeliveryPlanner {
             let result = value(for: proposal)
             switch try await store.claim(key: key, tool: "delivery_choose", effect: .readOnly) {
             case .cached(let saved):
-                guard let earlier = Self.proposal(from: saved) else { throw BeanBaoWorkflowError.invalidRecord }
+                guard let earlier = Self.proposal(from: saved),
+                      try BeanBaoDeliveryObservationContract.allowed(earlier,
+                          observation: observation, request: request) else {
+                    throw BeanBaoDeliveryPlanError.invalidAction
+                }
                 return earlier
             case .execute:
                 try await store.finish(key: key, result: result)
@@ -247,11 +295,11 @@ public enum BeanBaoDeliveryPlanner {
               (proposal.action == "review_cart" && page == .cart) else {
             throw BeanBaoDeliveryPlanError.invalidAction
         }
-        guard
-              try BeanBaoDeliveryObservationContract.allowed(proposal, observation: observation) else {
+        let record = await store.snapshot()
+        guard try BeanBaoDeliveryObservationContract.allowed(proposal,
+            observation: observation, request: record.request) else {
             throw BeanBaoDeliveryPlanError.invalidAction
         }
-        let record = await store.snapshot()
         let planKey = "delivery-plan-v1-\(proposal.observationID)"
         guard let planned = record.operations[planKey], planned.state == .completed,
               let result = planned.result, Self.proposal(from: result) == proposal else {
@@ -291,6 +339,9 @@ public enum BeanBaoDeliveryPlanner {
     public static func begin(_ proposal: BeanBaoDeliveryProposal,
                              store: BeanBaoWorkflowStore) async throws {
         let saved = await store.snapshot()
+        guard BeanBaoDeliveryRequestScope.permits(proposal, request: saved.request) else {
+            throw BeanBaoDeliveryPlanError.invalidAction
+        }
         let planKey = "delivery-plan-v1-\(proposal.observationID)"
         guard let planned = saved.operations[planKey], planned.state == .completed,
               let result = planned.result, Self.proposal(from: result) == proposal,

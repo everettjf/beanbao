@@ -14,6 +14,8 @@ The selected runtime and tool registry support these task paths:
 - The research workflow uses the actual `PHKAgentRuntime` model/tool loop, private checkpoints, source and citation validation, on-device PDF creation, and an optional email draft. Sessions exposes progress and the resulting files.
 - `DeliveryPlanner.swift` uses a Claude-backed Palmino `delivery_choose` tool to propose one page-bound Uber Eats action at a time. The Agent persists the action receipt, while a separate sandboxed browser checks the visible page and executes only a small action list. Two uninterrupted live phone runs found a meal, selected a required option, added it, opened the cart, and completed read-only review. The final run also checked the previously executed merchant, item, and option targets against the fresh cart page.
 
+The model chooses the next visible step; the stored user request now sets an additional limit for option selection, adding to cart, and checkout navigation. A review-only request cannot gain those actions through page text, a model proposal, or a saved proposal from an older version. Ambiguous requests stop before these transitions. This is an authorization boundary around the Palmino loop, not a fixed sequence of taps.
+
 The Agent service runs each task in a child process, has a stop operation, and uses service and task IDs so an old result is not shown as the result of a new task. A wake lease attempts to prevent automatic screen locking during execution and is released on completion, stop, or service failure. The shortcut and voice flows remain in the app.
 
 ## Evidence and limits
