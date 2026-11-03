@@ -24,7 +24,7 @@ the repository is private, because a Pages site can be publicly reachable even
 when its source repository is private. The public site uses **GitHub Actions**
 as its Pages build source. Run the workflow if a new push does not trigger it.
 The expected URL is
-`https://everettjf.github.io/beanbao/`.
+`https://xnu.app/beanbao/`.
 
 See [GitHub's custom workflow instructions](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
 for the current Pages settings and permission requirements.
