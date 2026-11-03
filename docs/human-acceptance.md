@@ -16,6 +16,10 @@ Run `scripts/verify_device.py --expect-bundle` with the paired SSH host, port, i
 
 The current test scripts are `scripts/accept_text_device.py` and `scripts/accept_app_text_device.py`. Check the app status, Agent task and service IDs, and actual UI together. A package audit or simulated Bridge test does not replace device acceptance.
 
+## Multi-step research, PDF, email, and app
+
+The current installed build completed one text request through six Palmino tools and left a two-page sourced PDF, an addressed email draft, and the exact Apple Mail listing in one saved session. The PDF was rendered and inspected; the email remained unsent. Exact bundle verification cleared only the app review. To complete human acceptance, configure an Apple Mail account, open the draft in the system composer, verify the recipient and PDF attachment, then cancel the composer and confirm the session still waits. A later separately approved send can test Mail's queued callback; it cannot prove delivery to the recipient.
+
 ## Food delivery cart review
 
 1. Open **Browse food delivery** and set a non-personal test address on Uber Eats. Confirm **Check** identifies a supported page.
