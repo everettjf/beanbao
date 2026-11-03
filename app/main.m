@@ -777,9 +777,21 @@ static NSData *BBReadPrivateArtifact(NSString *path, NSUInteger limit) {
                 return;
             }
             if (self.activeTaskID.length) {
-                BOOL sameService = [reply[@"service_id"] isEqualToString:self.activeServiceID];
+                NSString *reportedServiceID = [reply[@"service_id"] isKindOfClass:NSString.class] ?
+                    reply[@"service_id"] : nil;
+                BOOL sameService = [reportedServiceID isEqualToString:self.activeServiceID];
                 BOOL sameTask = [reply[@"task_id"] isEqualToString:self.activeTaskID];
                 if (!sameService || !sameTask) {
+                    BOOL restoredSameTask = !sameService && sameTask && reportedServiceID.length &&
+                        [@[@"done", @"waiting_for_user", @"needs_reconciliation"]
+                            containsObject:reply[@"phase"]];
+                    if (restoredSameTask) {
+                        // The Agent restored this task from its durable journal.
+                        // Keep showing its verified state instead of latching an error.
+                        self.activeServiceID = reportedServiceID;
+                        [self showReply:reply];
+                        return;
+                    }
                     self.statusEpoch++;
                     self.activeTaskID = nil;
                     self.activeServiceID = nil;

@@ -11,7 +11,7 @@ beanbaod_FILES = beanbaod.m AgentService.m BBAudit.m ModelConfig.m $(wildcard ..
 	$(wildcard ../vendor/palmino-harness-runtime/Sources/AgentRuntime/*.swift) \
 	$(wildcard ../vendor/palmino-harness-runtime/Sources/AgentTools/*.swift)
 beanbaod_SWIFT_VERSION = 6
-beanbaod_CFLAGS = -fobjc-arc -Wall -Wextra
+beanbaod_CFLAGS = -fobjc-arc -Wall -Wextra -DBB_AGENT_VERSION='@"$(shell awk '$$1 == "Version:" { print $$2; exit }' control)"'
 beanbaod_FRAMEWORKS = Foundation CoreGraphics CoreText
 beanbaod_CODESIGN_FLAGS = -S../bridge/beanbaoctl_entitlements.plist
 beanbaoagentctl_FILES = beanbaoagentctl.m AgentClient.m

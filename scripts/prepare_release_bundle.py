@@ -68,6 +68,8 @@ def install_notes(packages: list[Path], versions: list[str]) -> bytes:
             + "\ndpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app\n```\n\n"
             "After installing or updating Bridge, reload SpringBoard to enable injection. "
             "The phone may lock; unlock it yourself. Agent, browser, or App updates do not require a SpringBoard reload. "
+            "After installing Agent, run `launchctl kickstart -k user/501/dev.beanbao.agent` "
+            "to load its new binary; close and reopen BeanBao and the delivery browser after their updates. "
             "Confirm launchd is running Agent as mobile, then unlock the phone and open BeanBao. "
             "Choose Claude under Model services and enter your own key for research and App Store workflows. "
             "The older bounded UI tasks also support OpenAI or a Compatible API. "

@@ -32,13 +32,16 @@ def verify_bundle(remote) -> None:
             raise SystemExit(f"{name}: installed version does not match local candidate {expected}")
     status = json.loads(remote("beanbaoagentctl status"))
     running = status.get("running")
+    if status.get("agent_version") != expected_version("agent-native"):
+        raise SystemExit("Running Agent version does not match the installed candidate; restart the Agent service")
     if status.get("ok") is not True or not isinstance(status.get("service_id"), str) or \
             not status["service_id"] or not isinstance(status.get("task_id"), str) or \
             status.get("phase") not in {"idle", "running", "stopping", "stopped", "done", "error",
                                          "waiting_for_user", "needs_reconciliation"} or \
             type(running) not in (bool, int) or running not in (0, 1):
         raise SystemExit("Agent status protocol is unavailable or incompatible")
-    print("agent:", json.dumps({"phase": status["phase"], "running": status["running"],
+    print("agent:", json.dumps({"version": status["agent_version"],
+                                "phase": status["phase"], "running": status["running"],
                                 "service_id_present": True, "task_id_present": bool(status["task_id"])},
                                ensure_ascii=False))
 

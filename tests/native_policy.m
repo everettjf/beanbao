@@ -546,12 +546,34 @@ int main(void) {
         if (!Check([unfinishedDetails[@"steps"] count] == 1 &&
                    [unfinishedDetails[@"steps"][0][@"state"] isEqualToString:@"running"],
                    "delivery history merges a planned action and its execution receipt")) return 1;
+        if (!Check(!BBAnyUnresolvedDeliveryCartMutation(),
+                   "an unfinished search does not globally block another delivery session")) return 1;
+        for (NSString *action in @[@"open_item", @"choose_option"]) {
+            NSDictionary *navigationRecord = @{@"operations": @{@"delivery-plan-v1-abc":
+                @{@"result": @{@"action": action}}, @"delivery-execute-v1-abc":
+                @{@"tool": @"delivery_execute", @"state": @"running"}}};
+            if (!Check(!BBDeliveryHasUnfinishedCartMutation(navigationRecord),
+                       "unfinished item navigation or option selection is not a cart mutation")) return 1;
+        }
+        if (!Check(BBDeliveryHasUnfinishedCartMutation(@{@"operations": @{
+                @"delivery-execute-v1-abc": @{@"tool": @"delivery_execute",
+                    @"state": @"running"}}}),
+                   "an unfinished delivery action with a missing plan fails closed")) return 1;
+        NSMutableDictionary *unfinishedCart = [unfinished mutableCopy];
+        unfinishedCart[@"operations"] = @{@"delivery-plan-v1-abc":
+            @{@"tool": @"delivery_choose", @"state": @"completed", @"updatedAt": @1190,
+              @"result": @{@"action": @"add_to_cart", @"target": @""}},
+            @"delivery-execute-v1-abc": @{@"tool": @"delivery_execute", @"state": @"running",
+                @"updatedAt": @1200}};
+        [[NSJSONSerialization dataWithJSONObject:unfinishedCart options:0 error:nil]
+            writeToFile:deliverySession atomically:YES];
+        chmod(deliverySession.fileSystemRepresentation, 0600);
         BBState.app = @"ResearchPDF";
         BBState.phase = @"done";
         NSDictionary *crossSessionCart = BBDeliveryPlan(@{@"task": @"Add rice bowl to cart",
             @"snapshot": @{@"url": @"https://www.ubereats.com/cart",
                             @"visible_text": @"Go to checkout"}});
-        if (!Check(BBAnyUnresolvedDeliveryAction() &&
+        if (!Check(BBAnyUnresolvedDeliveryCartMutation() &&
                    [crossSessionCart[@"error"] isEqualToString:
                        @"Check the previous cart step in Uber Eats before starting another delivery task"],
                    "an uncertain cart step blocks a new delivery task after switching sessions")) return 1;
@@ -559,7 +581,7 @@ int main(void) {
         if (!Check([deliveryStatus[@"phase"] isEqualToString:@"needs_reconciliation"],
                    "unfinished delivery action survives a service restart as uncertain") ||
             !Check([BBDeleteWorkflow(@{@"workflow_id": deliveryID})[@"ok"] boolValue] &&
-                   !BBAnyUnresolvedDeliveryAction(),
+                   !BBAnyUnresolvedDeliveryCartMutation(),
                    "delivery session remains user-deletable after review")) return 1;
         rmdir(workflowRoot.fileSystemRepresentation);
         BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";

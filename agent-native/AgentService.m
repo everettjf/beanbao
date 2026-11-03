@@ -41,6 +41,9 @@ static const char *BBServiceSocket = "/var/mobile/Library/Caches/BeanBao/agent.s
 static const uint16_t BBBrowserPort = 47813;
 static NSString *BBBrowserPairingToken;
 static NSString *BBWorkflowRoot = @"/var/mobile/Library/Application Support/BeanBao/workflows";
+#ifndef BB_AGENT_VERSION
+#define BB_AGENT_VERSION @"unknown"
+#endif
 
 @interface BBServiceState : NSObject
 @property(nonatomic) pid_t child;
@@ -378,7 +381,32 @@ static BOOL BBDeliveryHasUnfinishedAction(NSDictionary *record) {
     return NO;
 }
 
-static BOOL BBAnyUnresolvedDeliveryAction(void) {
+static BOOL BBDeliveryHasUnfinishedCartMutation(NSDictionary *record) {
+    NSDictionary *operations = record[@"operations"];
+    if (![operations isKindOfClass:NSDictionary.class]) return NO;
+    NSSet *navigation = [NSSet setWithArray:@[@"open_search", @"search",
+        @"open_merchant", @"open_item", @"choose_option", @"open_cart", @"open_checkout"]];
+    for (NSString *key in operations) {
+        NSDictionary *operation = operations[key];
+        if (![operation isKindOfClass:NSDictionary.class] ||
+            ![operation[@"tool"] isEqualToString:@"delivery_execute"] ||
+            [operation[@"state"] isEqualToString:@"completed"]) continue;
+        if (![key hasPrefix:@"delivery-execute-v1-"]) return YES;
+        NSString *planKey = [@"delivery-plan-v1-" stringByAppendingString:
+            [key substringFromIndex:@"delivery-execute-v1-".length]];
+        NSDictionary *plan = operations[planKey];
+        NSDictionary *result = [plan[@"result"] isKindOfClass:NSDictionary.class] ?
+            plan[@"result"] : nil;
+        NSString *action = result[@"action"];
+        // Only navigation and option selection are known to leave the cart alone.
+        // A missing or unknown plan stays blocked instead of assuming it was safe.
+        if (![action isKindOfClass:NSString.class] || ![navigation containsObject:action])
+            return YES;
+    }
+    return NO;
+}
+
+static BOOL BBAnyUnresolvedDeliveryCartMutation(void) {
     struct stat root = {0};
     if (lstat(BBWorkflowRoot.fileSystemRepresentation, &root))
         return errno != ENOENT;
@@ -391,7 +419,7 @@ static BOOL BBAnyUnresolvedDeliveryAction(void) {
     for (NSString *identity in entries) {
         if (!BBWorkflowFolder(identity)) continue;
         NSDictionary *record = BBReadWorkflowRecord(identity);
-        if (!record || BBDeliveryHasUnfinishedAction(record)) return YES;
+        if (!record || BBDeliveryHasUnfinishedCartMutation(record)) return YES;
     }
     return NO;
 }
@@ -815,6 +843,7 @@ static NSDictionary *BBStatus(void) {
         NSMutableDictionary *status = [@{@"ok": @YES, @"phase": BBState.phase ?: @"idle",
                  @"message": BBState.message ?: @"",
                  @"app": BBState.app ?: @"", @"running": @(BBState.child > 0),
+                 @"agent_version": BB_AGENT_VERSION,
                  @"service_id": BBState.serviceID ?: @"",
                  @"task_id": BBState.taskID ?: @""} mutableCopy];
         if (BBState.reportPath) status[@"report_path"] = BBState.reportPath;
@@ -1278,7 +1307,7 @@ static NSDictionary *BBDeliveryPlan(NSDictionary *request) {
             return @{@"ok": @NO, @"error": @"A task is already running or needs review"};
         if (BBAnyUnresolvedDeliveryOrder())
             return @{@"ok": @NO, @"error": @"Review the previous order outcome before starting another delivery task"};
-        if (BBAnyUnresolvedDeliveryAction())
+        if (BBAnyUnresolvedDeliveryCartMutation())
             return @{@"ok": @NO, @"error": @"Check the previous cart step in Uber Eats before starting another delivery task"};
         if (![BBModelLoad()[@"provider"] isEqualToString:@"claude"])
             return @{@"ok": @NO, @"error": @"Delivery planning currently requires Claude"};
@@ -1498,7 +1527,7 @@ static NSDictionary *BBDeliveryOrderBeginRequest(NSDictionary *request) {
             return @{@"ok": @NO, @"error": @"The checkout session changed"};
         if (BBAnyUnresolvedDeliveryOrder())
             return @{@"ok": @NO, @"error": @"Review the previous order outcome before placing another order"};
-        if (BBAnyUnresolvedDeliveryAction())
+        if (BBAnyUnresolvedDeliveryCartMutation())
             return @{@"ok": @NO, @"error": @"Check the previous cart step in Uber Eats before placing an order"};
         NSDictionary *record = BBReadWorkflowRecord(taskID);
         NSDictionary *summary = BBCheckoutSummaryFromOperations(record[@"operations"]);

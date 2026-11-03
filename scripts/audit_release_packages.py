@@ -164,6 +164,11 @@ def check_macho(name: str, data: bytes, expected_type: int) -> None:
         fail(f"{name}: missing or malformed code signature load command")
 
 
+def check_agent_binary_version(binary: bytes, expected: str) -> None:
+    if expected.encode("ascii") + b"\x00" not in binary:
+        fail("Agent binary was not compiled with the packaged version")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("bridge", type=Path)
@@ -190,6 +195,7 @@ def main() -> None:
         if path not in binaries:
             fail(f"Missing Mach-O file {path}")
         check_macho(path, binaries[path][1], file_type)
+    check_agent_binary_version(agent_files["usr/bin/beanbaod"][1], agent["Version"])
     if agent.get("Depends") != f"dev.beanbao.bridge (>= {bridge['Version']})":
         fail("Agent does not require this Bridge version")
     if version(agent) < minimum_dependency(app, "dev.beanbao.agent"):

@@ -7,9 +7,9 @@ Updated November 2, 2026. This is a developer installation procedure for a compa
 Install these RootHide `iphoneos-arm64e` packages in order:
 
 1. `dev.beanbao.bridge` 0.2.13: restricted SpringBoard observation, UI actions, and quick voice overlay.
-2. `dev.beanbao.agent` 0.3.114: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
+2. `dev.beanbao.agent` 0.3.115: on-device task service, model interpretation, resumable workflows, and a restricted delivery-browser channel.
 3. `dev.beanbao.deliverybrowser` 0.1.19: sandboxed Uber Eats browser with visible page checks, bounded Palmino-driven Run control, explicit checkout review, and an actionable reconnect message after an Agent restart.
-4. `dev.beanbao.app` 0.3.69: native text, Apple voice transcription, Sessions with step history and order-history review, App Store review, Activity, shortcut, and model settings UI.
+4. `dev.beanbao.app` 0.3.70: native text, Apple voice transcription, Sessions with step history and order-history review, App Store review, Activity, shortcut, and model settings UI.
 
 The packages are under `bridge/packages/`, `agent-native/packages/`, `delivery-browser/packages/`, and `app/packages/`. Build from source on a Mac with the RootHide Theos toolchain:
 
@@ -24,15 +24,15 @@ With a root shell on the jailbroken phone, copy over the packages and install th
 
 ```sh
 dpkg -i dev.beanbao.bridge_0.2.13_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.agent_0.3.114_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.agent_0.3.115_iphoneos-arm64e.deb
 dpkg -i dev.beanbao.deliverybrowser_0.1.19_iphoneos-arm64e.deb
-dpkg -i dev.beanbao.app_0.3.69_iphoneos-arm64e.deb
+dpkg -i dev.beanbao.app_0.3.70_iphoneos-arm64e.deb
 dpkg-query -W dev.beanbao.bridge dev.beanbao.agent dev.beanbao.deliverybrowser dev.beanbao.app
 ```
 
-After installing or updating Bridge, reload SpringBoard to enable its injection, then unlock the phone. Updating only Agent or App does not require a SpringBoard reload. BeanBao does not provide an installer for other apps. A public software source and one-tap installer are not available yet.
+After installing or updating Bridge, reload SpringBoard to enable its injection, then unlock the phone. Updating only Agent, Browser, or App does not require a SpringBoard reload, but their already-running processes must be restarted to load the new binaries. After an Agent update, run `launchctl kickstart -k user/501/dev.beanbao.agent`; close and reopen BeanBao after an App update, and close and reopen the delivery browser after its update. BeanBao does not provide an installer for other apps. A public software source and one-tap installer are not available yet.
 
-To check the connected development device, run `python3 scripts/verify_device.py --host 127.0.0.1 --port <forwarded-port> --identity <private-key-path> --known-hosts <known-hosts-path> --expect-bundle`. This checks versions, the Agent service, and Bridge observation; it does not replace a real task test.
+To check the connected development device, run `python3 scripts/verify_device.py --host 127.0.0.1 --port <forwarded-port> --identity <private-key-path> --known-hosts <known-hosts-path> --expect-bundle`. This checks installed versions, the running Agent's compiled version, service response, and Bridge observation; it does not replace a real task test.
 
 ## First use
 
@@ -47,7 +47,7 @@ To check the connected development device, run `python3 scripts/verify_device.py
 
    If **Check** says the delivery connection needs refreshing after an Agent restart, return to BeanBao and tap **Browse food delivery** again. The browser keeps its website session and obtains a new Agent pairing; **Check** can then reclassify the page. Review the current cart before starting another task.
 
-   If a delivery step is marked **Needs review** after an interruption, inspect the Uber Eats cart before starting another delivery task. BeanBao will not automatically repeat that step, even from another session. Once you have checked the cart and do not need the old task record, you can delete the session in **Sessions**; this removes BeanBao's progress record but does not remove anything from the Uber Eats cart. An unresolved order attempt has a separate order-history review and cannot be deleted to bypass it.
+   If a delivery step is marked **Needs review** after an interruption, inspect the Uber Eats page or cart before resuming that session. BeanBao will not automatically repeat its uncertain step. An uncertain add-to-cart action also blocks new delivery tasks across sessions until you check the cart and discard the old record in **Sessions**; deletion removes BeanBao's progress record but does not remove website cart items. Uncertain navigation or option selection does not block other sessions. An unresolved order attempt has a separate order-history review and cannot be deleted to bypass it.
 9. Open **Sessions** and tap the information button beside a saved workflow to inspect its read-only step history. Tapping the session row itself still opens or resumes that workflow. The history shows step names, states, and times; it does not display website text or model tool results.
 
 For development over the paired SSH connection, `beanbaoagentctl workflow-details ID` displays the same bounded step history and `beanbaoagentctl resume-workflow ID` resumes an interrupted research session by its saved ID. A mutating step with an uncertain outcome is held for reconciliation rather than retried.
