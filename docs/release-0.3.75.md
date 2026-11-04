@@ -66,7 +66,7 @@ manual SpringBoard reload and unlock. See the [installation guide](install-and-c
   history reconciliation have synthetic coverage only; no real order was
   placed. Apple Mail composition on a configured account and a fresh App Store
   installation are also unverified.
-- Helper pairing still passes a short-lived token through a custom URL launch.
+- Helper pairing still passes an Agent-lifetime token through a custom URL launch.
   Another app registering the same URL scheme could intercept that launch.
   The Agent's loopback channel restricts operations, but the handoff needs a
   stronger binding before treating website tasks as stable.

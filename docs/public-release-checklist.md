@@ -21,10 +21,13 @@ verified first-use path from remaining engineering and device-validation work.
    fixed in 0.2.14 and tested on the paired phone.
 2. Test installation from the published instructions on a second compatible
    RootHide phone. The existing device is the only validated combination.
-3. Verify the published archive's release-note SHA-256 from a fresh download
-   and keep the prior candidate's hashes and device test record intact.
-4. Confirm the public README, website, and release notes remain aligned with
+3. Confirm the public README, website, and release notes remain aligned with
    the archive after every update.
+
+The public v0.3.75 `.tar.gz` was freshly downloaded after publication and its
+SHA-256 matched the release record. The release's `.tar` and `.tar.gz` assets
+were also freshly downloaded through GitHub Releases and checked against the
+published `SHA256SUMS` file.
 
 Signed-in checkout, Apple Mail composition, and other jailbreak/iOS combinations
 remain explicitly unverified. They are not prerequisites for the bounded first

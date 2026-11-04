@@ -5,7 +5,7 @@ The phone shows two BeanBao icons:
 | App | Responsibility | Privilege |
 | --- | --- | --- |
 | **BeanBao** | Requests, voice input, Sessions, model settings, task progress, and review of PDFs, email drafts, App Store listings, and order outcomes. | Existing privileged RootHide app; it can reach the on-device Agent and the SpringBoard voice handoff. |
-| **BeanBao Helper** | A normal iOS app surface for interactive workflows. Its first supported workflow is a visible Uber Eats website session with bounded item selection and cart review. | Sandboxed app. It receives only a short-lived pairing token and a restricted Agent operation set. |
+| **BeanBao Helper** | A normal iOS app surface for interactive workflows. Its first supported workflow is a visible Uber Eats website session with bounded item selection and cart review. | Sandboxed app. It receives an Agent-lifetime pairing token and a restricted Agent operation set. |
 
 The Agent and SpringBoard Bridge remain installed as background components. They are
 not extra Home Screen apps. Both visible apps are installed from the same RootHide
@@ -14,10 +14,17 @@ release archive; a second Apple ID or App Store account is not required.
 ## User flow
 
 1. Start a request in BeanBao. For the supported website workflow, tap **Open Helper · Food delivery**.
-2. BeanBao obtains a fresh pairing token from the Agent and opens BeanBao Helper.
+2. BeanBao obtains the Agent's current pairing token and opens BeanBao Helper through its custom URL scheme. The Agent generates a random token at startup; it changes on restart but has no timer-based expiry.
 3. BeanBao Helper retains its own website cookies, shows the page, and asks the Agent to plan one bounded step from a fresh page observation.
 4. Before a web action, the Agent checks the workflow, site and proposed action. BeanBao Helper checks the page again, acts on one unique visible control, and reports the result.
 5. Task state and review gates stay with the Agent and appear in BeanBao Sessions. An uncertain add-to-cart or order outcome stops for manual reconciliation.
+
+BeanBao uses a local Unix socket to request the token and read task state. The
+Helper's native code connects to the Agent's separate `127.0.0.1:47813`
+loopback TCP listener, sending the token with each request. The Agent checks
+the token and a narrow website-operation allowlist. The two apps do not share
+a data container. The custom URL is only the launch and token handoff, not the
+task transport.
 
 The current implementation is **not a general browser automation API**. It allows
 the supported Uber Eats hosts and delivery operations. Other websites would need
@@ -58,8 +65,9 @@ requires a SpringBoard reload and manual unlock.
 ## Next security and product work
 
 - Replace the custom URL pairing-token handoff before treating website workflows
-  as stable. A competing app could register the same URL scheme. Keep the Agent's
-  website channel restricted and bind a session to the intended app.
+  as stable. A competing app could register the same URL scheme. The token
+  currently lasts until Agent restart, so bind a session to the intended app
+  and add expiry or rotation while keeping the website channel restricted.
 - Add another website adapter only after its allowed hosts, observable actions,
   and external-action review gate are specified and tested on a phone.
 
