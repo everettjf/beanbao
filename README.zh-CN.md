@@ -3,7 +3,7 @@
 <p align="center"><strong>在越狱 iPhone 上运行的语音与文字助手。</strong><br />
 自然地说出需求，核对后让手机执行有边界的任务。</p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
-<p align="center"><a href="https://github.com/everettjf/beanbao/releases/tag/v0.3.75">下载 v0.3.75</a> · <a href="#快速安装">快速安装</a> · <a href="docs/install-and-configure.md">完整指南</a> · <a href="https://xnu.app/beanbao/zh-CN/">网站</a></p>
+<p align="center"><a href="https://github.com/everettjf/beanbao/releases/tag/v0.3.75">下载 v0.3.75</a> · <a href="#快速安装">快速安装</a> · <a href="docs/install-and-configure.md">完整指南</a> · <a href="docs/blog/beanbao/article.md">图文介绍</a> · <a href="https://xnu.app/beanbao/zh-CN/">网站</a></p>
 
 两个 App、Bridge 和任务 Agent 都在手机上运行；安装完成后无需连接 Mac。
 
