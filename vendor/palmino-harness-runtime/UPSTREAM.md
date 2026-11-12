@@ -15,3 +15,5 @@ compiles both directories as one Swift module. `AgentTools/PublicAPI.swift` is
 named `AgentToolsPublicAPI.swift` here to avoid a duplicate Swift filename in
 the same Theos compile. Other source content is unchanged. BeanBao integration
 code belongs outside this directory.
+
+NOTICE uses the upstream SDK owner display name AtomSprout (branding update, 2026-11-12).
