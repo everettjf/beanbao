@@ -129,4 +129,4 @@ BeanBao v0.3.75 安装发布页 : https://github.com/everettjf/beanbao/releases/
 
 BeanBao 双 App 架构说明 : https://github.com/everettjf/beanbao/blob/v0.3.75/docs/two-app-architecture.md
 
-BeanBao 项目网站 : https://xnu.app/beanbao/
+BeanBao 项目网站 : https://atomsprout.com/beanbao/

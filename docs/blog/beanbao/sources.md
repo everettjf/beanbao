@@ -20,4 +20,4 @@ BeanBao 源码仓库 : https://github.com/everettjf/beanbao
 
 BeanBao v0.3.75 安装发布页 : https://github.com/everettjf/beanbao/releases/tag/v0.3.75
 
-BeanBao 项目网站 : https://xnu.app/beanbao/
+BeanBao 项目网站 : https://atomsprout.com/beanbao/

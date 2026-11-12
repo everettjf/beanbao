@@ -3,7 +3,7 @@
 <p align="center"><strong>A voice and text assistant for a jailbroken iPhone.</strong><br />
 Ask naturally. Review the request. Let the phone carry out a bounded task.</p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
-<p align="center"><a href="https://github.com/everettjf/beanbao/releases/tag/v0.3.75">Download v0.3.75</a> · <a href="#quick-start">Quick start</a> · <a href="docs/install-and-configure.md">Install guide</a> · <a href="https://xnu.app/beanbao/">Website</a></p>
+<p align="center"><a href="https://github.com/everettjf/beanbao/releases/tag/v0.3.75">Download v0.3.75</a> · <a href="#quick-start">Quick start</a> · <a href="docs/install-and-configure.md">Install guide</a> · <a href="https://atomsprout.com/beanbao/">Website</a></p>
 
 BeanBao's two apps, Bridge, and task Agent run on the iPhone. A Mac is not
 needed after installation.
@@ -176,7 +176,7 @@ to the configured provider. See [UI and data details](docs/ui-and-activity.md).
 
 ## License and upstream code
 
-BeanBao-authored code is [Apache-2.0](LICENSE), copyright 2026 everettjf.
+BeanBao-authored code is [Apache-2.0](LICENSE), copyright 2026 AtomSprout.
 Vendored code keeps its own licenses and notices; see [THIRD_PARTY.md](THIRD_PARTY.md)
 and [NOTICE](NOTICE). The ios-mcp snapshot is retained as source reference;
 BeanBao builds only selected files into its restricted Bridge.
