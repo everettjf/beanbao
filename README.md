@@ -3,7 +3,7 @@
 <p align="center"><strong>A voice and text assistant for a jailbroken iPhone.</strong><br />
 Ask naturally. Review the request. Let the phone carry out a bounded task.</p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
-<p align="center"><a href="https://github.com/everettjf/beanbao/releases/tag/v0.3.75">Download v0.3.75</a> · <a href="#quick-start">Quick start</a> · <a href="docs/install-and-configure.md">Install guide</a> · <a href="https://atomsprout.com/beanbao/">Website</a></p>
+<p align="center"><a href="https://github.com/everettjf/beanbao/releases/tag/v0.3.75">Download v0.3.75</a> · <a href="#quick-start">Quick start</a> · <a href="docs/install-and-configure.md">Install guide</a> · <a href="https://asp.run/beanbao/">Website</a></p>
 
 BeanBao's two apps, Bridge, and task Agent run on the iPhone. A Mac is not
 needed after installation.
